@@ -1,0 +1,875 @@
+openapi: 3.0.3
+info:
+  title: ShedBooks API
+  description: ShedBooks backend REST API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Auth0 JWT token
+
+  schemas:
+    GeneralLedger:
+      type: object
+      required: [id, label, description, gstApplicable, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        gstApplicable:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateGeneralLedgerRequest:
+      type: object
+      required: [label, description, gstApplicable]
+      properties:
+        label:
+          type: string
+          maxLength: 255
+          minLength: 1
+        description:
+          type: string
+          minLength: 1
+        gstApplicable:
+          type: boolean
+
+    UpdateGeneralLedgerRequest:
+      type: object
+      required: [label, description, gstApplicable]
+      properties:
+        label:
+          type: string
+          maxLength: 255
+          minLength: 1
+        description:
+          type: string
+          minLength: 1
+        gstApplicable:
+          type: boolean
+
+    GstRate:
+      type: object
+      required: [id, rate, effectiveFrom, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        rate:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Decimal fraction — e.g. 0.10 represents 10%
+        effectiveFrom:
+          type: string
+          format: date
+          description: The date from which this rate applies (YYYY-MM-DD)
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Contact:
+      type: object
+      required: [id, name, contactType, gstRegistered, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 500
+        contactType:
+          type: string
+          enum: [person, company]
+        gstRegistered:
+          type: boolean
+          description: Always false when contactType is person
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateContactRequest:
+      type: object
+      required: [name, contactType, gstRegistered]
+      properties:
+        name:
+          type: string
+          maxLength: 500
+          minLength: 1
+        contactType:
+          type: string
+          enum: [person, company]
+        gstRegistered:
+          type: boolean
+
+    UpdateContactRequest:
+      type: object
+      required: [name, contactType, gstRegistered]
+      properties:
+        name:
+          type: string
+          maxLength: 500
+          minLength: 1
+        contactType:
+          type: string
+          enum: [person, company]
+        gstRegistered:
+          type: boolean
+
+    Transaction:
+      type: object
+      required: [id, contactId, generalLedgerId, amount, gstAmount, transactionType, receiptNumber, transactionDate, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        contactId:
+          type: string
+          format: uuid
+        generalLedgerId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+          description: Transaction value in cents
+        gstAmount:
+          type: integer
+          minimum: 0
+          description: GST component in cents (0 when not applicable)
+        transactionType:
+          type: string
+          enum: [debit, credit]
+        receiptNumber:
+          type: string
+          maxLength: 100
+        transactionDate:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateTransactionRequest:
+      type: object
+      required: [contactId, generalLedgerId, amount, gstAmount, transactionType, receiptNumber, transactionDate]
+      properties:
+        contactId:
+          type: string
+          format: uuid
+        generalLedgerId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+        gstAmount:
+          type: integer
+          minimum: 0
+        transactionType:
+          type: string
+          enum: [debit, credit]
+        receiptNumber:
+          type: string
+          maxLength: 100
+          minLength: 1
+        transactionDate:
+          type: string
+          format: date
+
+    UpdateTransactionRequest:
+      type: object
+      required: [contactId, generalLedgerId, amount, gstAmount, transactionType, receiptNumber, transactionDate]
+      properties:
+        contactId:
+          type: string
+          format: uuid
+        generalLedgerId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+        gstAmount:
+          type: integer
+          minimum: 0
+        transactionType:
+          type: string
+          enum: [debit, credit]
+        receiptNumber:
+          type: string
+          maxLength: 100
+          minLength: 1
+        transactionDate:
+          type: string
+          format: date
+
+    CreateGstRateRequest:
+      type: object
+      required: [rate, effectiveFrom]
+      properties:
+        rate:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        effectiveFrom:
+          type: string
+          format: date
+
+    UpdateGstRateRequest:
+      type: object
+      required: [rate, effectiveFrom]
+      properties:
+        rate:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        effectiveFrom:
+          type: string
+          format: date
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+paths:
+  /general-ledger:
+    get:
+      summary: List all general ledger accounts
+      operationId: listGeneralLedger
+      tags: [GeneralLedger]
+      responses:
+        '200':
+          description: List of general ledger accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GeneralLedger'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a general ledger account
+      operationId: createGeneralLedger
+      tags: [GeneralLedger]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGeneralLedgerRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralLedger'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /general-ledger/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a general ledger account by ID
+      operationId: getGeneralLedger
+      tags: [GeneralLedger]
+      responses:
+        '200':
+          description: General ledger account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralLedger'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update a general ledger account
+      operationId: updateGeneralLedger
+      tags: [GeneralLedger]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGeneralLedgerRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralLedger'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a general ledger account
+      operationId: deleteGeneralLedger
+      tags: [GeneralLedger]
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /gst-rates:
+    get:
+      summary: List all GST rates
+      operationId: listGstRates
+      tags: [GstRate]
+      responses:
+        '200':
+          description: List of GST rates ordered by effectiveFrom descending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GstRate'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a new GST rate
+      operationId: createGstRate
+      tags: [GstRate]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGstRateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstRate'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A rate with the same effectiveFrom already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /gst-rates/effective:
+    get:
+      summary: Get the GST rate effective at a given date (defaults to now)
+      operationId: getEffectiveGstRate
+      tags: [GstRate]
+      parameters:
+        - name: at
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Point in time to query; defaults to current UTC time
+      responses:
+        '200':
+          description: The applicable GST rate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstRate'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No rate is effective at the requested date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /gst-rates/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a GST rate by ID
+      operationId: getGstRate
+      tags: [GstRate]
+      responses:
+        '200':
+          description: GST rate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstRate'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update a GST rate
+      operationId: updateGstRate
+      tags: [GstRate]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGstRateRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstRate'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: A rate with the same effectiveFrom already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a GST rate
+      operationId: deleteGstRate
+      tags: [GstRate]
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /contacts:
+    get:
+      summary: List all contacts
+      operationId: listContacts
+      tags: [Contact]
+      responses:
+        '200':
+          description: List of contacts ordered by name ascending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Contact'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a contact
+      operationId: createContact
+      tags: [Contact]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContactRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '400':
+          description: Bad request (includes person + gstRegistered=true)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /contacts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a contact by ID
+      operationId: getContact
+      tags: [Contact]
+      responses:
+        '200':
+          description: Contact
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update a contact
+      operationId: updateContact
+      tags: [Contact]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContactRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '400':
+          description: Bad request (includes person + gstRegistered=true)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a contact
+      operationId: deleteContact
+      tags: [Contact]
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /transactions:
+    get:
+      summary: List all transactions
+      operationId: listTransactions
+      tags: [Transaction]
+      responses:
+        '200':
+          description: List of transactions ordered by date descending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a transaction
+      operationId: createTransaction
+      tags: [Transaction]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Bad request (invalid amounts, missing FK targets, empty receiptNumber)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /transactions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get a transaction by ID
+      operationId: getTransaction
+      tags: [Transaction]
+      responses:
+        '200':
+          description: Transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update a transaction
+      operationId: updateTransaction
+      tags: [Transaction]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTransactionRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a transaction
+      operationId: deleteTransaction
+      tags: [Transaction]
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
