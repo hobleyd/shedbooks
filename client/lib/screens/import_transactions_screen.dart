@@ -200,7 +200,11 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
       }
       if (expenseSheet != null) {
         final (cols, rows) = _parseSheet(
-            expenseSheet, 'expense', GlDirection.moneyOut, 'debit');
+          expenseSheet, 'expense', GlDirection.moneyOut, 'debit',
+          contactColIndex: 3,
+          receiptColIndex: 2,
+          glStartColIndex: 4,
+        );
         colMaps.addAll(cols);
         importRows.addAll(rows);
       }
@@ -220,8 +224,11 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     Sheet sheet,
     String sheetPrefix,
     GlDirection direction,
-    String transactionType,
-  ) {
+    String transactionType, {
+    int contactColIndex = 1,
+    int receiptColIndex = 2,
+    int glStartColIndex = 3,
+  }) {
     if (sheet.rows.isEmpty) return ([], []);
 
     final rows = sheet.rows;
@@ -244,7 +251,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     }
 
     final colMaps = <_ColMap>[];
-    for (int i = 3; i < headerRow.length; i++) {
+    for (int i = glStartColIndex; i < headerRow.length; i++) {
       if (i == descColIdx) continue;
       final header = _cellString(headerRow[i])?.trim() ?? '';
       if (header.toUpperCase() == 'TOTAL') break;
@@ -267,10 +274,12 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
       final dateIso = _cellDateIso(row.isNotEmpty ? row[0] : null);
       if (dateIso == null) continue;
 
-      final contact =
-          _cellString(row.length > 1 ? row[1] : null)?.trim() ?? '';
-      final receipt =
-          _cellString(row.length > 2 ? row[2] : null)?.trim() ?? '';
+      final contact = _cellString(
+              contactColIndex < row.length ? row[contactColIndex] : null)
+          ?.trim() ?? '';
+      final receipt = _cellString(
+              receiptColIndex < row.length ? row[receiptColIndex] : null)
+          ?.trim() ?? '';
       if (contact.isEmpty) continue;
 
       final description = descColIdx != null && descColIdx < row.length
