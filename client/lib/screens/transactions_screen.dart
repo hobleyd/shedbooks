@@ -48,6 +48,20 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   final _receiptOtherController = TextEditingController();
   final _receiptOutController = TextEditingController();
 
+  // ── Inline edit state ───────────────────────────────────────────────────────
+  String? _editingId;
+  bool _editSaving = false;
+  DateTime _editDate = DateTime.now();
+  String? _editContactId;
+  GeneralLedgerEntry? _editGl;
+  final _editReceiptController = TextEditingController();
+  final _editDescriptionController = TextEditingController();
+  final _editAmountController = TextEditingController();
+  final _editGstController = TextEditingController();
+  final _editTotalController = TextEditingController();
+
+  bool get _editGstApplicable => _editGl?.gstApplicable ?? false;
+
   bool get _isMoneyOut => _selectedGl?.direction == GlDirection.moneyOut;
 
   bool get _hasUnmatchedContact =>
@@ -75,6 +89,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     _descriptionController.dispose();
     _receiptOtherController.dispose();
     _receiptOutController.dispose();
+    _editReceiptController.dispose();
+    _editDescriptionController.dispose();
+    _editAmountController.dispose();
+    _editGstController.dispose();
+    _editTotalController.dispose();
     super.dispose();
   }
 
@@ -459,6 +478,149 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     if (didImport == true) _load();
   }
 
+  // ── Inline edit ─────────────────────────────────────────────────────────────
+
+  void _startEdit(TransactionEntry t) {
+    final glMatch = _glEntries.where((g) => g.id == t.generalLedgerId);
+    setState(() {
+      _editingId = t.id;
+      _editSaving = false;
+      _editDate = DateTime.parse(t.transactionDate);
+      _editContactId = t.contactId;
+      _editGl = glMatch.isEmpty ? null : glMatch.first;
+      _editReceiptController.text = t.receiptNumber;
+      _editDescriptionController.text = t.description;
+      _editAmountController.text = _centsToString(t.amount);
+      _editGstController.text = _centsToString(t.gstAmount);
+      _editTotalController.text = _centsToString(t.totalAmount);
+    });
+  }
+
+  void _cancelEdit() => setState(() { _editingId = null; _editSaving = false; });
+
+  Future<void> _saveEdit() async {
+    if (_editContactId == null) { _showSnackbar('Please select a contact'); return; }
+    if (_editGl == null) { _showSnackbar('Please select a GL account'); return; }
+    final amount = _parseAmount(_editAmountController.text);
+    if (amount == null || amount <= 0) { _showSnackbar('Amount must be greater than zero'); return; }
+    final gst = _parseAmount(_editGstController.text);
+    if (gst == null || gst < 0) { _showSnackbar('GST must be zero or more'); return; }
+
+    setState(() => _editSaving = true);
+
+    final body = jsonEncode({
+      'contactId': _editContactId,
+      'generalLedgerId': _editGl!.id,
+      'amount': _dollarsToCents(amount),
+      'gstAmount': _dollarsToCents(gst),
+      'transactionType': _editGl!.direction == GlDirection.moneyOut ? 'debit' : 'credit',
+      'receiptNumber': _editReceiptController.text.trim(),
+      'description': _editDescriptionController.text.trim(),
+      'transactionDate':
+          '${_editDate.year}-${_editDate.month.toString().padLeft(2, '0')}-${_editDate.day.toString().padLeft(2, '0')}',
+    });
+
+    final res = await context.read<ApiClient>().put('/transactions/$_editingId', body);
+    if (!mounted) return;
+
+    if (res.statusCode == 200) {
+      setState(() => _editingId = null);
+      _showSnackbar('Transaction updated');
+      await _load();
+    } else {
+      String msg = 'Update failed (${res.statusCode})';
+      try { msg = (jsonDecode(res.body) as Map)['error'] as String? ?? msg; } catch (_) {}
+      setState(() => _editSaving = false);
+      _showSnackbar(msg);
+    }
+  }
+
+  Future<void> _deleteTransaction(TransactionEntry t) async {
+    final parts = t.transactionDate.split('-');
+    final dateLabel = parts.length == 3
+        ? '${parts[2]}/${parts[1]}/${parts[0]}'
+        : t.transactionDate;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete transaction?'),
+        content: Text(
+          'Delete the ${t.isCredit ? 'income' : 'expense'} of '
+          '${_formatCents(t.totalAmount)} for '
+          '${_contactName(t.contactId) ?? '—'} on $dateLabel?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final res = await context.read<ApiClient>().delete('/transactions/${t.id}');
+    if (!mounted) return;
+    if (res.statusCode == 204) {
+      _showSnackbar('Transaction deleted');
+      await _load();
+    } else {
+      _showSnackbar('Delete failed (${res.statusCode})');
+    }
+  }
+
+  // Amount auto-calc for edit form
+
+  void _handleEditAmountChanged(String value) {
+    final amount = _parseAmount(value);
+    if (amount == null) {
+      _editGstController.text = _editGstApplicable ? '' : '0.00';
+      _editTotalController.clear();
+      return;
+    }
+    final amountCents = _dollarsToCents(amount);
+    if (_editGstApplicable) {
+      final gstCents = (amountCents / 10).round();
+      _editGstController.text = _centsToString(gstCents);
+      _editTotalController.text = _centsToString(amountCents + gstCents);
+    } else {
+      _editGstController.text = '0.00';
+      _editTotalController.text = value;
+    }
+  }
+
+  void _handleEditTotalChanged(String value) {
+    final total = _parseAmount(value);
+    if (total == null) {
+      _editAmountController.clear();
+      _editGstController.text = _editGstApplicable ? '' : '0.00';
+      return;
+    }
+    final totalCents = _dollarsToCents(total);
+    if (_editGstApplicable) {
+      final gstCents = (totalCents / 11).round();
+      _editAmountController.text = _centsToString(totalCents - gstCents);
+      _editGstController.text = _centsToString(gstCents);
+    } else {
+      _editAmountController.text = value;
+      _editGstController.text = '0.00';
+    }
+  }
+
+  void _handleEditGstChanged(String value) {
+    final amount = _parseAmount(_editAmountController.text);
+    final gst = _parseAmount(value);
+    if (amount == null || gst == null) return;
+    _editTotalController.text =
+        _centsToString(_dollarsToCents(amount) + _dollarsToCents(gst));
+  }
+
   void _showSnackbar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -601,6 +763,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     width: 120,
                     child: _colHeader('Amount', 4,
                         align: MainAxisAlignment.end)),
+                const SizedBox(width: 76),
               ],
             ),
           ),
@@ -612,6 +775,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Widget _buildTransactionRow(TransactionEntry t) {
+    if (_editingId == t.id) {
+      return Column(
+        children: [
+          _buildEditingRow(t),
+          const Divider(height: 1),
+        ],
+      );
+    }
+
     final parts = t.transactionDate.split('-');
     final dateLabel = parts.length == 3
         ? '${parts[2]}/${parts[1]}/${parts[0]}'
@@ -631,8 +803,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             children: [
               SizedBox(
                 width: 90,
-                child: Text(dateLabel,
-                    style: const TextStyle(fontSize: 13)),
+                child: Text(dateLabel, style: const TextStyle(fontSize: 13)),
               ),
               SizedBox(
                 width: 180,
@@ -679,11 +850,261 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   textAlign: TextAlign.right,
                 ),
               ),
+              SizedBox(
+                width: 76,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      onPressed: () => _startEdit(t),
+                      tooltip: 'Edit',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete_outline,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.error),
+                      onPressed: () => _deleteTransaction(t),
+                      tooltip: 'Delete',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
         const Divider(height: 1),
       ],
+    );
+  }
+
+  Widget _buildEditingRow(TransactionEntry t) {
+    const inputDecoration = InputDecoration(
+      border: OutlineInputBorder(),
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    );
+
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: Date | Contact | GL Account
+          Row(
+            children: [
+              // Date
+              SizedBox(
+                width: 140,
+                child: InkWell(
+                  onTap: _editSaving
+                      ? null
+                      : () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _editDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2035),
+                          );
+                          if (picked != null) setState(() => _editDate = picked);
+                        },
+                  child: InputDecorator(
+                    decoration:
+                        inputDecoration.copyWith(labelText: 'Date'),
+                    child: Text(
+                      '${_editDate.day.toString().padLeft(2, '0')}/${_editDate.month.toString().padLeft(2, '0')}/${_editDate.year}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Contact
+              Expanded(
+                child: InputDecorator(
+                  decoration:
+                      inputDecoration.copyWith(labelText: 'Contact'),
+                  child: DropdownButton<String>(
+                    value: _editContactId,
+                    isExpanded: true,
+                    isDense: true,
+                    underline: const SizedBox.shrink(),
+                    items: _contacts
+                        .map((c) => DropdownMenuItem(
+                              value: c.id,
+                              child: Text(c.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13)),
+                            ))
+                        .toList(),
+                    onChanged: _editSaving
+                        ? null
+                        : (v) => setState(() => _editContactId = v),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // GL Account
+              Expanded(
+                child: InputDecorator(
+                  decoration:
+                      inputDecoration.copyWith(labelText: 'GL Account'),
+                  child: DropdownButton<GeneralLedgerEntry>(
+                    value: _editGl,
+                    isExpanded: true,
+                    isDense: true,
+                    underline: const SizedBox.shrink(),
+                    items: _glEntries.map((g) {
+                      final isIn = g.direction == GlDirection.moneyIn;
+                      return DropdownMenuItem(
+                        value: g,
+                        child: Row(children: [
+                          Icon(
+                            isIn
+                                ? Icons.arrow_circle_down_outlined
+                                : Icons.arrow_circle_up_outlined,
+                            size: 14,
+                            color: isIn
+                                ? Colors.green.shade700
+                                : Colors.red.shade700,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                              child: Text(g.description,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13))),
+                        ]),
+                      );
+                    }).toList(),
+                    onChanged: _editSaving
+                        ? null
+                        : (gl) => setState(() {
+                              _editGl = gl;
+                              if (gl != null && !gl.gstApplicable) {
+                                _editGstController.text = '0.00';
+                                final total = _parseAmount(
+                                    _editTotalController.text);
+                                if (total != null) {
+                                  _editAmountController.text =
+                                      _editTotalController.text;
+                                }
+                              }
+                            }),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Row 2: Receipt | Description | Amount | GST | Total
+          Row(
+            children: [
+              SizedBox(
+                width: 130,
+                child: TextFormField(
+                  controller: _editReceiptController,
+                  enabled: !_editSaving,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: inputDecoration.copyWith(labelText: 'Receipt'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _editDescriptionController,
+                  enabled: !_editSaving,
+                  style: const TextStyle(fontSize: 13),
+                  decoration:
+                      inputDecoration.copyWith(labelText: 'Description'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 110,
+                child: TextFormField(
+                  controller: _editAmountController,
+                  enabled: !_editSaving,
+                  style: const TextStyle(fontSize: 13),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                  ],
+                  onChanged: _handleEditAmountChanged,
+                  decoration: inputDecoration.copyWith(
+                      labelText: 'Amt ex GST', prefixText: '\$ '),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 90,
+                child: TextFormField(
+                  controller: _editGstController,
+                  enabled: !_editSaving && _editGstApplicable,
+                  style: const TextStyle(fontSize: 13),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                  ],
+                  onChanged: _handleEditGstChanged,
+                  decoration: inputDecoration.copyWith(
+                    labelText: 'GST',
+                    prefixText: '\$ ',
+                    fillColor:
+                        _editGstApplicable ? null : Colors.grey.shade100,
+                    filled: !_editGstApplicable,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 110,
+                child: TextFormField(
+                  controller: _editTotalController,
+                  enabled: !_editSaving,
+                  style: const TextStyle(fontSize: 13),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                  ],
+                  onChanged: _handleEditTotalChanged,
+                  decoration: inputDecoration.copyWith(
+                      labelText: 'Total', prefixText: '\$ '),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Save / Cancel
+          Row(
+            children: [
+              OutlinedButton(
+                onPressed: _editSaving ? null : _cancelEdit,
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _editSaving ? null : _saveEdit,
+                child: _editSaving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Save'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
