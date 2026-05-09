@@ -421,10 +421,15 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     return switch (cell.value) {
       IntCellValue(:final value) => value.toDouble(),
       DoubleCellValue(:final value) => value,
-      TextCellValue(:final value) =>
-        double.tryParse(value.toString().trim()),
+      TextCellValue(:final value) => _parseNumText(value.toString()),
       _ => null,
     };
+  }
+
+  // Strips currency symbols and thousands commas before parsing.
+  double? _parseNumText(String raw) {
+    final cleaned = raw.trim().replaceAll(r'$', '').replaceAll(',', '');
+    return double.tryParse(cleaned);
   }
 
   String? _cellDateIso(Data? cell) {
@@ -437,8 +442,23 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
       IntCellValue(:final value) when value > 0 => _serialToIso(value),
       DoubleCellValue(:final value) when value > 0 =>
         _serialToIso(value.round()),
+      TextCellValue(:final value) => _parseTextDate(value.toString().trim()),
       _ => null,
     };
+  }
+
+  // Parses text dates in DD/MM/YY, DD/MM/YYYY, or YYYY-MM-DD format.
+  String? _parseTextDate(String text) {
+    final slash = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})$').firstMatch(text);
+    if (slash != null) {
+      final day = int.parse(slash.group(1)!);
+      final month = int.parse(slash.group(2)!);
+      int year = int.parse(slash.group(3)!);
+      if (year < 100) year += 2000;
+      return '$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+    }
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text)) return text;
+    return null;
   }
 
   String _serialToIso(int serial) {
