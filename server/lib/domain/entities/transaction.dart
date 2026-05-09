@@ -24,6 +24,9 @@ class Transaction {
   /// External receipt or reference number for document tracking.
   final String receiptNumber;
 
+  /// Optional free-text description for this transaction.
+  final String description;
+
   /// The date the transaction occurred.
   final DateTime transactionDate;
 
@@ -44,6 +47,7 @@ class Transaction {
     required this.gstAmount,
     required this.transactionType,
     required this.receiptNumber,
+    required this.description,
     required this.transactionDate,
     required this.createdAt,
     required this.updatedAt,
@@ -51,4 +55,7 @@ class Transaction {
   });
 
   bool get isDeleted => deletedAt != null;
+
+  /// Total value of the transaction including GST, in cents.
+  int get totalAmount => amount + gstAmount;
 }

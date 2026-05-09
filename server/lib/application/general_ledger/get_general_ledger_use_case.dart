@@ -8,12 +8,9 @@ class GetGeneralLedgerUseCase {
 
   const GetGeneralLedgerUseCase(this._repository);
 
-  /// Returns the account or throws [GeneralLedgerNotFoundException].
-  Future<GeneralLedger> execute(String id) async {
-    final account = await _repository.findById(id);
-    if (account == null) {
-      throw GeneralLedgerNotFoundException(id);
-    }
+  Future<GeneralLedger> execute(String id, {required String entityId}) async {
+    final account = await _repository.findById(id, entityId: entityId);
+    if (account == null) throw GeneralLedgerNotFoundException(id);
     return account;
   }
 }

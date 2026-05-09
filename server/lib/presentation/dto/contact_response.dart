@@ -7,6 +7,7 @@ class ContactResponse {
   final String name;
   final String contactType;
   final bool gstRegistered;
+  final String? abn;
   final String createdAt;
   final String updatedAt;
 
@@ -15,6 +16,7 @@ class ContactResponse {
     required this.name,
     required this.contactType,
     required this.gstRegistered,
+    this.abn,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -25,6 +27,7 @@ class ContactResponse {
       name: entity.name,
       contactType: entity.contactType.name,
       gstRegistered: entity.gstRegistered,
+      abn: entity.abn,
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
     );
@@ -35,6 +38,7 @@ class ContactResponse {
         'name': name,
         'contactType': contactType,
         'gstRegistered': gstRegistered,
+        'abn': abn,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };

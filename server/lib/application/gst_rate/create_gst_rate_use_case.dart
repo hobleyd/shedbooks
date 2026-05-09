@@ -8,14 +8,13 @@ class CreateGstRateUseCase {
 
   const CreateGstRateUseCase(this._repository);
 
-  /// Validates [rate] is between 0 and 1 inclusive, then persists.
   Future<GstRate> execute({
+    required String entityId,
     required double rate,
     required DateTime effectiveFrom,
   }) async {
     _validateRate(rate);
-
-    return _repository.create(rate: rate, effectiveFrom: effectiveFrom);
+    return _repository.create(entityId: entityId, rate: rate, effectiveFrom: effectiveFrom);
   }
 
   static void _validateRate(double rate) {

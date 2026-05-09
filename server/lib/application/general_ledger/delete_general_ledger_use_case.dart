@@ -7,12 +7,9 @@ class DeleteGeneralLedgerUseCase {
 
   const DeleteGeneralLedgerUseCase(this._repository);
 
-  /// Throws [GeneralLedgerNotFoundException] when [id] does not exist.
-  Future<void> execute(String id) async {
-    final existing = await _repository.findById(id);
-    if (existing == null) {
-      throw GeneralLedgerNotFoundException(id);
-    }
-    await _repository.delete(id);
+  Future<void> execute(String id, {required String entityId}) async {
+    final existing = await _repository.findById(id, entityId: entityId);
+    if (existing == null) throw GeneralLedgerNotFoundException(id);
+    await _repository.delete(id, entityId: entityId);
   }
 }

@@ -2,8 +2,6 @@ services:
   server:
     build:
       context: ./server
-    ports:
-      - "8080:8080"
     environment:
       AUTH0_DOMAIN: ${AUTH0_DOMAIN}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
@@ -20,21 +18,47 @@ services:
     restart: unless-stopped
 
   db:
-    image: postgres:16-alpine
+    build:
+      context: ./db
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/ssl/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/ssl/server.key
     environment:
       POSTGRES_DB: shedbooks
       POSTGRES_USER: shedbooks
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./certs/postgres:/ssl-certs:ro
       - ./server/lib/infrastructure/database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shedbooks -d shedbooks"]
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+      args:
+        AUTH0_DOMAIN: ${AUTH0_DOMAIN}
+        AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
+        AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+        API_URL: ${API_URL:-http://localhost:8080}
     ports:
-      - "5432:5432"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - server
+    restart: unless-stopped
 
 volumes:
   postgres_data:

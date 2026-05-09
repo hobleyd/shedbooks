@@ -16,6 +16,7 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+certs/
 
 # IntelliJ related
 *.iml
@@ -51,3 +52,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /android/key.properties
+
+# Security
+.env
+certs/**/*.key

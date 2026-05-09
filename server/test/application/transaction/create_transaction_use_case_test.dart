@@ -12,6 +12,7 @@ void main() {
   late MockTransactionRepository repository;
   late CreateTransactionUseCase sut;
 
+  const tEntityId = 'entity-1';
   final tDate = DateTime.utc(2026, 5, 1);
   final tTransaction = Transaction(
     id: '00000000-0000-0000-0000-000000000001',
@@ -38,6 +39,7 @@ void main() {
       // Arrange
       when(
         () => repository.create(
+          entityId: tEntityId,
           contactId: tTransaction.contactId,
           generalLedgerId: tTransaction.generalLedgerId,
           amount: 11000,
@@ -50,6 +52,7 @@ void main() {
 
       // Act
       final result = await sut.execute(
+        entityId: tEntityId,
         contactId: tTransaction.contactId,
         generalLedgerId: tTransaction.generalLedgerId,
         amount: 11000,
@@ -61,12 +64,45 @@ void main() {
 
       // Assert
       expect(result, equals(tTransaction));
+      expect(result.totalAmount, equals(12000));
+    });
+
+    test('totalAmount equals amount plus gstAmount', () async {
+      // Arrange
+      when(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          transactionDate: any(named: 'transactionDate'),
+        ),
+      ).thenAnswer((_) async => tTransaction);
+
+      // Act
+      final result = await sut.execute(
+        entityId: tEntityId,
+        contactId: 'c1',
+        generalLedgerId: 'g1',
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        transactionDate: tDate,
+      );
+
+      // Assert
+      expect(result.totalAmount, equals(result.amount + result.gstAmount));
     });
 
     test('trims whitespace from receiptNumber before persisting', () async {
       // Arrange
       when(
         () => repository.create(
+          entityId: any(named: 'entityId'),
           contactId: any(named: 'contactId'),
           generalLedgerId: any(named: 'generalLedgerId'),
           amount: any(named: 'amount'),
@@ -79,6 +115,7 @@ void main() {
 
       // Act
       await sut.execute(
+        entityId: tEntityId,
         contactId: tTransaction.contactId,
         generalLedgerId: tTransaction.generalLedgerId,
         amount: 11000,
@@ -91,6 +128,7 @@ void main() {
       // Assert
       verify(
         () => repository.create(
+          entityId: any(named: 'entityId'),
           contactId: any(named: 'contactId'),
           generalLedgerId: any(named: 'generalLedgerId'),
           amount: any(named: 'amount'),
@@ -103,9 +141,9 @@ void main() {
     });
 
     test('throws TransactionValidationException when amount is zero', () {
-      // Arrange / Act / Assert
       expect(
         () => sut.execute(
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 0,
@@ -121,6 +159,7 @@ void main() {
     test('throws TransactionValidationException when amount is negative', () {
       expect(
         () => sut.execute(
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: -100,
@@ -136,6 +175,7 @@ void main() {
     test('throws TransactionValidationException when gstAmount is negative', () {
       expect(
         () => sut.execute(
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 11000,
@@ -151,6 +191,7 @@ void main() {
     test('throws TransactionValidationException when gstAmount exceeds amount', () {
       expect(
         () => sut.execute(
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 1000,
@@ -166,6 +207,7 @@ void main() {
     test('throws TransactionValidationException when receiptNumber is empty', () {
       expect(
         () => sut.execute(
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 1000,
@@ -179,9 +221,10 @@ void main() {
     });
 
     test('allows gstAmount equal to amount', () async {
-      // Arrange — edge case where 100% is GST (unlikely but valid)
+      // Arrange
       when(
         () => repository.create(
+          entityId: any(named: 'entityId'),
           contactId: any(named: 'contactId'),
           generalLedgerId: any(named: 'generalLedgerId'),
           amount: any(named: 'amount'),
@@ -195,6 +238,7 @@ void main() {
       // Act / Assert — should not throw
       await expectLater(
         sut.execute(
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 1000,

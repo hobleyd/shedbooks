@@ -16,6 +16,10 @@ class Contact {
   /// Always false for [ContactType.person] — enforced in the application layer.
   final bool gstRegistered;
 
+  /// Australian Business Number (11 digits). Required for [ContactType.company],
+  /// always null for [ContactType.person].
+  final String? abn;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -30,6 +34,7 @@ class Contact {
     required this.name,
     required this.contactType,
     required this.gstRegistered,
+    this.abn,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,

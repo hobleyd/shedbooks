@@ -13,6 +13,7 @@ void main() {
   late UpdateTransactionUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tDate = DateTime.utc(2026, 5, 1);
   final tUpdated = Transaction(
     id: tId,
@@ -40,6 +41,7 @@ void main() {
       when(
         () => repository.update(
           id: tId,
+          entityId: tEntityId,
           contactId: tUpdated.contactId,
           generalLedgerId: tUpdated.generalLedgerId,
           amount: 22000,
@@ -53,6 +55,7 @@ void main() {
       // Act
       final result = await sut.execute(
         id: tId,
+        entityId: tEntityId,
         contactId: tUpdated.contactId,
         generalLedgerId: tUpdated.generalLedgerId,
         amount: 22000,
@@ -64,13 +67,14 @@ void main() {
 
       // Assert
       expect(result, equals(tUpdated));
+      expect(result.totalAmount, equals(24000));
     });
 
     test('throws TransactionValidationException when amount is zero', () {
-      // Arrange / Act / Assert
       expect(
         () => sut.execute(
           id: tId,
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 0,
@@ -87,6 +91,7 @@ void main() {
       expect(
         () => sut.execute(
           id: tId,
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 500,
@@ -104,6 +109,7 @@ void main() {
       when(
         () => repository.update(
           id: tId,
+          entityId: any(named: 'entityId'),
           contactId: any(named: 'contactId'),
           generalLedgerId: any(named: 'generalLedgerId'),
           amount: any(named: 'amount'),
@@ -118,6 +124,7 @@ void main() {
       expect(
         () => sut.execute(
           id: tId,
+          entityId: tEntityId,
           contactId: 'c1',
           generalLedgerId: 'g1',
           amount: 1000,

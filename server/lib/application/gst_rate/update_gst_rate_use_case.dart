@@ -8,10 +8,9 @@ class UpdateGstRateUseCase {
 
   const UpdateGstRateUseCase(this._repository);
 
-  /// Validates [rate], then updates the record.
-  /// Throws [GstRateNotFoundException] or [GstRateDuplicateEffectiveDateException] as needed.
   Future<GstRate> execute({
     required String id,
+    required String entityId,
     required double rate,
     required DateTime effectiveFrom,
   }) async {
@@ -21,6 +20,6 @@ class UpdateGstRateUseCase {
       );
     }
 
-    return _repository.update(id: id, rate: rate, effectiveFrom: effectiveFrom);
+    return _repository.update(id: id, entityId: entityId, rate: rate, effectiveFrom: effectiveFrom);
   }
 }

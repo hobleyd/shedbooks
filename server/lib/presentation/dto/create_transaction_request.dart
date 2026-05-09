@@ -8,6 +8,7 @@ class CreateTransactionRequest {
   final int gstAmount;
   final TransactionType transactionType;
   final String receiptNumber;
+  final String description;
   final DateTime transactionDate;
 
   const CreateTransactionRequest({
@@ -17,6 +18,7 @@ class CreateTransactionRequest {
     required this.gstAmount,
     required this.transactionType,
     required this.receiptNumber,
+    required this.description,
     required this.transactionDate,
   });
 
@@ -27,6 +29,7 @@ class CreateTransactionRequest {
     final gstAmount = json['gstAmount'];
     final transactionTypeRaw = json['transactionType'];
     final receiptNumber = json['receiptNumber'];
+    final description = json['description'] ?? '';
     final transactionDateRaw = json['transactionDate'];
 
     if (contactId is! String) throw const FormatException('contactId must be a string');
@@ -35,6 +38,7 @@ class CreateTransactionRequest {
     if (gstAmount is! int) throw const FormatException('gstAmount must be an integer (cents)');
     if (transactionTypeRaw is! String) throw const FormatException('transactionType must be a string');
     if (receiptNumber is! String) throw const FormatException('receiptNumber must be a string');
+    if (description is! String) throw const FormatException('description must be a string');
     if (transactionDateRaw is! String) throw const FormatException('transactionDate must be an ISO 8601 date string');
 
     final TransactionType transactionType;
@@ -60,6 +64,7 @@ class CreateTransactionRequest {
       gstAmount: gstAmount,
       transactionType: transactionType,
       receiptNumber: receiptNumber,
+      description: description as String,
       transactionDate: transactionDate,
     );
   }

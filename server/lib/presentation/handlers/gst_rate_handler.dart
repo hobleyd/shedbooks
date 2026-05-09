@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:shelf/shelf.dart';
 
 import '../../application/gst_rate/create_gst_rate_use_case.dart';
@@ -37,7 +38,10 @@ class GstRateHandler {
 
   /// GET /gst-rates
   Future<Response> handleList(Request request) async {
-    final rates = await _list.execute();
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final rates = await _list.execute(entityId: entityId);
     final body = jsonEncode(
       rates.map((r) => GstRateResponse.fromEntity(r).toJson()).toList(),
     );
@@ -46,6 +50,9 @@ class GstRateHandler {
 
   /// POST /gst-rates
   Future<Response> handleCreate(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     final Map<String, dynamic> json;
     try {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
@@ -62,6 +69,7 @@ class GstRateHandler {
 
     try {
       final rate = await _create.execute(
+        entityId: entityId,
         rate: dto.rate,
         effectiveFrom: dto.effectiveFrom,
       );
@@ -79,6 +87,9 @@ class GstRateHandler {
 
   /// GET /gst-rates/effective?at=<iso8601>
   Future<Response> handleGetEffective(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     DateTime? at;
     final atParam = request.url.queryParameters['at'];
     if (atParam != null) {
@@ -90,7 +101,7 @@ class GstRateHandler {
     }
 
     try {
-      final rate = await _getEffective.execute(at);
+      final rate = await _getEffective.execute(entityId: entityId, date: at);
       return Response.ok(
         GstRateResponse.fromEntity(rate).toJsonString(),
         headers: _jsonHeaders,
@@ -102,8 +113,11 @@ class GstRateHandler {
 
   /// GET /gst-rates/:id
   Future<Response> handleGet(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     try {
-      final rate = await _get.execute(id);
+      final rate = await _get.execute(id, entityId: entityId);
       return Response.ok(
         GstRateResponse.fromEntity(rate).toJsonString(),
         headers: _jsonHeaders,
@@ -115,6 +129,9 @@ class GstRateHandler {
 
   /// PUT /gst-rates/:id
   Future<Response> handleUpdate(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     final Map<String, dynamic> json;
     try {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
@@ -132,6 +149,7 @@ class GstRateHandler {
     try {
       final rate = await _update.execute(
         id: id,
+        entityId: entityId,
         rate: dto.rate,
         effectiveFrom: dto.effectiveFrom,
       );
@@ -150,16 +168,29 @@ class GstRateHandler {
 
   /// DELETE /gst-rates/:id
   Future<Response> handleDelete(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     try {
-      await _delete.execute(id);
+      await _delete.execute(id, entityId: entityId);
       return Response(204);
     } on GstRateNotFoundException catch (e) {
       return _notFound(e.message);
     }
   }
 
+  static String? _entityId(Request request) {
+    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
+    return claims?['https://shedbooks.com/entity_id'] as String?;
+  }
+
+  static Response _orgRequired() => Response.unauthorized(
+        jsonEncode({'error': 'Organization authentication required'}),
+        headers: _jsonHeaders,
+      );
+
   static const Map<String, String> _jsonHeaders = {
-    'content-type': 'application/json',
+    HttpHeaders.contentTypeHeader: 'application/json',
   };
 
   static Response _badRequest(String message) => Response(

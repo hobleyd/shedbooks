@@ -8,9 +8,8 @@ class GetTransactionUseCase {
 
   const GetTransactionUseCase(this._repository);
 
-  /// Returns the transaction or throws [TransactionNotFoundException].
-  Future<Transaction> execute(String id) async {
-    final transaction = await _repository.findById(id);
+  Future<Transaction> execute(String id, {required String entityId}) async {
+    final transaction = await _repository.findById(id, entityId: entityId);
     if (transaction == null) throw TransactionNotFoundException(id);
     return transaction;
   }

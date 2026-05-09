@@ -7,10 +7,9 @@ class DeleteContactUseCase {
 
   const DeleteContactUseCase(this._repository);
 
-  /// Throws [ContactNotFoundException] when [id] does not exist.
-  Future<void> execute(String id) async {
-    final existing = await _repository.findById(id);
+  Future<void> execute(String id, {required String entityId}) async {
+    final existing = await _repository.findById(id, entityId: entityId);
     if (existing == null) throw ContactNotFoundException(id);
-    await _repository.delete(id);
+    await _repository.delete(id, entityId: entityId);
   }
 }

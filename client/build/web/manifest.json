@@ -1,0 +1,9 @@
+{
+    "name": "ShedBooks",
+    "short_name": "ShedBooks",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#1B5E20",
+    "description": "ShedBooks bookkeeping application"
+}

@@ -9,16 +9,16 @@ class UpdateTransactionUseCase {
 
   const UpdateTransactionUseCase(this._repository);
 
-  /// Validates input then updates the transaction.
-  /// Throws [TransactionNotFoundException] or [TransactionValidationException] as needed.
   Future<Transaction> execute({
     required String id,
+    required String entityId,
     required String contactId,
     required String generalLedgerId,
     required int amount,
     required int gstAmount,
     required TransactionType transactionType,
     required String receiptNumber,
+    required String description,
     required DateTime transactionDate,
   }) async {
     TransactionValidator.validate(
@@ -29,12 +29,14 @@ class UpdateTransactionUseCase {
 
     return _repository.update(
       id: id,
+      entityId: entityId,
       contactId: contactId,
       generalLedgerId: generalLedgerId,
       amount: amount,
       gstAmount: gstAmount,
       transactionType: transactionType,
       receiptNumber: receiptNumber.trim(),
+      description: description.trim(),
       transactionDate: transactionDate,
     );
   }

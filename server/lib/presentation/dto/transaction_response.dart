@@ -8,8 +8,10 @@ class TransactionResponse {
   final String generalLedgerId;
   final int amount;
   final int gstAmount;
+  final int totalAmount;
   final String transactionType;
   final String receiptNumber;
+  final String description;
   final String transactionDate;
   final String createdAt;
   final String updatedAt;
@@ -20,8 +22,10 @@ class TransactionResponse {
     required this.generalLedgerId,
     required this.amount,
     required this.gstAmount,
+    required this.totalAmount,
     required this.transactionType,
     required this.receiptNumber,
+    required this.description,
     required this.transactionDate,
     required this.createdAt,
     required this.updatedAt,
@@ -34,8 +38,10 @@ class TransactionResponse {
       generalLedgerId: entity.generalLedgerId,
       amount: entity.amount,
       gstAmount: entity.gstAmount,
+      totalAmount: entity.totalAmount,
       transactionType: entity.transactionType.name,
       receiptNumber: entity.receiptNumber,
+      description: entity.description,
       transactionDate: entity.transactionDate.toIso8601String().substring(0, 10),
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
@@ -48,8 +54,10 @@ class TransactionResponse {
         'generalLedgerId': generalLedgerId,
         'amount': amount,
         'gstAmount': gstAmount,
+        'totalAmount': totalAmount,
         'transactionType': transactionType,
         'receiptNumber': receiptNumber,
+        'description': description,
         'transactionDate': transactionDate,
         'createdAt': createdAt,
         'updatedAt': updatedAt,

@@ -15,6 +15,7 @@ class PostgresGstRateRepository implements IGstRateRepository {
 
   @override
   Future<GstRate> create({
+    required String entityId,
     required double rate,
     required DateTime effectiveFrom,
   }) async {
@@ -22,19 +23,19 @@ class PostgresGstRateRepository implements IGstRateRepository {
       final id = _uuid.v4();
       final result = await _pool.execute(
         Sql.named('''
-          INSERT INTO gst_rates (id, rate, effective_from)
-          VALUES (@id::uuid, @rate, @effectiveFrom::date)
+          INSERT INTO gst_rates (id, entity_id, rate, effective_from)
+          VALUES (@id::uuid, @entityId, @rate, @effectiveFrom::date)
           RETURNING id, rate, effective_from, created_at, updated_at, deleted_at
         '''),
         parameters: {
           'id': id,
+          'entityId': entityId,
           'rate': rate,
           'effectiveFrom': effectiveFrom.toIso8601String().substring(0, 10),
         },
       );
       return _mapRow(result.first.toColumnMap());
     } on ServerException catch (e) {
-      // Postgres unique violation code = 23505
       if (e.code == '23505') {
         throw GstRateDuplicateEffectiveDateException(effectiveFrom);
       }
@@ -43,15 +44,16 @@ class PostgresGstRateRepository implements IGstRateRepository {
   }
 
   @override
-  Future<GstRate?> findById(String id) async {
+  Future<GstRate?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         SELECT id, rate, effective_from, created_at, updated_at, deleted_at
         FROM gst_rates
         WHERE id = @id::uuid
+          AND entity_id = @entityId
           AND deleted_at IS NULL
       '''),
-      parameters: {'id': id},
+      parameters: {'id': id, 'entityId': entityId},
     );
 
     if (result.isEmpty) return null;
@@ -59,31 +61,35 @@ class PostgresGstRateRepository implements IGstRateRepository {
   }
 
   @override
-  Future<List<GstRate>> findAll() async {
+  Future<List<GstRate>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         SELECT id, rate, effective_from, created_at, updated_at, deleted_at
         FROM gst_rates
-        WHERE deleted_at IS NULL
+        WHERE entity_id = @entityId
+          AND deleted_at IS NULL
         ORDER BY effective_from DESC
       '''),
+      parameters: {'entityId': entityId},
     );
 
     return result.map((row) => _mapRow(row.toColumnMap())).toList();
   }
 
   @override
-  Future<GstRate?> findEffectiveAt(DateTime date) async {
+  Future<GstRate?> findEffectiveAt(DateTime date, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         SELECT id, rate, effective_from, created_at, updated_at, deleted_at
         FROM gst_rates
-        WHERE effective_from <= @date::date
+        WHERE entity_id = @entityId
+          AND effective_from <= @date::date
           AND deleted_at IS NULL
         ORDER BY effective_from DESC
         LIMIT 1
       '''),
       parameters: {
+        'entityId': entityId,
         'date': date.toIso8601String().substring(0, 10),
       },
     );
@@ -95,6 +101,7 @@ class PostgresGstRateRepository implements IGstRateRepository {
   @override
   Future<GstRate> update({
     required String id,
+    required String entityId,
     required double rate,
     required DateTime effectiveFrom,
   }) async {
@@ -106,11 +113,13 @@ class PostgresGstRateRepository implements IGstRateRepository {
               effective_from = @effectiveFrom::date,
               updated_at     = NOW()
           WHERE id = @id::uuid
+            AND entity_id = @entityId
             AND deleted_at IS NULL
           RETURNING id, rate, effective_from, created_at, updated_at, deleted_at
         '''),
         parameters: {
           'id': id,
+          'entityId': entityId,
           'rate': rate,
           'effectiveFrom': effectiveFrom.toIso8601String().substring(0, 10),
         },
@@ -127,23 +136,23 @@ class PostgresGstRateRepository implements IGstRateRepository {
   }
 
   @override
-  Future<void> delete(String id) async {
+  Future<void> delete(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         UPDATE gst_rates
         SET deleted_at = NOW(),
             updated_at = NOW()
         WHERE id = @id::uuid
+          AND entity_id = @entityId
           AND deleted_at IS NULL
       '''),
-      parameters: {'id': id},
+      parameters: {'id': id, 'entityId': entityId},
     );
 
     if (result.affectedRows == 0) throw GstRateNotFoundException(id);
   }
 
   GstRate _mapRow(Map<String, dynamic> row) {
-    // effective_from is a DATE column — postgres returns it as DateTime
     final effectiveFrom = row['effective_from'] as DateTime;
 
     return GstRate(

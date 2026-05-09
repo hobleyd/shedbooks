@@ -8,9 +8,8 @@ class GetContactUseCase {
 
   const GetContactUseCase(this._repository);
 
-  /// Returns the contact or throws [ContactNotFoundException].
-  Future<Contact> execute(String id) async {
-    final contact = await _repository.findById(id);
+  Future<Contact> execute(String id, {required String entityId}) async {
+    final contact = await _repository.findById(id, entityId: entityId);
     if (contact == null) throw ContactNotFoundException(id);
     return contact;
   }

@@ -13,11 +13,13 @@ void main() {
   late DeleteContactUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tContact = Contact(
     id: tId,
     name: 'Acme Corp',
     contactType: ContactType.company,
     gstRegistered: true,
+    abn: '51824753556',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );
@@ -30,26 +32,32 @@ void main() {
   group('DeleteContactUseCase', () {
     test('calls repository delete when contact exists', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => tContact);
-      when(() => repository.delete(tId)).thenAnswer((_) async {});
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tContact);
+      when(() => repository.delete(tId, entityId: tEntityId))
+          .thenAnswer((_) async {});
 
       // Act
-      await sut.execute(tId);
+      await sut.execute(tId, entityId: tEntityId);
 
       // Assert
-      verify(() => repository.delete(tId)).called(1);
+      verify(() => repository.delete(tId, entityId: tEntityId)).called(1);
     });
 
-    test('throws ContactNotFoundException when contact does not exist', () async {
+    test('throws ContactNotFoundException when contact does not exist',
+        () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => null);
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => null);
 
       // Act / Assert
       expect(
-        () => sut.execute(tId),
+        () => sut.execute(tId, entityId: tEntityId),
         throwsA(isA<ContactNotFoundException>()),
       );
-      verifyNever(() => repository.delete(any()));
+      verifyNever(
+        () => repository.delete(any(), entityId: any(named: 'entityId')),
+      );
     });
   });
 }

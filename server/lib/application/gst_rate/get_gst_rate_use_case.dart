@@ -8,9 +8,8 @@ class GetGstRateUseCase {
 
   const GetGstRateUseCase(this._repository);
 
-  /// Returns the rate or throws [GstRateNotFoundException].
-  Future<GstRate> execute(String id) async {
-    final rate = await _repository.findById(id);
+  Future<GstRate> execute(String id, {required String entityId}) async {
+    final rate = await _repository.findById(id, entityId: entityId);
     if (rate == null) throw GstRateNotFoundException(id);
     return rate;
   }

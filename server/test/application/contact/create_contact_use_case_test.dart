@@ -12,11 +12,13 @@ void main() {
   late MockContactRepository repository;
   late CreateContactUseCase sut;
 
+  const tEntityId = 'entity-1';
   final tCompany = Contact(
     id: '00000000-0000-0000-0000-000000000001',
     name: 'Acme Corp',
     contactType: ContactType.company,
     gstRegistered: true,
+    abn: '51824753556',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );
@@ -36,21 +38,26 @@ void main() {
   });
 
   group('CreateContactUseCase', () {
-    test('creates a company contact and returns the persisted entity', () async {
+    test('creates a company contact with ABN and returns the persisted entity',
+        () async {
       // Arrange
       when(
         () => repository.create(
+          entityId: tEntityId,
           name: 'Acme Corp',
           contactType: ContactType.company,
           gstRegistered: true,
+          abn: '51824753556',
         ),
       ).thenAnswer((_) async => tCompany);
 
       // Act
       final result = await sut.execute(
+        entityId: tEntityId,
         name: 'Acme Corp',
         contactType: ContactType.company,
         gstRegistered: true,
+        abn: '51824753556',
       );
 
       // Assert
@@ -61,14 +68,17 @@ void main() {
       // Arrange
       when(
         () => repository.create(
+          entityId: tEntityId,
           name: 'Jane Smith',
           contactType: ContactType.person,
           gstRegistered: false,
+          abn: null,
         ),
       ).thenAnswer((_) async => tPerson);
 
       // Act
       final result = await sut.execute(
+        entityId: tEntityId,
         name: 'Jane Smith',
         contactType: ContactType.person,
         gstRegistered: false,
@@ -76,12 +86,16 @@ void main() {
 
       // Assert
       expect(result.gstRegistered, isFalse);
+      expect(result.abn, isNull);
     });
 
-    test('throws ContactValidationException when person has gstRegistered true', () async {
+    test(
+        'throws ContactValidationException when person has gstRegistered true',
+        () async {
       // Arrange / Act / Assert
       expect(
         () => sut.execute(
+          entityId: tEntityId,
           name: 'Jane Smith',
           contactType: ContactType.person,
           gstRegistered: true,
@@ -90,6 +104,7 @@ void main() {
       );
       verifyNever(
         () => repository.create(
+          entityId: any(named: 'entityId'),
           name: any(named: 'name'),
           contactType: any(named: 'contactType'),
           gstRegistered: any(named: 'gstRegistered'),
@@ -101,9 +116,52 @@ void main() {
       // Arrange / Act / Assert
       expect(
         () => sut.execute(
+          entityId: tEntityId,
           name: '   ',
           contactType: ContactType.company,
           gstRegistered: false,
+          abn: '51824753556',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test('throws ContactValidationException when company ABN is missing',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test('throws ContactValidationException when company ABN is not 11 digits',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '1234567',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test('throws ContactValidationException when person contact has an ABN',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Jane Smith',
+          contactType: ContactType.person,
+          gstRegistered: false,
+          abn: '51824753556',
         ),
         throwsA(isA<ContactValidationException>()),
       );
@@ -113,25 +171,31 @@ void main() {
       // Arrange
       when(
         () => repository.create(
+          entityId: tEntityId,
           name: 'Acme Corp',
           contactType: ContactType.company,
           gstRegistered: false,
+          abn: '51824753556',
         ),
       ).thenAnswer((_) async => tCompany);
 
       // Act
       await sut.execute(
+        entityId: tEntityId,
         name: '  Acme Corp  ',
         contactType: ContactType.company,
         gstRegistered: false,
+        abn: '51824753556',
       );
 
       // Assert
       verify(
         () => repository.create(
+          entityId: tEntityId,
           name: 'Acme Corp',
           contactType: ContactType.company,
           gstRegistered: false,
+          abn: '51824753556',
         ),
       ).called(1);
     });

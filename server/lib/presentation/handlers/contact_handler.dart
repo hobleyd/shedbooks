@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:shelf/shelf.dart';
 
 import '../../application/contact/create_contact_use_case.dart';
@@ -33,7 +34,10 @@ class ContactHandler {
 
   /// GET /contacts
   Future<Response> handleList(Request request) async {
-    final contacts = await _list.execute();
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final contacts = await _list.execute(entityId: entityId);
     final body = jsonEncode(
       contacts.map((c) => ContactResponse.fromEntity(c).toJson()).toList(),
     );
@@ -42,6 +46,9 @@ class ContactHandler {
 
   /// POST /contacts
   Future<Response> handleCreate(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     final Map<String, dynamic> json;
     try {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
@@ -58,9 +65,11 @@ class ContactHandler {
 
     try {
       final contact = await _create.execute(
+        entityId: entityId,
         name: dto.name,
         contactType: dto.contactType,
         gstRegistered: dto.gstRegistered,
+        abn: dto.abn,
       );
       return Response(
         201,
@@ -74,8 +83,11 @@ class ContactHandler {
 
   /// GET /contacts/:id
   Future<Response> handleGet(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     try {
-      final contact = await _get.execute(id);
+      final contact = await _get.execute(id, entityId: entityId);
       return Response.ok(
         ContactResponse.fromEntity(contact).toJsonString(),
         headers: _jsonHeaders,
@@ -87,6 +99,9 @@ class ContactHandler {
 
   /// PUT /contacts/:id
   Future<Response> handleUpdate(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     final Map<String, dynamic> json;
     try {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
@@ -104,9 +119,11 @@ class ContactHandler {
     try {
       final contact = await _update.execute(
         id: id,
+        entityId: entityId,
         name: dto.name,
         contactType: dto.contactType,
         gstRegistered: dto.gstRegistered,
+        abn: dto.abn,
       );
       return Response.ok(
         ContactResponse.fromEntity(contact).toJsonString(),
@@ -121,16 +138,29 @@ class ContactHandler {
 
   /// DELETE /contacts/:id
   Future<Response> handleDelete(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
     try {
-      await _delete.execute(id);
+      await _delete.execute(id, entityId: entityId);
       return Response(204);
     } on ContactNotFoundException catch (e) {
       return _notFound(e.message);
     }
   }
 
+  static String? _entityId(Request request) {
+    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
+    return claims?['https://shedbooks.com/entity_id'] as String?;
+  }
+
+  static Response _orgRequired() => Response.unauthorized(
+        jsonEncode({'error': 'Organization authentication required'}),
+        headers: _jsonHeaders,
+      );
+
   static const Map<String, String> _jsonHeaders = {
-    'content-type': 'application/json',
+    HttpHeaders.contentTypeHeader: 'application/json',
   };
 
   static Response _badRequest(String message) => Response(

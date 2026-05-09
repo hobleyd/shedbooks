@@ -8,13 +8,13 @@ class UpdateGeneralLedgerUseCase {
 
   const UpdateGeneralLedgerUseCase(this._repository);
 
-  /// Validates input then updates the account.
-  /// Throws [GeneralLedgerNotFoundException] when [id] does not exist.
   Future<GeneralLedger> execute({
     required String id,
+    required String entityId,
     required String label,
     required String description,
     required bool gstApplicable,
+    required GlDirection direction,
   }) async {
     if (label.trim().isEmpty) {
       throw const GeneralLedgerValidationException('Label must not be empty');
@@ -25,9 +25,11 @@ class UpdateGeneralLedgerUseCase {
 
     return _repository.update(
       id: id,
+      entityId: entityId,
       label: label.trim(),
       description: description.trim(),
       gstApplicable: gstApplicable,
+      direction: direction,
     );
   }
 }

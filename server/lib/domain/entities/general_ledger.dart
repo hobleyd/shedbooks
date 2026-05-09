@@ -1,3 +1,6 @@
+/// Whether a general ledger account records inflows or outflows.
+enum GlDirection { moneyIn, moneyOut }
+
 /// A general ledger account used to classify financial transactions.
 class GeneralLedger {
   /// Unique identifier (UUID v4).
@@ -11,6 +14,9 @@ class GeneralLedger {
 
   /// Whether GST applies to transactions posted to this account.
   final bool gstApplicable;
+
+  /// Whether this account records money coming in or going out.
+  final GlDirection direction;
 
   /// Timestamp when the record was created.
   final DateTime createdAt;
@@ -26,6 +32,7 @@ class GeneralLedger {
     required this.label,
     required this.description,
     required this.gstApplicable,
+    required this.direction,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -38,6 +45,7 @@ class GeneralLedger {
     String? label,
     String? description,
     bool? gstApplicable,
+    GlDirection? direction,
     DateTime? updatedAt,
     DateTime? deletedAt,
   }) {
@@ -46,6 +54,7 @@ class GeneralLedger {
       label: label ?? this.label,
       description: description ?? this.description,
       gstApplicable: gstApplicable ?? this.gstApplicable,
+      direction: direction ?? this.direction,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,

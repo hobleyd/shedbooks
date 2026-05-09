@@ -15,7 +15,7 @@ A bookkeeping backend built with Dart, served from a Docker container and backed
 - [Database Migrations](#database-migrations)
 - [API Reference](#api-reference)
   - [Authentication](#authentication)
-  - [General Ledger](#general-ledger)
+  - [GeneNral Ledger](#general-ledger)
   - [GST Rates](#gst-rates)
   - [Contacts](#contacts)
   - [Transactions](#transactions)

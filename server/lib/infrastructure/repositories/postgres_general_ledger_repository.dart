@@ -15,23 +15,27 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
 
   @override
   Future<GeneralLedger> create({
+    required String entityId,
     required String label,
     required String description,
     required bool gstApplicable,
+    required GlDirection direction,
   }) async {
     final id = _uuid.v4();
 
     final result = await _pool.execute(
       Sql.named('''
-        INSERT INTO general_ledger (id, label, description, gst_applicable)
-        VALUES (@id::uuid, @label, @description, @gstApplicable)
-        RETURNING id, label, description, gst_applicable, created_at, updated_at, deleted_at
+        INSERT INTO general_ledger (id, entity_id, label, description, gst_applicable, direction)
+        VALUES (@id::uuid, @entityId, @label, @description, @gstApplicable, @direction::gl_direction)
+        RETURNING id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
+        'entityId': entityId,
         'label': label,
         'description': description,
         'gstApplicable': gstApplicable,
+        'direction': _directionToDb(direction),
       },
     );
 
@@ -39,15 +43,16 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
   }
 
   @override
-  Future<GeneralLedger?> findById(String id) async {
+  Future<GeneralLedger?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, label, description, gst_applicable, created_at, updated_at, deleted_at
+        SELECT id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
         FROM general_ledger
         WHERE id = @id::uuid
+          AND entity_id = @entityId
           AND deleted_at IS NULL
       '''),
-      parameters: {'id': id},
+      parameters: {'id': id, 'entityId': entityId},
     );
 
     if (result.isEmpty) return null;
@@ -55,14 +60,16 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
   }
 
   @override
-  Future<List<GeneralLedger>> findAll() async {
+  Future<List<GeneralLedger>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, label, description, gst_applicable, created_at, updated_at, deleted_at
+        SELECT id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
         FROM general_ledger
-        WHERE deleted_at IS NULL
+        WHERE entity_id = @entityId
+          AND deleted_at IS NULL
         ORDER BY label ASC
       '''),
+      parameters: {'entityId': entityId},
     );
 
     return result.map((row) => _mapRow(row.toColumnMap())).toList();
@@ -71,9 +78,11 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
   @override
   Future<GeneralLedger> update({
     required String id,
+    required String entityId,
     required String label,
     required String description,
     required bool gstApplicable,
+    required GlDirection direction,
   }) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -81,16 +90,20 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
         SET label          = @label,
             description    = @description,
             gst_applicable = @gstApplicable,
+            direction      = @direction::gl_direction,
             updated_at     = NOW()
         WHERE id = @id::uuid
+          AND entity_id = @entityId
           AND deleted_at IS NULL
-        RETURNING id, label, description, gst_applicable, created_at, updated_at, deleted_at
+        RETURNING id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
+        'entityId': entityId,
         'label': label,
         'description': description,
         'gstApplicable': gstApplicable,
+        'direction': _directionToDb(direction),
       },
     );
 
@@ -99,16 +112,17 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
   }
 
   @override
-  Future<void> delete(String id) async {
+  Future<void> delete(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         UPDATE general_ledger
         SET deleted_at = NOW(),
             updated_at = NOW()
         WHERE id = @id::uuid
+          AND entity_id = @entityId
           AND deleted_at IS NULL
       '''),
-      parameters: {'id': id},
+      parameters: {'id': id, 'entityId': entityId},
     );
 
     if (result.affectedRows == 0) throw GeneralLedgerNotFoundException(id);
@@ -120,9 +134,21 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
       label: row['label'] as String,
       description: row['description'] as String,
       gstApplicable: row['gst_applicable'] as bool,
+      direction: _directionFromDb(row['direction'] as String),
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,
     );
   }
+
+  static String _directionToDb(GlDirection d) => switch (d) {
+        GlDirection.moneyIn => 'money_in',
+        GlDirection.moneyOut => 'money_out',
+      };
+
+  static GlDirection _directionFromDb(String value) => switch (value) {
+        'money_in' => GlDirection.moneyIn,
+        'money_out' => GlDirection.moneyOut,
+        _ => throw ArgumentError('Unknown gl_direction: $value'),
+      };
 }

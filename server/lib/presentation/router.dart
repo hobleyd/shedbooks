@@ -4,15 +4,29 @@ import 'package:shelf_router/shelf_router.dart';
 import '../infrastructure/auth/auth0_middleware.dart';
 import '../infrastructure/auth/jwks_client.dart';
 import '../infrastructure/database/database_connection.dart';
+import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
+import '../infrastructure/repositories/postgres_dashboard_preference_repository.dart';
+import '../infrastructure/repositories/postgres_bank_account_repository.dart';
+import '../infrastructure/repositories/postgres_entity_details_repository.dart';
 import '../infrastructure/repositories/postgres_gst_rate_repository.dart';
 import '../infrastructure/repositories/postgres_transaction_repository.dart';
 import '../application/contact/create_contact_use_case.dart';
 import '../application/contact/delete_contact_use_case.dart';
 import '../application/contact/get_contact_use_case.dart';
 import '../application/contact/list_contacts_use_case.dart';
+import '../application/contact/lookup_abn_use_case.dart';
 import '../application/contact/update_contact_use_case.dart';
+import '../application/dashboard/get_dashboard_preference_use_case.dart';
+import '../application/dashboard/save_dashboard_preference_use_case.dart';
+import '../application/bank_account/create_bank_account_use_case.dart';
+import '../application/bank_account/delete_bank_account_use_case.dart';
+import '../application/bank_account/get_bank_account_use_case.dart';
+import '../application/bank_account/list_bank_accounts_use_case.dart';
+import '../application/bank_account/update_bank_account_use_case.dart';
+import '../application/entity/get_entity_details_use_case.dart';
+import '../application/entity/save_entity_details_use_case.dart';
 import '../application/general_ledger/create_general_ledger_use_case.dart';
 import '../application/general_ledger/delete_general_ledger_use_case.dart';
 import '../application/general_ledger/get_general_ledger_use_case.dart';
@@ -29,7 +43,11 @@ import '../application/transaction/delete_transaction_use_case.dart';
 import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
+import 'handlers/abn_lookup_handler.dart';
 import 'handlers/contact_handler.dart';
+import 'handlers/dashboard_preference_handler.dart';
+import 'handlers/bank_account_handler.dart';
+import 'handlers/entity_details_handler.dart';
 import 'handlers/transaction_handler.dart';
 import 'handlers/general_ledger_handler.dart';
 import 'handlers/gst_rate_handler.dart';
@@ -41,6 +59,7 @@ Handler buildRouter({
   required String auth0Domain,
   required String audience,
   required String corsOrigin,
+  String abrGuid = '',
 }) {
   final jwksClient = JwksClient(auth0Domain);
   final pool = DatabaseConnection.pool;
@@ -60,6 +79,9 @@ Handler buildRouter({
     list: ListContactsUseCase(contactRepository),
     update: UpdateContactUseCase(contactRepository),
     delete: DeleteContactUseCase(contactRepository),
+  );
+  final abnLookupHandler = AbnLookupHandler(
+    lookup: LookupAbnUseCase(AbnLookupService(authGuid: abrGuid)),
   );
 
   final transactionRepository = PostgresTransactionRepository(pool);
@@ -81,6 +103,28 @@ Handler buildRouter({
     getEffective: GetEffectiveGstRateUseCase(gstRateRepository),
   );
 
+  final bankAccountRepository = PostgresBankAccountRepository(pool);
+  final bankAccountHandler = BankAccountHandler(
+    create: CreateBankAccountUseCase(bankAccountRepository),
+    get: GetBankAccountUseCase(bankAccountRepository),
+    list: ListBankAccountsUseCase(bankAccountRepository),
+    update: UpdateBankAccountUseCase(bankAccountRepository),
+    delete: DeleteBankAccountUseCase(bankAccountRepository),
+  );
+
+  final entityDetailsRepository = PostgresEntityDetailsRepository(pool);
+  final entityDetailsHandler = EntityDetailsHandler(
+    get: GetEntityDetailsUseCase(entityDetailsRepository),
+    save: SaveEntityDetailsUseCase(entityDetailsRepository),
+  );
+
+  final dashboardPreferenceRepository =
+      PostgresDashboardPreferenceRepository(pool);
+  final dashboardPreferenceHandler = DashboardPreferenceHandler(
+    get: GetDashboardPreferenceUseCase(dashboardPreferenceRepository),
+    save: SaveDashboardPreferenceUseCase(dashboardPreferenceRepository),
+  );
+
   final authMiddleware = auth0Middleware(
     auth0Domain: auth0Domain,
     audience: audience,
@@ -89,6 +133,12 @@ Handler buildRouter({
 
   final router = Router()
     ..get('/health', (Request _) => Response.ok('ok'))
+    ..mount(
+      '/abn-lookup',
+      Pipeline()
+          .addMiddleware(authMiddleware)
+          .addHandler((req) => abnLookupHandler.handle(req)),
+    )
     ..mount(
       '/general-ledger',
       Pipeline()
@@ -112,6 +162,24 @@ Handler buildRouter({
       Pipeline()
           .addMiddleware(authMiddleware)
           .addHandler(_transactionRouter(transactionHandler)),
+    )
+    ..mount(
+      '/dashboard-preferences',
+      Pipeline()
+          .addMiddleware(authMiddleware)
+          .addHandler(_dashboardPreferenceRouter(dashboardPreferenceHandler)),
+    )
+    ..mount(
+      '/bank-accounts',
+      Pipeline()
+          .addMiddleware(authMiddleware)
+          .addHandler(_bankAccountRouter(bankAccountHandler)),
+    )
+    ..mount(
+      '/entity-details',
+      Pipeline()
+          .addMiddleware(authMiddleware)
+          .addHandler(_entityDetailsRouter(entityDetailsHandler)),
     );
 
   return Pipeline()
@@ -146,6 +214,27 @@ Router _contactRouter(ContactHandler h) {
     ..get('/<id>', h.handleGet)
     ..put('/<id>', h.handleUpdate)
     ..delete('/<id>', h.handleDelete);
+}
+
+Router _bankAccountRouter(BankAccountHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..post('/', h.handleCreate)
+    ..get('/<id>', h.handleGet)
+    ..put('/<id>', h.handleUpdate)
+    ..delete('/<id>', h.handleDelete);
+}
+
+Router _entityDetailsRouter(EntityDetailsHandler h) {
+  return Router()
+    ..get('/', h.handleGet)
+    ..put('/', h.handleSave);
+}
+
+Router _dashboardPreferenceRouter(DashboardPreferenceHandler h) {
+  return Router()
+    ..get('/', h.handleGet)
+    ..put('/', h.handleSave);
 }
 
 Router _gstRateRouter(GstRateHandler h) {

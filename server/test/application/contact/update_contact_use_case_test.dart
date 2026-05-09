@@ -18,6 +18,7 @@ void main() {
     name: 'Acme Pty Ltd',
     contactType: ContactType.company,
     gstRegistered: true,
+    abn: '51824753556',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 2, 1),
   );
@@ -34,22 +35,55 @@ void main() {
       when(
         () => repository.update(
           id: tId,
+          entityId: any(named: 'entityId'),
           name: 'Acme Pty Ltd',
           contactType: ContactType.company,
           gstRegistered: true,
+          abn: '51824753556',
         ),
       ).thenAnswer((_) async => tUpdated);
 
       // Act
       final result = await sut.execute(
         id: tId,
+        entityId: 'entity-1',
         name: 'Acme Pty Ltd',
         contactType: ContactType.company,
         gstRegistered: true,
+        abn: '51824753556',
       );
 
       // Assert
       expect(result, equals(tUpdated));
+    });
+
+    test('throws ContactValidationException when company ABN is missing',
+        () async {
+      expect(
+        () => sut.execute(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: false,
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test('throws ContactValidationException when company ABN is not 11 digits',
+        () async {
+      expect(
+        () => sut.execute(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '123456',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
     });
 
     test('throws ContactValidationException when changing person to gstRegistered true',
@@ -58,6 +92,7 @@ void main() {
       expect(
         () => sut.execute(
           id: tId,
+          entityId: 'entity-1',
           name: 'Jane Smith',
           contactType: ContactType.person,
           gstRegistered: true,
@@ -67,9 +102,11 @@ void main() {
       verifyNever(
         () => repository.update(
           id: any(named: 'id'),
+          entityId: any(named: 'entityId'),
           name: any(named: 'name'),
           contactType: any(named: 'contactType'),
           gstRegistered: any(named: 'gstRegistered'),
+          abn: any(named: 'abn'),
         ),
       );
     });
@@ -79,9 +116,11 @@ void main() {
       expect(
         () => sut.execute(
           id: tId,
+          entityId: 'entity-1',
           name: '',
           contactType: ContactType.company,
           gstRegistered: false,
+          abn: '51824753556',
         ),
         throwsA(isA<ContactValidationException>()),
       );
@@ -92,9 +131,11 @@ void main() {
       when(
         () => repository.update(
           id: tId,
+          entityId: any(named: 'entityId'),
           name: any(named: 'name'),
           contactType: any(named: 'contactType'),
           gstRegistered: any(named: 'gstRegistered'),
+          abn: any(named: 'abn'),
         ),
       ).thenThrow(ContactNotFoundException(tId));
 
@@ -102,9 +143,11 @@ void main() {
       expect(
         () => sut.execute(
           id: tId,
+          entityId: 'entity-1',
           name: 'Valid Name',
           contactType: ContactType.company,
           gstRegistered: false,
+          abn: '51824753556',
         ),
         throwsA(isA<ContactNotFoundException>()),
       );

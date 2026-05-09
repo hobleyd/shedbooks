@@ -11,6 +11,7 @@ void main() {
   late MockTransactionRepository repository;
   late ListTransactionsUseCase sut;
 
+  const tEntityId = 'entity-1';
   final tTransactions = [
     Transaction(
       id: '00000000-0000-0000-0000-000000000001',
@@ -46,22 +47,40 @@ void main() {
   group('ListTransactionsUseCase', () {
     test('returns all active transactions from repository', () async {
       // Arrange
-      when(() => repository.findAll()).thenAnswer((_) async => tTransactions);
+      when(
+        () => repository.findAll(entityId: tEntityId),
+      ).thenAnswer((_) async => tTransactions);
 
       // Act
-      final result = await sut.execute();
+      final result = await sut.execute(entityId: tEntityId);
 
       // Assert
       expect(result, equals(tTransactions));
-      verify(() => repository.findAll()).called(1);
+      verify(() => repository.findAll(entityId: tEntityId)).called(1);
+    });
+
+    test('each transaction exposes correct totalAmount', () async {
+      // Arrange
+      when(
+        () => repository.findAll(entityId: tEntityId),
+      ).thenAnswer((_) async => tTransactions);
+
+      // Act
+      final result = await sut.execute(entityId: tEntityId);
+
+      // Assert
+      expect(result[0].totalAmount, equals(12000));
+      expect(result[1].totalAmount, equals(6000));
     });
 
     test('returns empty list when no transactions exist', () async {
       // Arrange
-      when(() => repository.findAll()).thenAnswer((_) async => []);
+      when(
+        () => repository.findAll(entityId: tEntityId),
+      ).thenAnswer((_) async => []);
 
       // Act
-      final result = await sut.execute();
+      final result = await sut.execute(entityId: tEntityId);
 
       // Assert
       expect(result, isEmpty);

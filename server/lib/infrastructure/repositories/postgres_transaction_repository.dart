@@ -15,12 +15,14 @@ class PostgresTransactionRepository implements ITransactionRepository {
 
   @override
   Future<Transaction> create({
+    required String entityId,
     required String contactId,
     required String generalLedgerId,
     required int amount,
     required int gstAmount,
     required TransactionType transactionType,
     required String receiptNumber,
+    required String description,
     required DateTime transactionDate,
   }) async {
     try {
@@ -28,27 +30,29 @@ class PostgresTransactionRepository implements ITransactionRepository {
       final result = await _pool.execute(
         Sql.named('''
           INSERT INTO transactions (
-            id, contact_id, general_ledger_id, amount, gst_amount,
-            transaction_type, receipt_number, transaction_date
+            id, entity_id, contact_id, general_ledger_id, amount, gst_amount,
+            transaction_type, receipt_number, description, transaction_date
           )
           VALUES (
-            @id::uuid, @contactId::uuid, @generalLedgerId::uuid,
+            @id::uuid, @entityId, @contactId::uuid, @generalLedgerId::uuid,
             @amount, @gstAmount, @transactionType::transaction_type,
-            @receiptNumber, @transactionDate::date
+            @receiptNumber, @description, @transactionDate::date
           )
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
-            transaction_type, receipt_number, transaction_date,
+            transaction_type::text, receipt_number, description, transaction_date,
             created_at, updated_at, deleted_at
         '''),
         parameters: {
           'id': id,
+          'entityId': entityId,
           'contactId': contactId,
           'generalLedgerId': generalLedgerId,
           'amount': amount,
           'gstAmount': gstAmount,
           'transactionType': transactionType.name,
           'receiptNumber': receiptNumber,
+          'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
         },
       );
@@ -60,18 +64,19 @@ class PostgresTransactionRepository implements ITransactionRepository {
   }
 
   @override
-  Future<Transaction?> findById(String id) async {
+  Future<Transaction?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
-          transaction_type, receipt_number, transaction_date,
+          transaction_type::text, receipt_number, description, transaction_date,
           created_at, updated_at, deleted_at
         FROM transactions
         WHERE id = @id::uuid
+          AND entity_id = @entityId
           AND deleted_at IS NULL
       '''),
-      parameters: {'id': id},
+      parameters: {'id': id, 'entityId': entityId},
     );
 
     if (result.isEmpty) return null;
@@ -79,17 +84,19 @@ class PostgresTransactionRepository implements ITransactionRepository {
   }
 
   @override
-  Future<List<Transaction>> findAll() async {
+  Future<List<Transaction>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
-          transaction_type, receipt_number, transaction_date,
+          transaction_type::text, receipt_number, description, transaction_date,
           created_at, updated_at, deleted_at
         FROM transactions
-        WHERE deleted_at IS NULL
+        WHERE entity_id = @entityId
+          AND deleted_at IS NULL
         ORDER BY transaction_date DESC, created_at DESC
       '''),
+      parameters: {'entityId': entityId},
     );
 
     return result.map((row) => _mapRow(row.toColumnMap())).toList();
@@ -98,12 +105,14 @@ class PostgresTransactionRepository implements ITransactionRepository {
   @override
   Future<Transaction> update({
     required String id,
+    required String entityId,
     required String contactId,
     required String generalLedgerId,
     required int amount,
     required int gstAmount,
     required TransactionType transactionType,
     required String receiptNumber,
+    required String description,
     required DateTime transactionDate,
   }) async {
     try {
@@ -116,23 +125,27 @@ class PostgresTransactionRepository implements ITransactionRepository {
               gst_amount        = @gstAmount,
               transaction_type  = @transactionType::transaction_type,
               receipt_number    = @receiptNumber,
+              description       = @description,
               transaction_date  = @transactionDate::date,
               updated_at        = NOW()
           WHERE id = @id::uuid
+            AND entity_id = @entityId
             AND deleted_at IS NULL
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
-            transaction_type, receipt_number, transaction_date,
+            transaction_type::text, receipt_number, description, transaction_date,
             created_at, updated_at, deleted_at
         '''),
         parameters: {
           'id': id,
+          'entityId': entityId,
           'contactId': contactId,
           'generalLedgerId': generalLedgerId,
           'amount': amount,
           'gstAmount': gstAmount,
           'transactionType': transactionType.name,
           'receiptNumber': receiptNumber,
+          'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
         },
       );
@@ -146,22 +159,22 @@ class PostgresTransactionRepository implements ITransactionRepository {
   }
 
   @override
-  Future<void> delete(String id) async {
+  Future<void> delete(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
         UPDATE transactions
         SET deleted_at = NOW(),
             updated_at = NOW()
         WHERE id = @id::uuid
+          AND entity_id = @entityId
           AND deleted_at IS NULL
       '''),
-      parameters: {'id': id},
+      parameters: {'id': id, 'entityId': entityId},
     );
 
     if (result.affectedRows == 0) throw TransactionNotFoundException(id);
   }
 
-  // FK violation code = 23503; constraint names map to a user-friendly message.
   static void _rethrowIfFkViolation(ServerException e) {
     if (e.code != '23503') return;
     switch (e.constraintName) {
@@ -193,6 +206,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         row['transaction_type'] as String,
       ),
       receiptNumber: row['receipt_number'] as String,
+      description: row['description'] as String,
       transactionDate: DateTime.utc(
         transactionDate.year,
         transactionDate.month,

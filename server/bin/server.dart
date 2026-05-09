@@ -19,11 +19,13 @@ void main() async {
   final audience = _require('AUTH0_AUDIENCE');
   final corsOrigin = Platform.environment['CORS_ORIGIN'] ?? '*';
   final port = int.parse(Platform.environment['PORT'] ?? '8080');
+  final abrGuid = Platform.environment['ABR_GUID'] ?? '';
 
   final handler = buildRouter(
     auth0Domain: auth0Domain,
     audience: audience,
     corsOrigin: corsOrigin,
+    abrGuid: abrGuid,
   );
 
   final server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);

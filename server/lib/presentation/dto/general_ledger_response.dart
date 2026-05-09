@@ -7,6 +7,7 @@ class GeneralLedgerResponse {
   final String label;
   final String description;
   final bool gstApplicable;
+  final String direction;
   final String createdAt;
   final String updatedAt;
 
@@ -15,6 +16,7 @@ class GeneralLedgerResponse {
     required this.label,
     required this.description,
     required this.gstApplicable,
+    required this.direction,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -25,6 +27,7 @@ class GeneralLedgerResponse {
       label: entity.label,
       description: entity.description,
       gstApplicable: entity.gstApplicable,
+      direction: entity.direction == GlDirection.moneyIn ? 'moneyIn' : 'moneyOut',
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
     );
@@ -35,6 +38,7 @@ class GeneralLedgerResponse {
         'label': label,
         'description': description,
         'gstApplicable': gstApplicable,
+        'direction': direction,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };

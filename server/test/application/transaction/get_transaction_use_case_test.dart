@@ -13,6 +13,7 @@ void main() {
   late GetTransactionUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tTransaction = Transaction(
     id: tId,
     contactId: '00000000-0000-0000-0000-000000000002',
@@ -34,22 +35,27 @@ void main() {
   group('GetTransactionUseCase', () {
     test('returns the transaction when found', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => tTransaction);
+      when(
+        () => repository.findById(tId, entityId: tEntityId),
+      ).thenAnswer((_) async => tTransaction);
 
       // Act
-      final result = await sut.execute(tId);
+      final result = await sut.execute(tId, entityId: tEntityId);
 
       // Assert
       expect(result, equals(tTransaction));
+      expect(result.totalAmount, equals(6000));
     });
 
     test('throws TransactionNotFoundException when transaction does not exist', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => null);
+      when(
+        () => repository.findById(tId, entityId: tEntityId),
+      ).thenAnswer((_) async => null);
 
       // Act / Assert
       expect(
-        () => sut.execute(tId),
+        () => sut.execute(tId, entityId: tEntityId),
         throwsA(isA<TransactionNotFoundException>()),
       );
     });

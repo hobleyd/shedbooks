@@ -8,11 +8,9 @@ class GetEffectiveGstRateUseCase {
 
   const GetEffectiveGstRateUseCase(this._repository);
 
-  /// Returns the applicable rate at [date] (defaults to now).
-  /// Throws [GstRateNotEffectiveException] when no rate covers that date.
-  Future<GstRate> execute([DateTime? date]) async {
+  Future<GstRate> execute({required String entityId, DateTime? date}) async {
     final target = date ?? DateTime.now().toUtc();
-    final rate = await _repository.findEffectiveAt(target);
+    final rate = await _repository.findEffectiveAt(target, entityId: entityId);
     if (rate == null) throw GstRateNotEffectiveException(target);
     return rate;
   }

@@ -7,10 +7,9 @@ class DeleteTransactionUseCase {
 
   const DeleteTransactionUseCase(this._repository);
 
-  /// Throws [TransactionNotFoundException] when [id] does not exist.
-  Future<void> execute(String id) async {
-    final existing = await _repository.findById(id);
+  Future<void> execute(String id, {required String entityId}) async {
+    final existing = await _repository.findById(id, entityId: entityId);
     if (existing == null) throw TransactionNotFoundException(id);
-    await _repository.delete(id);
+    await _repository.delete(id, entityId: entityId);
   }
 }

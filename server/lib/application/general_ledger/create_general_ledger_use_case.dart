@@ -8,11 +8,12 @@ class CreateGeneralLedgerUseCase {
 
   const CreateGeneralLedgerUseCase(this._repository);
 
-  /// Validates [label] and [description] are non-empty then persists the account.
   Future<GeneralLedger> execute({
+    required String entityId,
     required String label,
     required String description,
     required bool gstApplicable,
+    required GlDirection direction,
   }) async {
     if (label.trim().isEmpty) {
       throw const GeneralLedgerValidationException('Label must not be empty');
@@ -22,9 +23,11 @@ class CreateGeneralLedgerUseCase {
     }
 
     return _repository.create(
+      entityId: entityId,
       label: label.trim(),
       description: description.trim(),
       gstApplicable: gstApplicable,
+      direction: direction,
     );
   }
 }

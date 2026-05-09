@@ -13,6 +13,7 @@ void main() {
   late DeleteTransactionUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tTransaction = Transaction(
     id: tId,
     contactId: '00000000-0000-0000-0000-000000000002',
@@ -34,26 +35,32 @@ void main() {
   group('DeleteTransactionUseCase', () {
     test('calls repository delete when transaction exists', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => tTransaction);
-      when(() => repository.delete(tId)).thenAnswer((_) async {});
+      when(
+        () => repository.findById(tId, entityId: tEntityId),
+      ).thenAnswer((_) async => tTransaction);
+      when(
+        () => repository.delete(tId, entityId: tEntityId),
+      ).thenAnswer((_) async {});
 
       // Act
-      await sut.execute(tId);
+      await sut.execute(tId, entityId: tEntityId);
 
       // Assert
-      verify(() => repository.delete(tId)).called(1);
+      verify(() => repository.delete(tId, entityId: tEntityId)).called(1);
     });
 
     test('throws TransactionNotFoundException when transaction does not exist', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => null);
+      when(
+        () => repository.findById(tId, entityId: tEntityId),
+      ).thenAnswer((_) async => null);
 
       // Act / Assert
       expect(
-        () => sut.execute(tId),
+        () => sut.execute(tId, entityId: tEntityId),
         throwsA(isA<TransactionNotFoundException>()),
       );
-      verifyNever(() => repository.delete(any()));
+      verifyNever(() => repository.delete(any(), entityId: any(named: 'entityId')));
     });
   });
 }

@@ -42,8 +42,21 @@ Middleware auth0Middleware({
           token,
           publicKey,
           issuer: 'https://$auth0Domain/',
-          audience: Audience.one(audience),
         );
+
+        // dart_jsonwebtoken does strict list equality for audience, but Auth0
+        // access tokens carry multiple audiences (API + /userinfo). Check
+        // manually that our audience is present in the aud claim.
+        final payload = jwt.payload as Map<String, dynamic>?;
+        final rawAud = payload?['aud'];
+        final audList = rawAud is List
+            ? rawAud.cast<String>()
+            : rawAud is String
+                ? [rawAud]
+                : <String>[];
+        if (!audList.contains(audience)) {
+          return _unauthorised('Invalid token: invalid audience');
+        }
 
         final updatedRequest = request.change(
           context: {'auth.claims': jwt.payload},
