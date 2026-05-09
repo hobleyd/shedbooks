@@ -501,11 +501,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         const SizedBox(height: 16),
         const Divider(),
         Expanded(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: _buildMonthSection(),
-            ),
+          child: DefaultTabController(
+            length: 2,
+            child: _buildMonthSection(),
           ),
         ),
       ],
@@ -516,20 +514,45 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
   Widget _buildMonthSection() {
     final txns = _viewMonthTransactions;
+    final moneyIn = txns.where((t) => t.isCredit).toList();
+    final moneyOut = txns.where((t) => !t.isCredit).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildMonthNav(),
+        Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: _buildMonthNav(),
+        ),
         const SizedBox(height: 12),
-        if (txns.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Text('No transactions for this month.',
-                style: TextStyle(color: Colors.black54)),
-          )
-        else
-          _buildTransactionList(txns),
+        const TabBar(
+          tabs: [
+            Tab(text: 'Money In'),
+            Tab(text: 'Money Out'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: TabBarView(
+            children: [
+              _buildTransactionTab(moneyIn),
+              _buildTransactionTab(moneyOut),
+            ],
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildTransactionTab(List<TransactionEntry> txns) {
+    if (txns.isEmpty) {
+      return const Center(
+        child: Text('No transactions for this month.',
+            style: TextStyle(color: Colors.black54)),
+      );
+    }
+    return SingleChildScrollView(
+      child: _buildTransactionList(txns),
     );
   }
 
