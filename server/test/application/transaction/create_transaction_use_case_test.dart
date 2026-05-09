@@ -22,6 +22,7 @@ void main() {
     gstAmount: 1000,
     transactionType: TransactionType.debit,
     receiptNumber: 'REC-001',
+    description: '',
     transactionDate: tDate,
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
@@ -46,6 +47,7 @@ void main() {
           gstAmount: 1000,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
       ).thenAnswer((_) async => tTransaction);
@@ -59,6 +61,7 @@ void main() {
         gstAmount: 1000,
         transactionType: TransactionType.debit,
         receiptNumber: 'REC-001',
+        description: '',
         transactionDate: tDate,
       );
 
@@ -78,6 +81,7 @@ void main() {
           gstAmount: any(named: 'gstAmount'),
           transactionType: any(named: 'transactionType'),
           receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
         ),
       ).thenAnswer((_) async => tTransaction);
@@ -91,6 +95,7 @@ void main() {
         gstAmount: 1000,
         transactionType: TransactionType.debit,
         receiptNumber: 'REC-001',
+        description: '',
         transactionDate: tDate,
       );
 
@@ -109,6 +114,7 @@ void main() {
           gstAmount: any(named: 'gstAmount'),
           transactionType: any(named: 'transactionType'),
           receiptNumber: 'REC-001',
+          description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
         ),
       ).thenAnswer((_) async => tTransaction);
@@ -122,6 +128,7 @@ void main() {
         gstAmount: 1000,
         transactionType: TransactionType.debit,
         receiptNumber: '  REC-001  ',
+        description: '',
         transactionDate: tDate,
       );
 
@@ -135,6 +142,7 @@ void main() {
           gstAmount: any(named: 'gstAmount'),
           transactionType: any(named: 'transactionType'),
           receiptNumber: 'REC-001',
+          description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
         ),
       ).called(1);
@@ -150,6 +158,7 @@ void main() {
           gstAmount: 0,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionValidationException>()),
@@ -166,6 +175,7 @@ void main() {
           gstAmount: 0,
           transactionType: TransactionType.credit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionValidationException>()),
@@ -182,6 +192,7 @@ void main() {
           gstAmount: -1,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionValidationException>()),
@@ -198,6 +209,7 @@ void main() {
           gstAmount: 1001,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionValidationException>()),
@@ -214,6 +226,7 @@ void main() {
           gstAmount: 0,
           transactionType: TransactionType.credit,
           receiptNumber: '   ',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionValidationException>()),
@@ -231,6 +244,7 @@ void main() {
           gstAmount: any(named: 'gstAmount'),
           transactionType: any(named: 'transactionType'),
           receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
         ),
       ).thenAnswer((_) async => tTransaction);
@@ -245,6 +259,7 @@ void main() {
           gstAmount: 1000,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         completes,

@@ -1,5 +1,4 @@
 import '../../domain/entities/transaction.dart';
-import '../../domain/exceptions/transaction_exception.dart';
 import '../../domain/repositories/i_transaction_repository.dart';
 import '_transaction_validator.dart';
 

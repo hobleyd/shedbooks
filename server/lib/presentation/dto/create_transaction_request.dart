@@ -64,7 +64,7 @@ class CreateTransactionRequest {
       gstAmount: gstAmount,
       transactionType: transactionType,
       receiptNumber: receiptNumber,
-      description: description as String,
+      description: description,
       transactionDate: transactionDate,
     );
   }

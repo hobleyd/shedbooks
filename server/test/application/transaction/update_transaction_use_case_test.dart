@@ -23,6 +23,7 @@ void main() {
     gstAmount: 2000,
     transactionType: TransactionType.debit,
     receiptNumber: 'REC-099',
+    description: '',
     transactionDate: tDate,
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 5, 1),
@@ -48,6 +49,7 @@ void main() {
           gstAmount: 2000,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-099',
+          description: '',
           transactionDate: tDate,
         ),
       ).thenAnswer((_) async => tUpdated);
@@ -62,6 +64,7 @@ void main() {
         gstAmount: 2000,
         transactionType: TransactionType.debit,
         receiptNumber: 'REC-099',
+        description: '',
         transactionDate: tDate,
       );
 
@@ -81,6 +84,7 @@ void main() {
           gstAmount: 0,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionValidationException>()),
@@ -98,6 +102,7 @@ void main() {
           gstAmount: 501,
           transactionType: TransactionType.credit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionValidationException>()),
@@ -116,6 +121,7 @@ void main() {
           gstAmount: any(named: 'gstAmount'),
           transactionType: any(named: 'transactionType'),
           receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
         ),
       ).thenThrow(TransactionNotFoundException(tId));
@@ -131,6 +137,7 @@ void main() {
           gstAmount: 0,
           transactionType: TransactionType.debit,
           receiptNumber: 'REC-001',
+          description: '',
           transactionDate: tDate,
         ),
         throwsA(isA<TransactionNotFoundException>()),

@@ -22,6 +22,7 @@ void main() {
     gstAmount: 500,
     transactionType: TransactionType.credit,
     receiptNumber: 'REC-002',
+    description: '',
     transactionDate: DateTime.utc(2026, 3, 15),
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
