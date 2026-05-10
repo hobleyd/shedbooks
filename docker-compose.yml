@@ -45,8 +45,6 @@ services:
       DB_NAME: shedbooks
       DB_USER: shedbooks
       DB_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5438:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -62,7 +60,7 @@ services:
         AUTH0_DOMAIN: ${AUTH0_DOMAIN}
         AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
         AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
-        API_URL: ${API_URL:-http://localhost:5438}
+        API_URL: ${API_URL:-/api}
     ports:
       - "80:80"
       - "443:443"
