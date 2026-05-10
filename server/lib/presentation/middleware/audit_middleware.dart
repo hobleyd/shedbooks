@@ -92,9 +92,17 @@ Future<void> _record(
 }
 
 String _extractIp(Request request) {
+  // Cloudflare sets this to the real client IP before any XFF manipulation.
+  final cf = request.headers['cf-connecting-ip'];
+  if (cf != null && cf.isNotEmpty) return cf.trim();
+  // X-Real-IP is set by nginx after the real_ip module has resolved the
+  // genuine client address from the XFF chain.
+  final realIp = request.headers['x-real-ip'];
+  if (realIp != null && realIp.isNotEmpty) return realIp.trim();
+  // Last resort: first entry in X-Forwarded-For.
   final xff = request.headers['x-forwarded-for'];
   if (xff != null && xff.isNotEmpty) return xff.split(',').first.trim();
-  return request.headers['x-real-ip'] ?? '';
+  return '';
 }
 
 String _action(String method, String path) {
