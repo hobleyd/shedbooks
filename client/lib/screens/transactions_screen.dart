@@ -37,6 +37,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   bool _saveNewContact = false;
   int _contactResetKey = 0;
   GeneralLedgerEntry? _selectedGl;
+  GlDirection? _selectedDirection;
   DateTime _date = DateTime.now();
 
   final _amountController = TextEditingController();
@@ -277,6 +278,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   void _onGlChanged(GeneralLedgerEntry? gl) {
     setState(() {
       _selectedGl = gl;
+      _selectedDirection = gl?.direction;
       _amountController.clear();
       _gstController.text = (gl?.gstApplicable ?? false) ? '' : '0.00';
       _totalController.clear();
@@ -284,6 +286,21 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       _receiptOtherController.clear();
       _receiptOutController.text =
           gl?.direction == GlDirection.moneyOut ? _formatMoneyOutReceipt() : '';
+    });
+  }
+
+  void _onDirectionChanged(GlDirection? dir) {
+    setState(() {
+      _selectedDirection = dir;
+      if (_selectedGl != null && _selectedGl!.direction != dir) {
+        _selectedGl = null;
+        _amountController.clear();
+        _gstController.clear();
+        _totalController.clear();
+        _receiptType = 'bankTransfer';
+        _receiptOtherController.clear();
+        _receiptOutController.clear();
+      }
     });
   }
 
@@ -458,6 +475,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       _saveNewContact = false;
       _contactResetKey++;
       _selectedGl = null;
+      _selectedDirection = null;
       _date = DateTime.now();
       _amountController.clear();
       _gstController.clear();
@@ -1300,56 +1318,105 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Widget _buildGlField() {
-    return InputDecorator(
-      decoration: const InputDecoration(
-        labelText: 'General Ledger Account',
-        border: OutlineInputBorder(),
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      ),
-      child: DropdownButton<GeneralLedgerEntry>(
-        value: _selectedGl,
-        isExpanded: true,
-        isDense: true,
-        underline: const SizedBox.shrink(),
-        items: _glEntries.map((gl) {
-          final isIn = gl.direction == GlDirection.moneyIn;
-          return DropdownMenuItem(
-            value: gl,
-            child: Row(
-              children: [
-                Icon(
-                  isIn
-                      ? Icons.arrow_circle_down_outlined
-                      : Icons.arrow_circle_up_outlined,
-                  size: 16,
-                  color: isIn ? Colors.green.shade700 : Colors.red.shade700,
+    const decoration = InputDecoration(
+      border: OutlineInputBorder(),
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    );
+
+    final filteredGls = _selectedDirection == null
+        ? _glEntries
+        : _glEntries.where((g) => g.direction == _selectedDirection).toList();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 150,
+          child: InputDecorator(
+            decoration: decoration.copyWith(labelText: 'Direction'),
+            child: DropdownButton<GlDirection>(
+              value: _selectedDirection,
+              isExpanded: true,
+              isDense: true,
+              underline: const SizedBox.shrink(),
+              hint: const Text('All', style: TextStyle(fontSize: 13)),
+              items: [
+                DropdownMenuItem(
+                  value: GlDirection.moneyIn,
+                  child: Row(children: [
+                    Icon(Icons.arrow_circle_down_outlined,
+                        size: 15, color: Colors.green.shade700),
+                    const SizedBox(width: 6),
+                    const Text('Money-In', style: TextStyle(fontSize: 13)),
+                  ]),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: Text(gl.description,
-                        overflow: TextOverflow.ellipsis)),
-                if (gl.gstApplicable) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(3),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: Text('GST',
-                        style: TextStyle(
-                            fontSize: 10, color: Colors.blue.shade700)),
-                  ),
-                ],
+                DropdownMenuItem(
+                  value: GlDirection.moneyOut,
+                  child: Row(children: [
+                    Icon(Icons.arrow_circle_up_outlined,
+                        size: 15, color: Colors.red.shade700),
+                    const SizedBox(width: 6),
+                    const Text('Money-Out', style: TextStyle(fontSize: 13)),
+                  ]),
+                ),
               ],
+              onChanged: _saving ? null : _onDirectionChanged,
             ),
-          );
-        }).toList(),
-        onChanged: _saving ? null : _onGlChanged,
-      ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: InputDecorator(
+            decoration: decoration.copyWith(labelText: 'General Ledger Account'),
+            child: DropdownButton<GeneralLedgerEntry>(
+              value: _selectedGl,
+              isExpanded: true,
+              isDense: true,
+              underline: const SizedBox.shrink(),
+              items: filteredGls.map((gl) {
+                final glIsIn = gl.direction == GlDirection.moneyIn;
+                return DropdownMenuItem(
+                  value: gl,
+                  child: Row(
+                    children: [
+                      Icon(
+                        glIsIn
+                            ? Icons.arrow_circle_down_outlined
+                            : Icons.arrow_circle_up_outlined,
+                        size: 16,
+                        color: glIsIn
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Text(gl.description,
+                              overflow: TextOverflow.ellipsis)),
+                      if (gl.gstApplicable) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(3),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Text('GST',
+                              style: TextStyle(
+                                  fontSize: 10, color: Colors.blue.shade700)),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: _saving ? null : _onGlChanged,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1376,6 +1443,20 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Expanded(
+          child: TextFormField(
+            controller: _totalController,
+            enabled: !_saving && _selectedGl != null,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+            ],
+            onChanged: _handleTotalChanged,
+            decoration: decoration.copyWith(labelText: 'Total Amount'),
+          ),
+        ),
+        const SizedBox(width: 8),
         Expanded(
           child: TextFormField(
             controller: _amountController,
@@ -1405,20 +1486,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               fillColor: _gstApplicable ? null : Colors.grey.shade100,
               filled: !_gstApplicable,
             ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: TextFormField(
-            controller: _totalController,
-            enabled: !_saving && _selectedGl != null,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-            ],
-            onChanged: _handleTotalChanged,
-            decoration: decoration.copyWith(labelText: 'Total Amount'),
           ),
         ),
       ],
