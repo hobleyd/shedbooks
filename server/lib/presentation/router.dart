@@ -17,6 +17,7 @@ import '../application/contact/delete_contact_use_case.dart';
 import '../application/contact/get_contact_use_case.dart';
 import '../application/contact/list_contacts_use_case.dart';
 import '../application/contact/lookup_abn_use_case.dart';
+import '../application/contact/merge_contacts_use_case.dart';
 import '../application/contact/update_contact_use_case.dart';
 import '../application/dashboard/get_dashboard_preference_use_case.dart';
 import '../application/dashboard/save_dashboard_preference_use_case.dart';
@@ -73,12 +74,14 @@ Handler buildRouter({
   );
 
   final contactRepository = PostgresContactRepository(pool);
+  final contactTransactionRepository = PostgresTransactionRepository(pool);
   final contactHandler = ContactHandler(
     create: CreateContactUseCase(contactRepository),
     get: GetContactUseCase(contactRepository),
     list: ListContactsUseCase(contactRepository),
     update: UpdateContactUseCase(contactRepository),
-    delete: DeleteContactUseCase(contactRepository),
+    delete: DeleteContactUseCase(contactRepository, contactTransactionRepository),
+    merge: MergeContactsUseCase(contactRepository, contactTransactionRepository),
   );
   final abnLookupHandler = AbnLookupHandler(
     lookup: LookupAbnUseCase(AbnLookupService(authGuid: abrGuid)),
@@ -211,6 +214,8 @@ Router _contactRouter(ContactHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', h.handleCreate)
+    // /merge must be registered before /<id> to avoid being shadowed
+    ..post('/merge', h.handleMerge)
     ..get('/<id>', h.handleGet)
     ..put('/<id>', h.handleUpdate)
     ..delete('/<id>', h.handleDelete);

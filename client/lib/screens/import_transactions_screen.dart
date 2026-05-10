@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:archive/archive.dart';
 import 'package:excel/excel.dart' hide Border;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -67,6 +68,20 @@ class _FailedImport {
   });
 }
 
+class _RejectedRow {
+  final int rowIndex;
+  final String rawDate;
+  final String rawContact;
+  final String reason;
+
+  const _RejectedRow({
+    required this.rowIndex,
+    required this.rawDate,
+    required this.rawContact,
+    required this.reason,
+  });
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 /// Full-screen import flow pushed modally over the Transactions screen.
@@ -90,6 +105,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
   String? _fileName;
   List<_ColMap> _columnMappings = [];
   List<_ImportRow> _parsedRows = [];
+  List<_RejectedRow> _rejectedRows = [];
 
   bool _saving = false;
   String? _saveStatus;
@@ -170,9 +186,36 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     _parseFile(bytes, file.name);
   }
 
+  /// Strips `<f>` formula elements from worksheet XML in an xlsx archive so
+  /// that the excel package reads cached computed values (`<v>`) instead of
+  /// formula text, which it would otherwise discard.
+  List<int> _stripFormulaElements(List<int> bytes) {
+    try {
+      final archive = ZipDecoder().decodeBytes(bytes);
+      final out = Archive();
+      final formulaTag = RegExp(r'<f(?:\s[^>]*)?>(?:[^<]*)</f>');
+      for (final file in archive) {
+        if (file.isFile &&
+            file.name.startsWith('xl/worksheets/') &&
+            file.name.endsWith('.xml')) {
+          final xml = utf8.decode(file.content as List<int>);
+          final cleaned = xml.replaceAll(formulaTag, '');
+          final cleanedBytes = utf8.encode(cleaned);
+          out.addFile(ArchiveFile(
+              file.name, cleanedBytes.length, cleanedBytes));
+        } else {
+          out.addFile(file);
+        }
+      }
+      return ZipEncoder().encode(out)!;
+    } catch (_) {
+      return bytes;
+    }
+  }
+
   void _parseFile(List<int> bytes, String fileName) {
     try {
-      final excel = Excel.decodeBytes(bytes);
+      final excel = Excel.decodeBytes(_stripFormulaElements(bytes));
 
       Sheet? _findSheet(String keyword) {
         final name = excel.tables.keys
@@ -191,15 +234,17 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
 
       final colMaps = <_ColMap>[];
       final importRows = <_ImportRow>[];
+      final rejectedRows = <_RejectedRow>[];
 
       if (incomeSheet != null) {
-        final (cols, rows) = _parseSheet(
+        final (cols, rows, rejected) = _parseSheet(
             incomeSheet, 'income', GlDirection.moneyIn, 'credit');
         colMaps.addAll(cols);
         importRows.addAll(rows);
+        rejectedRows.addAll(rejected);
       }
       if (expenseSheet != null) {
-        final (cols, rows) = _parseSheet(
+        final (cols, rows, rejected) = _parseSheet(
           expenseSheet, 'expense', GlDirection.moneyOut, 'debit',
           contactColIndex: 3,
           receiptColIndex: 2,
@@ -207,12 +252,14 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
         );
         colMaps.addAll(cols);
         importRows.addAll(rows);
+        rejectedRows.addAll(rejected);
       }
 
       setState(() {
         _fileName = fileName;
         _columnMappings = colMaps;
         _parsedRows = importRows;
+        _rejectedRows = rejectedRows;
         _applySort();
       });
     } catch (e) {
@@ -220,7 +267,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     }
   }
 
-  (List<_ColMap>, List<_ImportRow>) _parseSheet(
+  (List<_ColMap>, List<_ImportRow>, List<_RejectedRow>) _parseSheet(
     Sheet sheet,
     String sheetPrefix,
     GlDirection direction,
@@ -229,7 +276,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     int receiptColIndex = 2,
     int glStartColIndex = 3,
   }) {
-    if (sheet.rows.isEmpty) return ([], []);
+    if (sheet.rows.isEmpty) return ([], [], []);
 
     final rows = sheet.rows;
     final headerRow = rows[0];
@@ -241,10 +288,12 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     }
 
     // Find optional description column (header == "Description", case-insensitive).
+    // Only look within the fixed columns (before glStartColIndex) to avoid
+    // accidentally treating a GL column as the description column.
     int? descColIdx;
-    for (int i = 0; i < headerRow.length; i++) {
+    for (int i = 0; i < glStartColIndex && i < headerRow.length; i++) {
       final h = _cellString(headerRow[i])?.trim().toLowerCase() ?? '';
-      if (h == 'description') {
+      if (h == 'description' || h == 'details') {
         descColIdx = i;
         break;
       }
@@ -254,7 +303,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     for (int i = glStartColIndex; i < headerRow.length; i++) {
       if (i == descColIdx) continue;
       final header = _cellString(headerRow[i])?.trim() ?? '';
-      if (header.toUpperCase() == 'TOTAL') break;
+      if (header.toUpperCase() == 'TOTAL') continue;
       if (header.isEmpty) continue;
       final letter = colLetter(i);
       final matched = _matchGl(header, direction);
@@ -269,23 +318,51 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     }
 
     final importRows = <_ImportRow>[];
+    final rejectedRows = <_RejectedRow>[];
+
     for (int ri = 1; ri < rows.length; ri++) {
       final row = rows[ri];
-      final dateIso = _cellDateIso(row.isNotEmpty ? row[0] : null);
-      if (dateIso == null) continue;
 
-      final contact = _cellString(
-              contactColIndex < row.length ? row[contactColIndex] : null)
-          ?.trim() ?? '';
+      // Raw cell values for diagnostics.
+      final rawDateCell = row.isNotEmpty ? row[0] : null;
+      final rawContactCell =
+          contactColIndex < row.length ? row[contactColIndex] : null;
+      final rawDate = _rawCellDescription(rawDateCell);
+      final rawContact = _rawCellDescription(rawContactCell);
+
+      final dateIso = _cellDateIso(rawDateCell);
+      if (dateIso == null) {
+        // Only record as rejected if the row has any non-empty cell (skip blank rows).
+        if (row.any((c) => c != null && c.value != null)) {
+          rejectedRows.add(_RejectedRow(
+            rowIndex: ri + 1,
+            rawDate: rawDate,
+            rawContact: rawContact,
+            reason: 'Could not parse date (cell type: ${rawDateCell?.value?.runtimeType ?? 'null'}, value: "$rawDate")',
+          ));
+        }
+        continue;
+      }
+
+      final contact = _cellString(rawContactCell)?.trim() ?? '';
       final receipt = _cellString(
               receiptColIndex < row.length ? row[receiptColIndex] : null)
           ?.trim() ?? '';
-      if (contact.isEmpty) continue;
+      if (contact.isEmpty) {
+        rejectedRows.add(_RejectedRow(
+          rowIndex: ri + 1,
+          rawDate: rawDate,
+          rawContact: rawContact,
+          reason: 'Contact column (col ${colLetter(contactColIndex)}) is empty (cell type: ${rawContactCell?.value?.runtimeType ?? 'null'})',
+        ));
+        continue;
+      }
 
       final description = descColIdx != null && descColIdx < row.length
           ? _cellString(row[descColIdx])?.trim() ?? ''
           : '';
 
+      bool addedAny = false;
       for (final col in colMaps) {
         final colIdx = col.letter.length == 1
             ? col.letter.codeUnitAt(0) - 'A'.codeUnitAt(0)
@@ -294,7 +371,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
 
         if (colIdx >= row.length) continue;
         final amount = _cellNum(row[colIdx]);
-        if (amount == null || amount <= 0) continue;
+        if (amount == null || amount == 0) continue;
 
         importRows.add(_ImportRow(
           date: dateIso,
@@ -302,13 +379,51 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
           receipt: receipt,
           description: description,
           colKey: col.key,
-          totalCents: (amount * 100).round(),
+          totalCents: (amount.abs() * 100).round(),
           transactionType: transactionType,
+        ));
+        addedAny = true;
+      }
+
+      if (!addedAny) {
+        // Build a summary of what amounts were seen across all scanned columns.
+        final amountSummary = colMaps.map((col) {
+          final colIdx = col.letter.length == 1
+              ? col.letter.codeUnitAt(0) - 'A'.codeUnitAt(0)
+              : (col.letter.codeUnitAt(0) - 'A'.codeUnitAt(0) + 1) * 26 +
+                  col.letter.codeUnitAt(1) - 'A'.codeUnitAt(0);
+          if (colIdx >= row.length) return '${col.letter}:out-of-range';
+          final cell = row[colIdx];
+          return '${col.letter}(${col.header}):${_rawCellDescription(cell)}';
+        }).join(', ');
+
+        rejectedRows.add(_RejectedRow(
+          rowIndex: ri + 1,
+          rawDate: rawDate,
+          rawContact: contact,
+          reason: 'No non-zero amount found in any GL column. '
+              'Scanned ${colMaps.length} columns: $amountSummary',
         ));
       }
     }
 
-    return (colMaps, importRows);
+    return (colMaps, importRows, rejectedRows);
+  }
+
+  /// Returns a short human-readable description of a raw cell value for diagnostics.
+  String _rawCellDescription(Data? cell) {
+    if (cell == null) return 'null';
+    return switch (cell.value) {
+      TextCellValue(:final value) => '"$value"',
+      IntCellValue(:final value) => '$value',
+      DoubleCellValue(:final value) => '$value',
+      DateCellValue(:final year, :final month, :final day) =>
+        '$year-$month-$day',
+      DateTimeCellValue(:final year, :final month, :final day) =>
+        '$year-$month-$day',
+      null => 'null',
+      _ => cell.value!.runtimeType.toString(),
+    };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -478,6 +593,16 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
       .where((r) => _mapForKey(r.colKey)?.glEntryId == null)
       .toList();
 
+  List<_ImportRow> get _dateWarningRows =>
+      _parsedRows.where((r) => _isSuspiciousDate(r.date)).toList();
+
+  bool _isSuspiciousDate(String isoDate) {
+    final now = DateTime.now();
+    final date = DateTime.tryParse(isoDate);
+    if (date == null) return false;
+    return date.year != now.year || date.isAfter(now);
+  }
+
   String _formatCents(int cents) {
     final d = cents / 100;
     return '\$${d.toStringAsFixed(2)}';
@@ -501,6 +626,12 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
   Future<void> _save() async {
     final toImport = _importableRows;
     if (toImport.isEmpty) return;
+
+    final suspicious = toImport.where((r) => _isSuspiciousDate(r.date)).toList();
+    if (suspicious.isNotEmpty) {
+      await _showSuspiciousDateDialog(suspicious);
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -793,6 +924,108 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     );
   }
 
+  Future<void> _showSuspiciousDateDialog(List<_ImportRow> rows) async {
+    if (!mounted) return;
+    final currentYear = DateTime.now().year;
+    final labelStyle =
+        Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold);
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: Colors.amber.shade700, size: 20),
+            const SizedBox(width: 8),
+            const Text('Suspicious dates detected'),
+          ],
+        ),
+        content: SizedBox(
+          width: 560,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${rows.length} record${rows.length == 1 ? '' : 's'} '
+                '${rows.length == 1 ? 'has a date' : 'have dates'} that '
+                '${rows.length == 1 ? 'is' : 'are'} in the future or outside '
+                '$currentYear. Correct these dates in the source document and '
+                'reimport the file.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            SizedBox(width: 90, child: Text('Date', style: labelStyle)),
+                            Expanded(child: Text('Contact', style: labelStyle)),
+                            SizedBox(
+                                width: 90,
+                                child: Text('Amount', style: labelStyle,
+                                    textAlign: TextAlign.right)),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      ...rows.map((r) => Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 90,
+                                      child: Text(
+                                        _formatDate(r.date),
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.amber.shade800,
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(r.contact,
+                                          style: const TextStyle(fontSize: 12),
+                                          overflow: TextOverflow.ellipsis),
+                                    ),
+                                    SizedBox(
+                                      width: 90,
+                                      child: Text(_formatCents(r.totalCents),
+                                          style: const TextStyle(fontSize: 12),
+                                          textAlign: TextAlign.right),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Divider(height: 1),
+                            ],
+                          )),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
@@ -942,6 +1175,21 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
                         visualDensity: VisualDensity.compact,
                       ),
                     ],
+                    if (_dateWarningRows.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Chip(
+                        avatar: Icon(Icons.warning_amber_rounded,
+                            size: 14, color: Colors.amber.shade700),
+                        label: Text(
+                            '${_dateWarningRows.length} date warning${_dateWarningRows.length == 1 ? '' : 's'}'),
+                        backgroundColor: Colors.amber.shade50,
+                        side: BorderSide(color: Colors.amber.shade300),
+                        labelStyle:
+                            TextStyle(color: Colors.amber.shade800, fontSize: 12),
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
                   ],
                 ),
                 if (skipped.isNotEmpty) ...[
@@ -955,6 +1203,10 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
                 ],
                 const SizedBox(height: 12),
                 _buildPreviewTable(),
+                if (_rejectedRows.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  _buildRejectedRowsPanel(),
+                ],
               ],
             ),
           ),
@@ -1164,17 +1416,35 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
         : null;
     final isMapped = glEntry != null;
     final isIncome = row.transactionType == 'credit';
+    final hasSuspiciousDate = _isSuspiciousDate(row.date);
 
     return Column(
       children: [
-        Padding(
+        Container(
+          color: hasSuspiciousDate ? Colors.amber.shade50 : null,
           padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
           child: Row(
             children: [
               SizedBox(
                 width: 96,
-                child: Text(_formatDate(row.date),
-                    style: const TextStyle(fontSize: 13)),
+                child: Row(
+                  children: [
+                    if (hasSuspiciousDate) ...[
+                      Icon(Icons.warning_amber_rounded,
+                          size: 13, color: Colors.amber.shade700),
+                      const SizedBox(width: 3),
+                    ],
+                    Expanded(
+                      child: Text(
+                        _formatDate(row.date),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: hasSuspiciousDate ? Colors.amber.shade800 : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               SizedBox(
                 width: 180,
@@ -1260,6 +1530,62 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
         ),
         const Divider(height: 1),
       ],
+    );
+  }
+
+  Widget _buildRejectedRowsPanel() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 1040),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+        leading: Icon(Icons.warning_amber_rounded,
+            color: Colors.red.shade400, size: 18),
+        title: Text(
+          '${_rejectedRows.length} row${_rejectedRows.length == 1 ? '' : 's'} dropped during parsing',
+          style: TextStyle(
+              fontSize: 13,
+              color: Colors.red.shade700,
+              fontWeight: FontWeight.w600),
+        ),
+        children: [
+          const SizedBox(height: 4),
+          ..._rejectedRows.map((r) => Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 48,
+                      child: Text('Row ${r.rowIndex}',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black54)),
+                    ),
+                    SizedBox(
+                      width: 160,
+                      child: Text(r.rawDate,
+                          style: const TextStyle(fontSize: 11),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    SizedBox(
+                      width: 180,
+                      child: Text(r.rawContact,
+                          style: const TextStyle(fontSize: 11),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    Expanded(
+                      child: Text(r.reason,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.red.shade700)),
+                    ),
+                  ],
+                ),
+              )),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 

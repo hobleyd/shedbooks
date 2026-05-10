@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/contact_entry.dart';
+import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 
@@ -80,10 +81,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
   final Set<String> _pendingDeletions = {};
   bool _loading = true;
   bool _saving = false;
+  bool _merging = false;
   String? _loadError;
   bool _isDirty = false;
   int? _sortColumn;
   bool _sortAscending = true;
+  final Set<String> _selectedIds = {};
+  Set<String> _contactsWithTransactions = {};
 
   @override
   void initState() {
@@ -105,31 +109,50 @@ class _ContactsScreenState extends State<ContactsScreen> {
       _loading = true;
       _loadError = null;
       _saving = false;
+      _merging = false;
     });
     try {
-      final response = await context.read<ApiClient>().get('/contacts');
+      final client = context.read<ApiClient>();
+      final results = await Future.wait([
+        client.get('/contacts'),
+        client.get('/transactions'),
+      ]);
       if (!mounted) return;
-      if (response.statusCode == 200) {
-        final entries = (jsonDecode(response.body) as List<dynamic>)
-            .map((e) => ContactEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-        for (final row in _rows) {
-          row.dispose();
-        }
+
+      if (results[0].statusCode != 200) {
         setState(() {
-          _rows = entries.map(_ContactRow.fromEntry).toList();
-          _pendingDeletions.clear();
-          _isDirty = false;
-          _loading = false;
-          _applySort();
-        });
-        context.read<NavigationGuard>().setDirty(false);
-      } else {
-        setState(() {
-          _loadError = 'Failed to load (${response.statusCode})';
+          _loadError = 'Failed to load (${results[0].statusCode})';
           _loading = false;
         });
+        return;
       }
+
+      final entries = (jsonDecode(results[0].body) as List<dynamic>)
+          .map((e) => ContactEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      final contactsWithTxns = <String>{};
+      if (results[1].statusCode == 200) {
+        final txns = (jsonDecode(results[1].body) as List<dynamic>)
+            .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>));
+        for (final t in txns) {
+          contactsWithTxns.add(t.contactId);
+        }
+      }
+
+      for (final row in _rows) {
+        row.dispose();
+      }
+      setState(() {
+        _rows = entries.map(_ContactRow.fromEntry).toList();
+        _pendingDeletions.clear();
+        _selectedIds.clear();
+        _contactsWithTransactions = contactsWithTxns;
+        _isDirty = false;
+        _loading = false;
+        _applySort();
+      });
+      context.read<NavigationGuard>().setDirty(false);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -283,7 +306,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
       for (final id in List<String>.from(_pendingDeletions)) {
         final res = await client.delete('/contacts/$id');
         if (res.statusCode != 204) {
-          throw Exception('Delete failed (${res.statusCode})');
+          throw Exception(
+              _errorMessage(res.body, 'Delete failed (${res.statusCode})'));
         }
         _pendingDeletions.remove(id);
       }
@@ -329,6 +353,62 @@ class _ContactsScreenState extends State<ContactsScreen> {
       return json['error'] as String? ?? fallback;
     } catch (_) {
       return fallback;
+    }
+  }
+
+  Future<void> _mergeContacts() async {
+    if (_selectedIds.length < 2) return;
+
+    // Preserve current list order: first selected row is the survivor.
+    final ordered = _rows
+        .where((r) => r.id != null && _selectedIds.contains(r.id))
+        .toList();
+    final keepId = ordered.first.id!;
+    final keepName = ordered.first.nameController.text;
+    final mergeIds = ordered.skip(1).map((r) => r.id!).toList();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Merge contacts'),
+        content: Text(
+          '${mergeIds.length} contact${mergeIds.length == 1 ? '' : 's'} will be '
+          'merged into "$keepName". All their transactions will be reassigned '
+          'and the other contact${mergeIds.length == 1 ? '' : 's'} deleted. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Merge'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _merging = true);
+
+    try {
+      final body = jsonEncode({'keepId': keepId, 'mergeIds': mergeIds});
+      final res = await context.read<ApiClient>().post('/contacts/merge', body);
+      if (!mounted) return;
+      if (res.statusCode == 200) {
+        await _load();
+      } else {
+        setState(() => _merging = false);
+        _showSnackbar(_errorMessage(res.body, 'Merge failed (${res.statusCode})'));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _merging = false);
+        _showSnackbar('Merge failed: $e');
+      }
     }
   }
 
@@ -387,18 +467,34 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Widget _buildTitleRow() {
+    final busy = _saving || _merging;
     return Row(
       children: [
         Text('Contacts', style: Theme.of(context).textTheme.headlineMedium),
         const Spacer(),
+        if (_selectedIds.length >= 2) ...[
+          FilledButton.icon(
+            onPressed: busy ? null : _mergeContacts,
+            icon: _merging
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.merge_outlined, size: 18),
+            label: Text('Merge ${_selectedIds.length}'),
+          ),
+          const SizedBox(width: 8),
+        ],
         if (_isDirty && !_loading) ...[
           OutlinedButton(
-            onPressed: _saving ? null : _discard,
+            onPressed: busy ? null : _discard,
             child: const Text('Discard'),
           ),
           const SizedBox(width: 8),
           FilledButton(
-            onPressed: _saving ? null : _save,
+            onPressed: busy ? null : _save,
             child: _saving
                 ? const SizedBox(
                     width: 16,
@@ -470,6 +566,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
         children: [
+          const SizedBox(width: 40),
           Expanded(child: _colHeader('Name', 0)),
           const SizedBox(width: 8),
           SizedBox(width: 130, child: _colHeader('ABN', 1)),
@@ -490,12 +587,30 @@ class _ContactsScreenState extends State<ContactsScreen> {
   Widget _buildTableRow(int index) {
     final row = _rows[index];
     final isCompany = row.contactType == ContactType.company;
+    final isSelected = row.id != null && _selectedIds.contains(row.id);
+    final hasTxns = row.id != null && _contactsWithTransactions.contains(row.id);
+    final busy = _saving || _merging;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          SizedBox(
+            width: 40,
+            child: Checkbox(
+              value: isSelected,
+              onChanged: (row.id == null || busy)
+                  ? null
+                  : (v) => setState(() {
+                        if (v == true) {
+                          _selectedIds.add(row.id!);
+                        } else {
+                          _selectedIds.remove(row.id!);
+                        }
+                      }),
+            ),
+          ),
           Expanded(
             child: TextFormField(
               controller: row.nameController,
@@ -573,10 +688,17 @@ class _ContactsScreenState extends State<ContactsScreen> {
             child: IconButton(
               icon: Icon(
                 Icons.delete_outline,
-                color: Theme.of(context).colorScheme.error,
+                color: hasTxns
+                    ? Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.38)
+                    : Theme.of(context).colorScheme.error,
               ),
-              onPressed: _saving ? null : () => _deleteRow(index),
-              tooltip: 'Delete',
+              onPressed: (busy || hasTxns) ? null : () => _deleteRow(index),
+              tooltip: hasTxns
+                  ? 'Cannot delete: contact has transactions'
+                  : 'Delete',
             ),
           ),
         ],

@@ -13,7 +13,9 @@ void main() {
   late GetDashboardPreferenceUseCase sut;
 
   const tEntityId = 'entity-1';
-  const tGlIds = ['gl-1', 'gl-2'];
+  const tPairs = [
+    GlAccountPair(incomeGlId: 'income-1', expenseGlId: 'expense-1'),
+  ];
 
   setUp(() {
     repository = MockDashboardPreferenceRepository();
@@ -23,9 +25,9 @@ void main() {
   group('GetDashboardPreferenceUseCase', () {
     test('returns existing preference when one has been saved', () async {
       // Arrange
-      final stored = DashboardPreference(
+      const stored = DashboardPreference(
         entityId: tEntityId,
-        selectedGlIds: tGlIds,
+        selectedAccountPairs: tPairs,
       );
       when(() => repository.find(tEntityId)).thenAnswer((_) async => stored);
 
@@ -34,7 +36,8 @@ void main() {
 
       // Assert
       expect(result.entityId, equals(tEntityId));
-      expect(result.selectedGlIds, equals(tGlIds));
+      expect(result.selectedAccountPairs.length, equals(1));
+      expect(result.selectedAccountPairs[0].incomeGlId, equals('income-1'));
     });
 
     test('returns empty preference when none has been saved', () async {
@@ -46,7 +49,7 @@ void main() {
 
       // Assert
       expect(result.entityId, equals(tEntityId));
-      expect(result.selectedGlIds, isEmpty);
+      expect(result.selectedAccountPairs, isEmpty);
     });
   });
 }

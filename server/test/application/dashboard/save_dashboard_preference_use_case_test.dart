@@ -18,28 +18,33 @@ void main() {
     repository = MockDashboardPreferenceRepository();
     sut = SaveDashboardPreferenceUseCase(repository);
     registerFallbackValue(
-      const DashboardPreference(entityId: tEntityId, selectedGlIds: []),
+      const DashboardPreference(entityId: tEntityId, selectedAccountPairs: []),
     );
   });
 
   group('SaveDashboardPreferenceUseCase', () {
-    test('persists the selected GL ids for the entity', () async {
+    test('persists the selected account pairs for the entity', () async {
       // Arrange
-      const selectedGlIds = ['gl-1', 'gl-2'];
+      const pairs = [
+        GlAccountPair(incomeGlId: 'income-1', expenseGlId: 'expense-1'),
+        GlAccountPair(incomeGlId: 'income-2', expenseGlId: 'expense-2'),
+      ];
       when(() => repository.save(any())).thenAnswer((_) async {});
 
       // Act
-      await sut.execute(tEntityId, selectedGlIds);
+      await sut.execute(tEntityId, pairs);
 
       // Assert
       final captured =
           verify(() => repository.save(captureAny())).captured.single
               as DashboardPreference;
       expect(captured.entityId, equals(tEntityId));
-      expect(captured.selectedGlIds, equals(selectedGlIds));
+      expect(captured.selectedAccountPairs.length, equals(2));
+      expect(captured.selectedAccountPairs[0].incomeGlId, equals('income-1'));
+      expect(captured.selectedAccountPairs[0].expenseGlId, equals('expense-1'));
     });
 
-    test('persists an empty list when all GL accounts are removed', () async {
+    test('persists an empty list when all pairs are removed', () async {
       // Arrange
       when(() => repository.save(any())).thenAnswer((_) async {});
 
@@ -50,7 +55,7 @@ void main() {
       final captured =
           verify(() => repository.save(captureAny())).captured.single
               as DashboardPreference;
-      expect(captured.selectedGlIds, isEmpty);
+      expect(captured.selectedAccountPairs, isEmpty);
     });
   });
 }

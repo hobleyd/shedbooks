@@ -6,6 +6,7 @@ import '../../application/contact/create_contact_use_case.dart';
 import '../../application/contact/delete_contact_use_case.dart';
 import '../../application/contact/get_contact_use_case.dart';
 import '../../application/contact/list_contacts_use_case.dart';
+import '../../application/contact/merge_contacts_use_case.dart';
 import '../../application/contact/update_contact_use_case.dart';
 import '../../domain/exceptions/contact_exception.dart';
 import '../dto/contact_response.dart';
@@ -19,6 +20,7 @@ class ContactHandler {
   final ListContactsUseCase _list;
   final UpdateContactUseCase _update;
   final DeleteContactUseCase _delete;
+  final MergeContactsUseCase _merge;
 
   const ContactHandler({
     required CreateContactUseCase create,
@@ -26,11 +28,13 @@ class ContactHandler {
     required ListContactsUseCase list,
     required UpdateContactUseCase update,
     required DeleteContactUseCase delete,
+    required MergeContactsUseCase merge,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
-        _delete = delete;
+        _delete = delete,
+        _merge = merge;
 
   /// GET /contacts
   Future<Response> handleList(Request request) async {
@@ -146,6 +150,54 @@ class ContactHandler {
       return Response(204);
     } on ContactNotFoundException catch (e) {
       return _notFound(e.message);
+    } on ContactInUseException catch (e) {
+      return _conflict(e.message);
+    }
+  }
+
+  /// POST /contacts/merge
+  ///
+  /// Body: `{ "keepId": "<uuid>", "mergeIds": ["<uuid>", ...] }`
+  ///
+  /// Reassigns all transactions from the merge contacts to the kept contact,
+  /// soft-deletes the merge contacts, and returns the surviving contact.
+  Future<Response> handleMerge(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final Map<String, dynamic> json;
+    try {
+      json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    final keepId = json['keepId'] as String?;
+    final mergeIdsRaw = json['mergeIds'];
+
+    if (keepId == null || keepId.isEmpty) {
+      return _badRequest('keepId is required');
+    }
+    if (mergeIdsRaw is! List || mergeIdsRaw.isEmpty) {
+      return _badRequest('mergeIds must be a non-empty list');
+    }
+    final mergeIds = mergeIdsRaw.cast<String>();
+    if (mergeIds.contains(keepId)) {
+      return _badRequest('keepId must not appear in mergeIds');
+    }
+
+    try {
+      final contact = await _merge.execute(
+        keepId: keepId,
+        mergeIds: mergeIds,
+        entityId: entityId,
+      );
+      return Response.ok(
+        ContactResponse.fromEntity(contact).toJsonString(),
+        headers: _jsonHeaders,
+      );
+    } on ContactNotFoundException catch (e) {
+      return _notFound(e.message);
     }
   }
 
@@ -171,6 +223,12 @@ class ContactHandler {
 
   static Response _notFound(String message) => Response.notFound(
         jsonEncode({'error': message}),
+        headers: _jsonHeaders,
+      );
+
+  static Response _conflict(String message) => Response(
+        409,
+        body: jsonEncode({'error': message}),
         headers: _jsonHeaders,
       );
 }

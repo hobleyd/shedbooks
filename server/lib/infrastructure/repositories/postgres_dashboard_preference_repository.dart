@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:postgres/postgres.dart';
 
 import '../../domain/entities/dashboard_preference.dart';
@@ -15,7 +17,7 @@ class PostgresDashboardPreferenceRepository
   Future<DashboardPreference?> find(String entityId) async {
     final result = await _pool.execute(
       Sql.named(
-        'SELECT entity_id, selected_gl_ids FROM dashboard_preferences WHERE entity_id = @entityId',
+        'SELECT entity_id, selected_account_pairs FROM dashboard_preferences WHERE entity_id = @entityId',
       ),
       parameters: {'entityId': entityId},
     );
@@ -25,29 +27,41 @@ class PostgresDashboardPreferenceRepository
   }
 
   /// @param preference.entityId - Upsert key.
-  /// @param preference.selectedGlIds - Array of GL account UUIDs.
+  /// @param preference.selectedAccountPairs - JSONB array of income/expense GL pairs.
   @override
   Future<void> save(DashboardPreference preference) async {
+    final pairsJson = jsonEncode(preference.selectedAccountPairs
+        .map((p) => {'incomeGlId': p.incomeGlId, 'expenseGlId': p.expenseGlId})
+        .toList());
+
     await _pool.execute(
       Sql.named('''
-        INSERT INTO dashboard_preferences (entity_id, selected_gl_ids)
-        VALUES (@entityId, @selectedGlIds)
+        INSERT INTO dashboard_preferences (entity_id, selected_account_pairs)
+        VALUES (@entityId, @pairs::jsonb)
         ON CONFLICT (entity_id) DO UPDATE
-          SET selected_gl_ids = EXCLUDED.selected_gl_ids
+          SET selected_account_pairs = EXCLUDED.selected_account_pairs
       '''),
       parameters: {
         'entityId': preference.entityId,
-        'selectedGlIds': preference.selectedGlIds,
+        'pairs': pairsJson,
       },
     );
   }
 
   static DashboardPreference _mapRow(Map<String, dynamic> row) {
-    final raw = row['selected_gl_ids'];
-    final ids = (raw as List).cast<String>();
+    final raw = row['selected_account_pairs'];
+    final List<dynamic> list = raw is String ? jsonDecode(raw) : (raw as List);
+    final pairs = list.map((e) {
+      final m = e as Map<String, dynamic>;
+      return GlAccountPair(
+        incomeGlId: m['incomeGlId'] as String,
+        expenseGlId: m['expenseGlId'] as String,
+      );
+    }).toList();
+
     return DashboardPreference(
       entityId: row['entity_id'] as String,
-      selectedGlIds: ids,
+      selectedAccountPairs: pairs,
     );
   }
 }

@@ -175,6 +175,47 @@ class PostgresTransactionRepository implements ITransactionRepository {
     if (result.affectedRows == 0) throw TransactionNotFoundException(id);
   }
 
+  @override
+  Future<bool> hasTransactions(String contactId,
+      {required String entityId}) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT EXISTS(
+          SELECT 1 FROM transactions
+          WHERE contact_id = @contactId::uuid
+            AND entity_id = @entityId
+            AND deleted_at IS NULL
+        ) AS has_transactions
+      '''),
+      parameters: {'contactId': contactId, 'entityId': entityId},
+    );
+    return result.first.toColumnMap()['has_transactions'] as bool;
+  }
+
+  @override
+  Future<void> reassignContact(
+    List<String> fromContactIds,
+    String toContactId, {
+    required String entityId,
+  }) async {
+    if (fromContactIds.isEmpty) return;
+    await _pool.execute(
+      Sql.named('''
+        UPDATE transactions
+        SET contact_id = @toId::uuid,
+            updated_at = NOW()
+        WHERE contact_id = ANY(string_to_array(@fromIds, ',')::uuid[])
+          AND entity_id = @entityId
+          AND deleted_at IS NULL
+      '''),
+      parameters: {
+        'toId': toContactId,
+        'fromIds': fromContactIds.join(','),
+        'entityId': entityId,
+      },
+    );
+  }
+
   static void _rethrowIfFkViolation(ServerException e) {
     if (e.code != '23503') return;
     switch (e.constraintName) {

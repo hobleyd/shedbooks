@@ -5,6 +5,7 @@ import 'package:shelf/shelf.dart';
 
 import '../../application/dashboard/get_dashboard_preference_use_case.dart';
 import '../../application/dashboard/save_dashboard_preference_use_case.dart';
+import '../../domain/entities/dashboard_preference.dart';
 import '../dto/dashboard_preference_response.dart';
 
 /// Shelf request handlers for /dashboard-preferences.
@@ -42,14 +43,22 @@ class DashboardPreferenceHandler {
       return _badRequest('Request body must be valid JSON');
     }
 
-    final List<String> selectedGlIds;
+    final List<GlAccountPair> pairs;
     try {
-      selectedGlIds = (json['selectedGlIds'] as List).cast<String>();
+      final rawList = json['selectedAccountPairs'] as List;
+      pairs = rawList.map((e) {
+        final m = e as Map<String, dynamic>;
+        return GlAccountPair(
+          incomeGlId: m['incomeGlId'] as String,
+          expenseGlId: m['expenseGlId'] as String,
+        );
+      }).toList();
     } catch (_) {
-      return _badRequest('selectedGlIds must be a list of strings');
+      return _badRequest(
+          'selectedAccountPairs must be a list of {incomeGlId, expenseGlId} objects');
     }
 
-    await _save.execute(entityId, selectedGlIds);
+    await _save.execute(entityId, pairs);
     return Response(204);
   }
 

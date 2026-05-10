@@ -18,3 +18,9 @@ final class ContactNotFoundException extends ContactException {
 final class ContactValidationException extends ContactException {
   const ContactValidationException(super.message);
 }
+
+/// Thrown when attempting to delete a contact that still has active transactions.
+final class ContactInUseException extends ContactException {
+  const ContactInUseException(String id)
+      : super('Contact $id cannot be deleted because it has transactions');
+}

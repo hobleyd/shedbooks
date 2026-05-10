@@ -207,10 +207,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           cmp = (_glDescription(a.generalLedgerId) ?? '').toLowerCase().compareTo(
               (_glDescription(b.generalLedgerId) ?? '').toLowerCase());
         case 3:
+          cmp = a.description.toLowerCase().compareTo(b.description.toLowerCase());
+        case 4:
           cmp = a.receiptNumber
               .toLowerCase()
               .compareTo(b.receiptNumber.toLowerCase());
-        case 4:
+        case 5:
           cmp = a.totalAmount.compareTo(b.totalAmount);
         default:
           return 0;
@@ -757,11 +759,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               children: [
                 SizedBox(width: 90, child: _colHeader('Date', 0)),
                 SizedBox(width: 180, child: _colHeader('Contact', 1)),
-                Expanded(child: _colHeader('Account', 2)),
-                SizedBox(width: 110, child: _colHeader('Receipt', 3)),
+                SizedBox(width: 150, child: _colHeader('Account', 2)),
+                Expanded(child: _colHeader('Description', 3)),
+                SizedBox(width: 80, child: _colHeader('Receipt', 4)),
                 SizedBox(
                     width: 120,
-                    child: _colHeader('Amount', 4,
+                    child: _colHeader('Amount', 5,
                         align: MainAxisAlignment.end)),
                 const SizedBox(width: 76),
               ],
@@ -800,6 +803,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
                 width: 90,
@@ -813,27 +817,23 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              SizedBox(
+                width: 150,
+                child: Text(
+                  _glDescription(t.generalLedgerId) ?? '—',
+                  style: const TextStyle(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _glDescription(t.generalLedgerId) ?? '—',
-                      style: const TextStyle(fontSize: 13),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (t.description.isNotEmpty)
-                      Text(
-                        t.description,
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
+                child: Text(
+                  t.description,
+                  style: const TextStyle(fontSize: 13),
+                  softWrap: true,
                 ),
               ),
               SizedBox(
-                width: 110,
+                width: 80,
                 child: Text(t.receiptNumber,
                     style: const TextStyle(fontSize: 13),
                     overflow: TextOverflow.ellipsis),

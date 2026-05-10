@@ -17,18 +17,26 @@ class _MonthSummary {
   int get netCents => incomeCents - outgoingsCents;
 }
 
+class _GlPair {
+  final String incomeId;
+  final String expenseId;
+
+  const _GlPair({required this.incomeId, required this.expenseId});
+}
+
 class _GlSummary {
-  final GeneralLedgerEntry gl;
+  final GeneralLedgerEntry incomeGl;
+  final GeneralLedgerEntry expenseGl;
   int incomeCents = 0;
   int expensesCents = 0;
 
-  _GlSummary(this.gl);
+  _GlSummary({required this.incomeGl, required this.expenseGl});
 
   int get netCents => incomeCents - expensesCents;
 }
 
 /// Dashboard showing income, outgoings and net by month, plus a
-/// configurable GL account breakdown — both navigable by year.
+/// configurable paired GL account breakdown — both navigable by year.
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -44,8 +52,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<_MonthSummary> _months = [];
 
   int _viewYear = DateTime.now().year;
-  final List<String> _selectedGlIds = [];
+  final List<_GlPair> _selectedPairs = [];
   bool _prefSaving = false;
+
+  String? _pickerIncomeId;
+  String? _pickerExpenseId;
 
   static const _monthNames = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -90,18 +101,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .toList()
         ..sort((a, b) => a.description.compareTo(b.description));
 
-      final prefJson =
-          jsonDecode(results[2].body) as Map<String, dynamic>;
-      final savedGlIds =
-          (prefJson['selectedGlIds'] as List).cast<String>();
+      final prefJson = jsonDecode(results[2].body) as Map<String, dynamic>;
+      final rawPairs = (prefJson['selectedAccountPairs'] as List?) ?? [];
+      final savedPairs = rawPairs
+          .whereType<Map<String, dynamic>>()
+          .map((m) => _GlPair(
+                incomeId: m['incomeGlId'] as String,
+                expenseId: m['expenseGlId'] as String,
+              ))
+          .where((p) =>
+              glEntries.any((g) => g.id == p.incomeId) &&
+              glEntries.any((g) => g.id == p.expenseId))
+          .toList();
 
       setState(() {
         _allTransactions = transactions;
         _glEntries = glEntries;
-        _selectedGlIds
+        _selectedPairs
           ..clear()
-          ..addAll(savedGlIds.where(
-              (id) => glEntries.any((g) => g.id == id)));
+          ..addAll(savedPairs);
         _months = _buildMonthSummaries(transactions, _viewYear);
         _loading = false;
       });
@@ -143,16 +161,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   List<_GlSummary> _buildGlSummaries() {
-    return _selectedGlIds.map((id) {
-      final gl = _glEntries.firstWhere((g) => g.id == id);
-      final summary = _GlSummary(gl);
+    return _selectedPairs.map((pair) {
+      final incomeGl = _glEntries.firstWhere((g) => g.id == pair.incomeId);
+      final expenseGl = _glEntries.firstWhere((g) => g.id == pair.expenseId);
+      final summary = _GlSummary(incomeGl: incomeGl, expenseGl: expenseGl);
       for (final t in _allTransactions) {
-        if (t.generalLedgerId != id) continue;
         final parts = t.transactionDate.split('-');
         if (parts.isEmpty || int.tryParse(parts[0]) != _viewYear) continue;
-        if (t.isCredit) {
+        if (t.generalLedgerId == pair.incomeId && t.isCredit) {
           summary.incomeCents += t.totalAmount;
-        } else {
+        }
+        if (t.generalLedgerId == pair.expenseId && !t.isCredit) {
           summary.expensesCents += t.totalAmount;
         }
       }
@@ -166,11 +185,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       await context.read<ApiClient>().put(
             '/dashboard-preferences',
-            jsonEncode({'selectedGlIds': _selectedGlIds}),
+            jsonEncode({
+              'selectedAccountPairs': _selectedPairs
+                  .map((p) =>
+                      {'incomeGlId': p.incomeId, 'expenseGlId': p.expenseId})
+                  .toList(),
+            }),
           );
     } finally {
       if (mounted) setState(() => _prefSaving = false);
     }
+  }
+
+  void _addPair() {
+    final incomeId = _pickerIncomeId;
+    final expenseId = _pickerExpenseId;
+    if (incomeId == null || expenseId == null) return;
+    setState(() {
+      _selectedPairs.add(_GlPair(incomeId: incomeId, expenseId: expenseId));
+      _pickerIncomeId = null;
+      _pickerExpenseId = null;
+    });
+    _savePreference();
+  }
+
+  void _removePair(int index) {
+    setState(() => _selectedPairs.removeAt(index));
+    _savePreference();
   }
 
   bool get _canGoForwardYear => _viewYear < DateTime.now().year;
@@ -374,13 +415,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     const colWidth = 160.0;
     const labelWidth = 280.0;
     final headerStyle = Theme.of(context).textTheme.labelLarge;
-    final availableGl =
-        _glEntries.where((g) => !_selectedGlIds.contains(g.id)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('By Account', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text(
+          'Each row pairs an income account with an expense account. '
+          'The label shows the income account; Net = Income − Expense.',
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: Colors.black54),
+        ),
         const SizedBox(height: 16),
         if (summaries.isNotEmpty) ...[
           Padding(
@@ -407,7 +455,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           const Divider(height: 1),
-          ...summaries.map((s) => _buildGlRow(s, colWidth, labelWidth)),
+          ...summaries.asMap().entries.map(
+              (e) => _buildGlRow(e.value, e.key, colWidth, labelWidth)),
           const Divider(height: 1, thickness: 2),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -446,13 +495,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 16),
         ],
-        if (availableGl.isNotEmpty) _buildGlPicker(availableGl),
+        _buildGlPicker(),
       ],
     );
   }
 
-  Widget _buildGlRow(_GlSummary s, double colWidth, double labelWidth) {
-    final isIn = s.gl.direction == GlDirection.moneyIn;
+  Widget _buildGlRow(
+      _GlSummary s, int index, double colWidth, double labelWidth) {
     return Column(
       children: [
         Padding(
@@ -467,33 +516,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: const Icon(Icons.remove_circle_outline, size: 18),
                   color: Colors.red.shade400,
                   tooltip: 'Remove',
-                  onPressed: _prefSaving
-                      ? null
-                      : () {
-                          setState(() => _selectedGlIds.remove(s.gl.id));
-                          _savePreference();
-                        },
+                  onPressed: _prefSaving ? null : () => _removePair(index),
                 ),
               ),
               SizedBox(
                 width: labelWidth,
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      isIn
-                          ? Icons.arrow_circle_down_outlined
-                          : Icons.arrow_circle_up_outlined,
-                      size: 14,
-                      color:
-                          isIn ? Colors.green.shade700 : Colors.red.shade700,
+                    Row(
+                      children: [
+                        Icon(Icons.arrow_circle_down_outlined,
+                            size: 14, color: Colors.green.shade700),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            s.incomeGl.description,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        s.gl.description,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
+                    Row(
+                      children: [
+                        Icon(Icons.arrow_circle_up_outlined,
+                            size: 12, color: Colors.red.shade400),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            s.expenseGl.description,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: Colors.black54),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -513,43 +573,91 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildGlPicker(List<GeneralLedgerEntry> available) {
-    return Row(
+  Widget _buildGlPicker() {
+    final incomeGls =
+        _glEntries.where((g) => g.direction == GlDirection.moneyIn).toList();
+    final expenseGls =
+        _glEntries.where((g) => g.direction == GlDirection.moneyOut).toList();
+    final canAdd = _pickerIncomeId != null && _pickerExpenseId != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.add, size: 18, color: Colors.black54),
-        const SizedBox(width: 8),
-        DropdownButton<String>(
-          hint: const Text('Add GL account…'),
-          value: null,
-          underline: const SizedBox(),
-          items: available.map((gl) {
-            final isIn = gl.direction == GlDirection.moneyIn;
-            return DropdownMenuItem(
-              value: gl.id,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isIn
-                        ? Icons.arrow_circle_down_outlined
-                        : Icons.arrow_circle_up_outlined,
-                    size: 14,
-                    color: isIn ? Colors.green.shade700 : Colors.red.shade700,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(gl.description),
-                ],
-              ),
-            );
-          }).toList(),
-          onChanged: (id) {
-            if (id != null) {
-              setState(() => _selectedGlIds.add(id));
-              _savePreference();
-            }
-          },
+        Text('Add row',
+            style: Theme.of(context)
+                .textTheme
+                .labelMedium
+                ?.copyWith(color: Colors.black54)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _buildAccountDropdown(
+              hint: 'Income account…',
+              value: _pickerIncomeId,
+              entries: incomeGls,
+              color: Colors.green.shade700,
+              icon: Icons.arrow_circle_down_outlined,
+              onChanged: (v) => setState(() => _pickerIncomeId = v),
+            ),
+            const SizedBox(width: 12),
+            _buildAccountDropdown(
+              hint: 'Expense account…',
+              value: _pickerExpenseId,
+              entries: expenseGls,
+              color: Colors.red.shade700,
+              icon: Icons.arrow_circle_up_outlined,
+              onChanged: (v) => setState(() => _pickerExpenseId = v),
+            ),
+            const SizedBox(width: 16),
+            FilledButton.icon(
+              onPressed: (canAdd && !_prefSaving) ? _addPair : null,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildAccountDropdown({
+    required String hint,
+    required String? value,
+    required List<GeneralLedgerEntry> entries,
+    required Color color,
+    required IconData icon,
+    required void Function(String?) onChanged,
+  }) {
+    return SizedBox(
+      width: 220,
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        ),
+        child: DropdownButton<String>(
+          hint: Text(hint, style: const TextStyle(fontSize: 13)),
+          value: value,
+          isExpanded: true,
+          underline: const SizedBox(),
+          isDense: true,
+        items: entries
+            .map((g) => DropdownMenuItem(
+                  value: g.id,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 14, color: color),
+                      const SizedBox(width: 6),
+                      Text(g.description, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ))
+            .toList(),
+        onChanged: _prefSaving ? null : onChanged,
+      ),
+    ),
     );
   }
 
