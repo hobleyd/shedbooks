@@ -218,6 +218,7 @@ class _AdminNavGroup extends StatelessWidget {
     (label: 'Contacts', icon: Icons.people_outlined, path: '/admin/contacts'),
     (label: 'General Ledger', icon: Icons.book_outlined, path: '/admin/general-ledger'),
     (label: 'GST Management', icon: Icons.percent_outlined, path: '/admin/gst-management'),
+    (label: 'Backup', icon: Icons.backup_outlined, path: '/admin/backup'),
   ];
 
   @override

@@ -1137,10 +1137,23 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             Text('New Transaction',
                 style: Theme.of(context).textTheme.headlineMedium),
             const Spacer(),
-            OutlinedButton.icon(
-              onPressed: _saving ? null : _openImport,
-              icon: const Icon(Icons.upload_file_outlined, size: 18),
-              label: const Text('Import'),
+            MenuAnchor(
+              builder: (context, controller, _) => OutlinedButton.icon(
+                onPressed: _saving
+                    ? null
+                    : () => controller.isOpen
+                        ? controller.close()
+                        : controller.open(),
+                icon: const Icon(Icons.upload_file_outlined, size: 18),
+                label: const Text('Import'),
+              ),
+              menuChildren: [
+                MenuItemButton(
+                  leadingIcon: const Icon(Icons.table_chart_outlined, size: 18),
+                  onPressed: _saving ? null : _openImport,
+                  child: const Text("Woodgate Men's Shed Spreadsheet"),
+                ),
+              ],
             ),
             const SizedBox(width: 8),
             OutlinedButton(

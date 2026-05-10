@@ -45,6 +45,7 @@ import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
 import 'handlers/abn_lookup_handler.dart';
+import 'handlers/backup_handler.dart';
 import 'handlers/contact_handler.dart';
 import 'handlers/dashboard_preference_handler.dart';
 import 'handlers/bank_account_handler.dart';
@@ -128,6 +129,8 @@ Handler buildRouter({
     save: SaveDashboardPreferenceUseCase(dashboardPreferenceRepository),
   );
 
+  final backupHandler = BackupHandler(pool: pool);
+
   final authMiddleware = auth0Middleware(
     auth0Domain: auth0Domain,
     audience: audience,
@@ -183,6 +186,12 @@ Handler buildRouter({
       Pipeline()
           .addMiddleware(authMiddleware)
           .addHandler(_entityDetailsRouter(entityDetailsHandler)),
+    )
+    ..mount(
+      '/admin',
+      Pipeline()
+          .addMiddleware(authMiddleware)
+          .addHandler(_adminRouter(backupHandler)),
     );
 
   return Pipeline()
@@ -251,4 +260,10 @@ Router _gstRateRouter(GstRateHandler h) {
     ..get('/<id>', h.handleGet)
     ..put('/<id>', h.handleUpdate)
     ..delete('/<id>', h.handleDelete);
+}
+
+Router _adminRouter(BackupHandler h) {
+  return Router()
+    ..get('/backup', h.handleBackup)
+    ..post('/restore', h.handleRestore);
 }

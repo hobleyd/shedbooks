@@ -32,4 +32,17 @@ class ApiClient {
   /// Sends a DELETE request to [path].
   Future<http.Response> delete(String path) =>
       http.delete(Uri.parse('$_baseUrl$path'), headers: _headers());
+
+  /// Sends a POST request to [path] with raw [bytes] as the body.
+  Future<http.Response> postBytes(String path, List<int> bytes) {
+    final token = _getToken();
+    return http.post(
+      Uri.parse('$_baseUrl$path'),
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: bytes,
+    );
+  }
 }
