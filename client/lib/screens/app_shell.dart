@@ -20,30 +20,10 @@ class AppShell extends StatelessWidget {
     final authState = context.watch<AuthState>();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('ShedBooks'),
-        actions: [
-          if (authState.user != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Center(
-                child: Text(
-                  authState.user!.name ?? authState.user!.email ?? '',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
-            onPressed: () => _signOut(context, authState),
-          ),
-        ],
-      ),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const AppSidebar(),
+          AppSidebar(onSignOut: () => _signOut(context, authState)),
           const VerticalDivider(width: 1),
           Expanded(child: child),
         ],

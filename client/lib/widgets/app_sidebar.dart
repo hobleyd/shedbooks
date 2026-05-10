@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../services/navigation_guard.dart';
 
 /// Persistent left navigation sidebar for authenticated screens.
 class AppSidebar extends StatefulWidget {
-  const AppSidebar({super.key});
+  final VoidCallback? onSignOut;
+
+  const AppSidebar({super.key, this.onSignOut});
 
   @override
   State<AppSidebar> createState() => _AppSidebarState();
@@ -54,12 +57,31 @@ class _AppSidebarState extends State<AppSidebar> {
   @override
   Widget build(BuildContext context) {
     final currentPath = GoRouterState.of(context).uri.path;
+    final authState = context.watch<AuthState>();
+    final userName = authState.user?.name ?? authState.user?.email ?? '';
 
     return SizedBox(
       width: 240,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Image.asset(
+            'assets/logo.png',
+            width: 240,
+            fit: BoxFit.contain,
+          ),
+          const Text(
+            'ShedBooks',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 4),
           _NavItem(
             label: 'Dashboard',
             icon: Icons.dashboard_outlined,
@@ -88,6 +110,22 @@ class _AppSidebarState extends State<AppSidebar> {
             expanded: _adminExpanded,
             onExpansionChanged: (expanded) =>
                 setState(() => _adminExpanded = expanded),
+          ),
+          const Spacer(),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.account_circle_outlined),
+            title: Text(
+              userName,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Sign out',
+              onPressed: widget.onSignOut,
+            ),
+            contentPadding: const EdgeInsets.only(left: 16, right: 4),
           ),
         ],
       ),
