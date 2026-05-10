@@ -419,7 +419,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('By Account', style: Theme.of(context).textTheme.titleLarge),
+        Text('Special Initiatives', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 4),
         Text(
           'Each row pairs an income account with an expense account. '
@@ -457,42 +457,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const Divider(height: 1),
           ...summaries.asMap().entries.map(
               (e) => _buildGlRow(e.value, e.key, colWidth, labelWidth)),
-          const Divider(height: 1, thickness: 2),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-            child: Row(
-              children: [
-                const SizedBox(width: 36),
-                SizedBox(
-                  width: labelWidth,
-                  child: Text(
-                    'Total',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                SizedBox(
-                    width: colWidth,
-                    child: _amountText(
-                        summaries.fold(0, (s, g) => s + g.incomeCents),
-                        isIncome: true,
-                        bold: true)),
-                SizedBox(
-                    width: colWidth,
-                    child: _amountText(
-                        summaries.fold(0, (s, g) => s + g.expensesCents),
-                        isIncome: false,
-                        bold: true)),
-                SizedBox(
-                    width: colWidth,
-                    child: _netText(
-                        summaries.fold(0, (s, g) => s + g.netCents),
-                        bold: true)),
-              ],
-            ),
-          ),
           const SizedBox(height: 16),
         ],
         _buildGlPicker(),
