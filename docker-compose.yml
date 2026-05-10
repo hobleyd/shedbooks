@@ -1,22 +1,9 @@
-services:
-  server:
-    build:
-      context: ./server
-    environment:
-      AUTH0_DOMAIN: ${AUTH0_DOMAIN}
-      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
-      PORT: "8080"
-      DB_HOST: db
-      DB_PORT: "5432"
-      DB_NAME: shedbooks
-      DB_USER: shedbooks
-      DB_PASSWORD: ${DB_PASSWORD}
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
+networks:
+  shedbooks-data:
+    internal: true
+  shedbooks-web: {}
 
+services:
   db:
     build:
       context: ./db
@@ -41,6 +28,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - shedbooks-data
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ./server
+    environment:
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      PORT: "8080"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: shedbooks
+      DB_USER: shedbooks
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5438:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - shedbooks-data
+      - shedbooks-web
     restart: unless-stopped
 
   client:
@@ -50,7 +62,7 @@ services:
         AUTH0_DOMAIN: ${AUTH0_DOMAIN}
         AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
         AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
-        API_URL: ${API_URL:-http://localhost:8080}
+        API_URL: ${API_URL:-http://localhost:5438}
     ports:
       - "80:80"
       - "443:443"
@@ -58,6 +70,8 @@ services:
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       - server
+    networks:
+      - shedbooks-web
     restart: unless-stopped
 
 volumes:
