@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:logging/logging.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
+import '../lib/infrastructure/database/database_connection.dart';
+import '../lib/infrastructure/database/database_migrator.dart';
 import '../lib/presentation/router.dart';
 
 void main() async {
@@ -14,6 +16,13 @@ void main() async {
   });
 
   final log = Logger('Server');
+
+  try {
+    await DatabaseMigrator(DatabaseConnection.pool).migrate();
+  } catch (e, st) {
+    log.severe('Migration failed — aborting startup', e, st);
+    exit(1);
+  }
 
   final auth0Domain = _require('AUTH0_DOMAIN');
   final audience = _require('AUTH0_AUDIENCE');

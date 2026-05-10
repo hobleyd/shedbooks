@@ -17,6 +17,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build /app/bin/server ./bin/server
+COPY --from=build /app/lib/infrastructure/database/migrations ./migrations/
 
 EXPOSE 8080
 CMD ["./bin/server"]
