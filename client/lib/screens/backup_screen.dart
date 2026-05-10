@@ -46,7 +46,7 @@ class _BackupScreenState extends State<BackupScreen> {
       final stamp =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
           '-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-      final filename = 'shedbooks-backup-$stamp.sql';
+      final filename = 'shedbooks-backup-$stamp.json';
 
       final blob = html.Blob([res.bodyBytes], 'application/octet-stream');
       final url = html.Url.createObjectUrlFromBlob(blob);
