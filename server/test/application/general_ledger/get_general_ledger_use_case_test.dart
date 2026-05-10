@@ -14,11 +14,13 @@ void main() {
   late GetGeneralLedgerUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tAccount = GeneralLedger(
     id: tId,
     label: 'Cost of Goods Sold',
     description: 'Direct costs of producing goods',
     gstApplicable: false,
+    direction: GlDirection.moneyOut,
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 1),
   );
@@ -31,22 +33,25 @@ void main() {
   group('GetGeneralLedgerUseCase', () {
     test('returns the account when found', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => tAccount);
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tAccount);
 
       // Act
-      final result = await sut.execute(tId);
+      final result = await sut.execute(tId, entityId: tEntityId);
 
       // Assert
       expect(result, equals(tAccount));
     });
 
-    test('throws GeneralLedgerNotFoundException when account does not exist', () async {
+    test('throws GeneralLedgerNotFoundException when account does not exist',
+        () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => null);
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => null);
 
       // Act / Assert
       expect(
-        () => sut.execute(tId),
+        () => sut.execute(tId, entityId: tEntityId),
         throwsA(isA<GeneralLedgerNotFoundException>()),
       );
     });

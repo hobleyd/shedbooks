@@ -4,6 +4,7 @@ import 'package:shelf_router/shelf_router.dart';
 import '../infrastructure/auth/auth0_middleware.dart';
 import '../infrastructure/auth/jwks_client.dart';
 import '../infrastructure/database/database_connection.dart';
+import '../infrastructure/repositories/postgres_audit_repository.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
@@ -12,6 +13,7 @@ import '../infrastructure/repositories/postgres_bank_account_repository.dart';
 import '../infrastructure/repositories/postgres_entity_details_repository.dart';
 import '../infrastructure/repositories/postgres_gst_rate_repository.dart';
 import '../infrastructure/repositories/postgres_transaction_repository.dart';
+import '../application/audit/list_audit_entries_use_case.dart';
 import '../application/contact/create_contact_use_case.dart';
 import '../application/contact/delete_contact_use_case.dart';
 import '../application/contact/get_contact_use_case.dart';
@@ -45,6 +47,7 @@ import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
 import 'handlers/abn_lookup_handler.dart';
+import 'handlers/audit_handler.dart';
 import 'handlers/backup_handler.dart';
 import 'handlers/contact_handler.dart';
 import 'handlers/dashboard_preference_handler.dart';
@@ -53,6 +56,7 @@ import 'handlers/entity_details_handler.dart';
 import 'handlers/transaction_handler.dart';
 import 'handlers/general_ledger_handler.dart';
 import 'handlers/gst_rate_handler.dart';
+import 'middleware/audit_middleware.dart';
 import 'middleware/cors_middleware.dart';
 import 'middleware/error_handler_middleware.dart';
 
@@ -131,68 +135,44 @@ Handler buildRouter({
 
   final backupHandler = BackupHandler(pool: pool);
 
+  final auditHandler = AuditHandler(
+    list: ListAuditEntriesUseCase(PostgresAuditRepository(pool)),
+  );
+
   final authMiddleware = auth0Middleware(
     auth0Domain: auth0Domain,
     audience: audience,
     jwksClient: jwksClient,
   );
 
+  // Audit middleware is placed after auth so that auth claims are available.
+  final audit = auditMiddleware(pool);
+
+  Handler _authed(Handler inner) => Pipeline()
+      .addMiddleware(authMiddleware)
+      .addMiddleware(audit)
+      .addHandler(inner);
+
   final router = Router()
     ..get('/health', (Request _) => Response.ok('ok'))
-    ..mount(
-      '/abn-lookup',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler((req) => abnLookupHandler.handle(req)),
-    )
-    ..mount(
-      '/general-ledger',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_generalLedgerRouter(generalLedgerHandler)),
-    )
-    ..mount(
-      '/gst-rates',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_gstRateRouter(gstRateHandler)),
-    )
-    ..mount(
-      '/contacts',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_contactRouter(contactHandler)),
-    )
-    ..mount(
-      '/transactions',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_transactionRouter(transactionHandler)),
-    )
-    ..mount(
-      '/dashboard-preferences',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_dashboardPreferenceRouter(dashboardPreferenceHandler)),
-    )
-    ..mount(
-      '/bank-accounts',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_bankAccountRouter(bankAccountHandler)),
-    )
-    ..mount(
-      '/entity-details',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_entityDetailsRouter(entityDetailsHandler)),
-    )
-    ..mount(
-      '/admin',
-      Pipeline()
-          .addMiddleware(authMiddleware)
-          .addHandler(_adminRouter(backupHandler)),
-    );
+    ..mount('/abn-lookup',
+        _authed((req) => abnLookupHandler.handle(req)))
+    ..mount('/general-ledger',
+        _authed(_generalLedgerRouter(generalLedgerHandler)))
+    ..mount('/gst-rates',
+        _authed(_gstRateRouter(gstRateHandler)))
+    ..mount('/contacts',
+        _authed(_contactRouter(contactHandler)))
+    ..mount('/transactions',
+        _authed(_transactionRouter(transactionHandler)))
+    ..mount('/dashboard-preferences',
+        _authed(_dashboardPreferenceRouter(dashboardPreferenceHandler)))
+    ..mount('/bank-accounts',
+        _authed(_bankAccountRouter(bankAccountHandler)))
+    ..mount('/entity-details',
+        _authed(_entityDetailsRouter(entityDetailsHandler)))
+    ..mount('/admin',
+        _authed(_adminRouter(backupHandler, auditHandler)));
 
   return Pipeline()
       .addMiddleware(errorHandlerMiddleware())
@@ -262,8 +242,9 @@ Router _gstRateRouter(GstRateHandler h) {
     ..delete('/<id>', h.handleDelete);
 }
 
-Router _adminRouter(BackupHandler h) {
+Router _adminRouter(BackupHandler backup, AuditHandler audit) {
   return Router()
-    ..get('/backup', h.handleBackup)
-    ..post('/restore', h.handleRestore);
+    ..get('/backup', backup.handleBackup)
+    ..post('/restore', backup.handleRestore)
+    ..get('/audit-log', audit.handleList);
 }

@@ -13,6 +13,7 @@ void main() {
   late UpdateGstRateUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tEffectiveFrom = DateTime.utc(2026, 7, 1);
   final tUpdated = GstRate(
     id: tId,
@@ -32,12 +33,18 @@ void main() {
     test('updates and returns the updated entity', () async {
       // Arrange
       when(
-        () => repository.update(id: tId, rate: 0.15, effectiveFrom: tEffectiveFrom),
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          rate: 0.15,
+          effectiveFrom: tEffectiveFrom,
+        ),
       ).thenAnswer((_) async => tUpdated);
 
       // Act
       final result = await sut.execute(
         id: tId,
+        entityId: tEntityId,
         rate: 0.15,
         effectiveFrom: tEffectiveFrom,
       );
@@ -49,16 +56,23 @@ void main() {
     test('throws GstRateValidationException when rate is negative', () async {
       // Arrange / Act / Assert
       expect(
-        () => sut.execute(id: tId, rate: -0.01, effectiveFrom: tEffectiveFrom),
+        () => sut.execute(
+          id: tId,
+          entityId: tEntityId,
+          rate: -0.01,
+          effectiveFrom: tEffectiveFrom,
+        ),
         throwsA(isA<GstRateValidationException>()),
       );
     });
 
-    test('throws GstRateNotFoundException propagated from repository', () async {
+    test('throws GstRateNotFoundException propagated from repository',
+        () async {
       // Arrange
       when(
         () => repository.update(
           id: tId,
+          entityId: tEntityId,
           rate: any(named: 'rate'),
           effectiveFrom: any(named: 'effectiveFrom'),
         ),
@@ -66,17 +80,24 @@ void main() {
 
       // Act / Assert
       expect(
-        () => sut.execute(id: tId, rate: 0.10, effectiveFrom: tEffectiveFrom),
+        () => sut.execute(
+          id: tId,
+          entityId: tEntityId,
+          rate: 0.10,
+          effectiveFrom: tEffectiveFrom,
+        ),
         throwsA(isA<GstRateNotFoundException>()),
       );
     });
 
-    test('throws GstRateDuplicateEffectiveDateException propagated from repository',
+    test(
+        'throws GstRateDuplicateEffectiveDateException propagated from repository',
         () async {
       // Arrange
       when(
         () => repository.update(
           id: tId,
+          entityId: tEntityId,
           rate: any(named: 'rate'),
           effectiveFrom: any(named: 'effectiveFrom'),
         ),
@@ -84,7 +105,12 @@ void main() {
 
       // Act / Assert
       expect(
-        () => sut.execute(id: tId, rate: 0.10, effectiveFrom: tEffectiveFrom),
+        () => sut.execute(
+          id: tId,
+          entityId: tEntityId,
+          rate: 0.10,
+          effectiveFrom: tEffectiveFrom,
+        ),
         throwsA(isA<GstRateDuplicateEffectiveDateException>()),
       );
     });

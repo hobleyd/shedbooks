@@ -12,6 +12,7 @@ void main() {
   late MockGstRateRepository repository;
   late GetEffectiveGstRateUseCase sut;
 
+  const tEntityId = 'entity-1';
   final tDate = DateTime.utc(2026, 5, 1);
   final tRate = GstRate(
     id: '00000000-0000-0000-0000-000000000001',
@@ -30,36 +31,41 @@ void main() {
   group('GetEffectiveGstRateUseCase', () {
     test('returns the effective rate at the given date', () async {
       // Arrange
-      when(() => repository.findEffectiveAt(tDate)).thenAnswer((_) async => tRate);
+      when(() => repository.findEffectiveAt(tDate, entityId: tEntityId))
+          .thenAnswer((_) async => tRate);
 
       // Act
-      final result = await sut.execute(tDate);
+      final result = await sut.execute(entityId: tEntityId, date: tDate);
 
       // Assert
       expect(result, equals(tRate));
     });
 
-    test('throws GstRateNotEffectiveException when no rate covers the date', () async {
+    test('throws GstRateNotEffectiveException when no rate covers the date',
+        () async {
       // Arrange
-      when(() => repository.findEffectiveAt(tDate)).thenAnswer((_) async => null);
+      when(() => repository.findEffectiveAt(tDate, entityId: tEntityId))
+          .thenAnswer((_) async => null);
 
       // Act / Assert
       expect(
-        () => sut.execute(tDate),
+        () => sut.execute(entityId: tEntityId, date: tDate),
         throwsA(isA<GstRateNotEffectiveException>()),
       );
     });
 
     test('uses current time when no date is supplied', () async {
       // Arrange — match any DateTime passed to findEffectiveAt
-      when(() => repository.findEffectiveAt(any())).thenAnswer((_) async => tRate);
+      when(() => repository.findEffectiveAt(any(), entityId: tEntityId))
+          .thenAnswer((_) async => tRate);
 
       // Act
-      final result = await sut.execute();
+      final result = await sut.execute(entityId: tEntityId);
 
       // Assert
       expect(result, equals(tRate));
-      verify(() => repository.findEffectiveAt(any())).called(1);
+      verify(() => repository.findEffectiveAt(any(), entityId: tEntityId))
+          .called(1);
     });
   });
 }

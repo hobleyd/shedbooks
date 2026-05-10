@@ -14,14 +14,18 @@ void main() {
   late UpdateGeneralLedgerUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tUpdated = GeneralLedger(
     id: tId,
     label: 'Office Supplies',
     description: 'Stationery and consumables',
     gstApplicable: true,
+    direction: GlDirection.moneyOut,
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 2),
   );
+
+  setUpAll(() => registerFallbackValue(GlDirection.moneyIn));
 
   setUp(() {
     repository = MockGeneralLedgerRepository();
@@ -34,18 +38,22 @@ void main() {
       when(
         () => repository.update(
           id: tId,
+          entityId: tEntityId,
           label: 'Office Supplies',
           description: 'Stationery and consumables',
           gstApplicable: true,
+          direction: GlDirection.moneyOut,
         ),
       ).thenAnswer((_) async => tUpdated);
 
       // Act
       final result = await sut.execute(
         id: tId,
+        entityId: tEntityId,
         label: 'Office Supplies',
         description: 'Stationery and consumables',
         gstApplicable: true,
+        direction: GlDirection.moneyOut,
       );
 
       // Assert
@@ -57,47 +65,64 @@ void main() {
       when(
         () => repository.update(
           id: tId,
+          entityId: tEntityId,
           label: 'Office Supplies',
           description: 'Stationery and consumables',
           gstApplicable: false,
+          direction: GlDirection.moneyIn,
         ),
       ).thenAnswer((_) async => tUpdated);
 
       // Act
       await sut.execute(
         id: tId,
+        entityId: tEntityId,
         label: '  Office Supplies  ',
         description: '  Stationery and consumables  ',
         gstApplicable: false,
+        direction: GlDirection.moneyIn,
       );
 
       // Assert
       verify(
         () => repository.update(
           id: tId,
+          entityId: tEntityId,
           label: 'Office Supplies',
           description: 'Stationery and consumables',
           gstApplicable: false,
+          direction: GlDirection.moneyIn,
         ),
       ).called(1);
     });
 
-    test('throws GeneralLedgerValidationException when label is empty', () async {
+    test('throws GeneralLedgerValidationException when label is empty',
+        () async {
       // Arrange / Act / Assert
       expect(
-        () => sut.execute(id: tId, label: '', description: 'desc', gstApplicable: true),
+        () => sut.execute(
+          id: tId,
+          entityId: tEntityId,
+          label: '',
+          description: 'desc',
+          gstApplicable: true,
+          direction: GlDirection.moneyIn,
+        ),
         throwsA(isA<GeneralLedgerValidationException>()),
       );
     });
 
-    test('throws GeneralLedgerNotFoundException propagated from repository', () async {
+    test('throws GeneralLedgerNotFoundException propagated from repository',
+        () async {
       // Arrange
       when(
         () => repository.update(
           id: tId,
+          entityId: tEntityId,
           label: any(named: 'label'),
           description: any(named: 'description'),
           gstApplicable: any(named: 'gstApplicable'),
+          direction: any(named: 'direction'),
         ),
       ).thenThrow(GeneralLedgerNotFoundException(tId));
 
@@ -105,9 +130,11 @@ void main() {
       expect(
         () => sut.execute(
           id: tId,
+          entityId: tEntityId,
           label: 'Valid',
           description: 'Valid',
           gstApplicable: false,
+          direction: GlDirection.moneyIn,
         ),
         throwsA(isA<GeneralLedgerNotFoundException>()),
       );

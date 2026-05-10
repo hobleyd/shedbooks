@@ -12,12 +12,14 @@ void main() {
   late MockGeneralLedgerRepository repository;
   late ListGeneralLedgersUseCase sut;
 
+  const tEntityId = 'entity-1';
   final tAccounts = [
     GeneralLedger(
       id: '00000000-0000-0000-0000-000000000001',
       label: 'Cash',
       description: 'Cash on hand',
       gstApplicable: false,
+      direction: GlDirection.moneyIn,
       createdAt: DateTime(2026, 1, 1),
       updatedAt: DateTime(2026, 1, 1),
     ),
@@ -26,6 +28,7 @@ void main() {
       label: 'Sales Revenue',
       description: 'Revenue from sales',
       gstApplicable: true,
+      direction: GlDirection.moneyIn,
       createdAt: DateTime(2026, 1, 2),
       updatedAt: DateTime(2026, 1, 2),
     ),
@@ -39,22 +42,24 @@ void main() {
   group('ListGeneralLedgersUseCase', () {
     test('returns all active accounts from repository', () async {
       // Arrange
-      when(() => repository.findAll()).thenAnswer((_) async => tAccounts);
+      when(() => repository.findAll(entityId: tEntityId))
+          .thenAnswer((_) async => tAccounts);
 
       // Act
-      final result = await sut.execute();
+      final result = await sut.execute(entityId: tEntityId);
 
       // Assert
       expect(result, equals(tAccounts));
-      verify(() => repository.findAll()).called(1);
+      verify(() => repository.findAll(entityId: tEntityId)).called(1);
     });
 
     test('returns empty list when no accounts exist', () async {
       // Arrange
-      when(() => repository.findAll()).thenAnswer((_) async => []);
+      when(() => repository.findAll(entityId: tEntityId))
+          .thenAnswer((_) async => []);
 
       // Act
-      final result = await sut.execute();
+      final result = await sut.execute(entityId: tEntityId);
 
       // Assert
       expect(result, isEmpty);

@@ -213,12 +213,13 @@ class _AdminNavGroup extends StatelessWidget {
   });
 
   static const _subItems = [
-    (label: 'Entity', icon: Icons.business_outlined, path: '/admin/entity'),
+    (label: 'Audit Log', icon: Icons.history_outlined, path: '/admin/audit-log'),
+    (label: 'Backup', icon: Icons.backup_outlined, path: '/admin/backup'),
     (label: 'Bank Accounts', icon: Icons.account_balance_outlined, path: '/admin/bank-accounts'),
     (label: 'Contacts', icon: Icons.people_outlined, path: '/admin/contacts'),
+    (label: 'Entity', icon: Icons.business_outlined, path: '/admin/entity'),
     (label: 'General Ledger', icon: Icons.book_outlined, path: '/admin/general-ledger'),
     (label: 'GST Management', icon: Icons.percent_outlined, path: '/admin/gst-management'),
-    (label: 'Backup', icon: Icons.backup_outlined, path: '/admin/backup'),
   ];
 
   @override

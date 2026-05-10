@@ -12,6 +12,7 @@ void main() {
   late MockGstRateRepository repository;
   late CreateGstRateUseCase sut;
 
+  const tEntityId = 'entity-1';
   final tEffectiveFrom = DateTime.utc(2026, 7, 1);
   final tRate = GstRate(
     id: '00000000-0000-0000-0000-000000000001',
@@ -31,25 +32,44 @@ void main() {
     test('creates rate and returns the persisted entity', () async {
       // Arrange
       when(
-        () => repository.create(rate: 0.10, effectiveFrom: tEffectiveFrom),
+        () => repository.create(
+          entityId: tEntityId,
+          rate: 0.10,
+          effectiveFrom: tEffectiveFrom,
+        ),
       ).thenAnswer((_) async => tRate);
 
       // Act
-      final result = await sut.execute(rate: 0.10, effectiveFrom: tEffectiveFrom);
+      final result = await sut.execute(
+        entityId: tEntityId,
+        rate: 0.10,
+        effectiveFrom: tEffectiveFrom,
+      );
 
       // Assert
       expect(result, equals(tRate));
-      verify(() => repository.create(rate: 0.10, effectiveFrom: tEffectiveFrom)).called(1);
+      verify(
+        () => repository.create(
+          entityId: tEntityId,
+          rate: 0.10,
+          effectiveFrom: tEffectiveFrom,
+        ),
+      ).called(1);
     });
 
     test('throws GstRateValidationException when rate is negative', () async {
       // Arrange / Act / Assert
       expect(
-        () => sut.execute(rate: -0.01, effectiveFrom: tEffectiveFrom),
+        () => sut.execute(
+          entityId: tEntityId,
+          rate: -0.01,
+          effectiveFrom: tEffectiveFrom,
+        ),
         throwsA(isA<GstRateValidationException>()),
       );
       verifyNever(
         () => repository.create(
+          entityId: any(named: 'entityId'),
           rate: any(named: 'rate'),
           effectiveFrom: any(named: 'effectiveFrom'),
         ),
@@ -59,7 +79,11 @@ void main() {
     test('throws GstRateValidationException when rate exceeds 1', () async {
       // Arrange / Act / Assert
       expect(
-        () => sut.execute(rate: 1.01, effectiveFrom: tEffectiveFrom),
+        () => sut.execute(
+          entityId: tEntityId,
+          rate: 1.01,
+          effectiveFrom: tEffectiveFrom,
+        ),
         throwsA(isA<GstRateValidationException>()),
       );
     });
@@ -74,11 +98,19 @@ void main() {
         updatedAt: DateTime.utc(2026, 1, 1),
       );
       when(
-        () => repository.create(rate: 0.0, effectiveFrom: tEffectiveFrom),
+        () => repository.create(
+          entityId: tEntityId,
+          rate: 0.0,
+          effectiveFrom: tEffectiveFrom,
+        ),
       ).thenAnswer((_) async => zeroRate);
 
       // Act
-      final result = await sut.execute(rate: 0.0, effectiveFrom: tEffectiveFrom);
+      final result = await sut.execute(
+        entityId: tEntityId,
+        rate: 0.0,
+        effectiveFrom: tEffectiveFrom,
+      );
 
       // Assert
       expect(result.rate, equals(0.0));
@@ -94,11 +126,19 @@ void main() {
         updatedAt: DateTime.utc(2026, 1, 1),
       );
       when(
-        () => repository.create(rate: 1.0, effectiveFrom: tEffectiveFrom),
+        () => repository.create(
+          entityId: tEntityId,
+          rate: 1.0,
+          effectiveFrom: tEffectiveFrom,
+        ),
       ).thenAnswer((_) async => fullRate);
 
       // Act
-      final result = await sut.execute(rate: 1.0, effectiveFrom: tEffectiveFrom);
+      final result = await sut.execute(
+        entityId: tEntityId,
+        rate: 1.0,
+        effectiveFrom: tEffectiveFrom,
+      );
 
       // Assert
       expect(result.rate, equals(1.0));

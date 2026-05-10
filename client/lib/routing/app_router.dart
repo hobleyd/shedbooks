@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_state.dart';
 import '../screens/app_shell.dart';
+import '../screens/audit_screen.dart';
 import '../screens/backup_screen.dart';
 import '../screens/bank_accounts_screen.dart';
 import '../screens/contacts_screen.dart';
@@ -76,6 +77,10 @@ GoRouter createRouter(AuthState authState) {
           GoRoute(
             path: '/admin/gst-management',
             builder: (context, state) => const GstManagementScreen(),
+          ),
+          GoRoute(
+            path: '/admin/audit-log',
+            builder: (context, state) => const AuditScreen(),
           ),
           GoRoute(
             path: '/admin/backup',

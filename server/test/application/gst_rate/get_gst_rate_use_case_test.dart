@@ -13,6 +13,7 @@ void main() {
   late GetGstRateUseCase sut;
 
   const tId = '00000000-0000-0000-0000-000000000001';
+  const tEntityId = 'entity-1';
   final tRate = GstRate(
     id: tId,
     rate: 0.10,
@@ -29,10 +30,11 @@ void main() {
   group('GetGstRateUseCase', () {
     test('returns the rate when found', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => tRate);
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tRate);
 
       // Act
-      final result = await sut.execute(tId);
+      final result = await sut.execute(tId, entityId: tEntityId);
 
       // Assert
       expect(result, equals(tRate));
@@ -40,11 +42,12 @@ void main() {
 
     test('throws GstRateNotFoundException when rate does not exist', () async {
       // Arrange
-      when(() => repository.findById(tId)).thenAnswer((_) async => null);
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => null);
 
       // Act / Assert
       expect(
-        () => sut.execute(tId),
+        () => sut.execute(tId, entityId: tEntityId),
         throwsA(isA<GstRateNotFoundException>()),
       );
     });

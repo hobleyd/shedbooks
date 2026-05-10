@@ -11,6 +11,7 @@ void main() {
   late MockGstRateRepository repository;
   late ListGstRatesUseCase sut;
 
+  const tEntityId = 'entity-1';
   final tRates = [
     GstRate(
       id: '00000000-0000-0000-0000-000000000002',
@@ -36,22 +37,24 @@ void main() {
   group('ListGstRatesUseCase', () {
     test('returns all active rates from repository', () async {
       // Arrange
-      when(() => repository.findAll()).thenAnswer((_) async => tRates);
+      when(() => repository.findAll(entityId: tEntityId))
+          .thenAnswer((_) async => tRates);
 
       // Act
-      final result = await sut.execute();
+      final result = await sut.execute(entityId: tEntityId);
 
       // Assert
       expect(result, equals(tRates));
-      verify(() => repository.findAll()).called(1);
+      verify(() => repository.findAll(entityId: tEntityId)).called(1);
     });
 
     test('returns empty list when no rates exist', () async {
       // Arrange
-      when(() => repository.findAll()).thenAnswer((_) async => []);
+      when(() => repository.findAll(entityId: tEntityId))
+          .thenAnswer((_) async => []);
 
       // Act
-      final result = await sut.execute();
+      final result = await sut.execute(entityId: tEntityId);
 
       // Assert
       expect(result, isEmpty);
