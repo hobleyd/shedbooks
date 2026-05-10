@@ -17,6 +17,7 @@
 .swiftpm/
 migrate_working_dir/
 certs/
+scripts/*.bak
 
 # IntelliJ related
 *.iml
