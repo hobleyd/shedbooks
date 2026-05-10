@@ -1,8 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
+import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
@@ -29,6 +33,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
 
   List<TransactionEntry> _allTransactions = [];
   Map<String, GeneralLedgerEntry> _glMap = {};
+  EntityDetails? _entityDetails;
 
   _PeriodType _periodType = _PeriodType.month;
 
@@ -61,10 +66,11 @@ class _PlReportScreenState extends State<PlReportScreen> {
       final results = await Future.wait([
         client.get('/transactions'),
         client.get('/general-ledger'),
+        client.get('/entity-details'),
       ]);
       if (!mounted) return;
 
-      if (results.any((r) => r.statusCode != 200)) {
+      if (results[0].statusCode != 200 || results[1].statusCode != 200) {
         setState(() {
           _loadError = 'Failed to load data';
           _loading = false;
@@ -80,9 +86,16 @@ class _PlReportScreenState extends State<PlReportScreen> {
           .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
+      EntityDetails? entityDetails;
+      if (results[2].statusCode == 200) {
+        entityDetails = EntityDetails.fromJson(
+            jsonDecode(results[2].body) as Map<String, dynamic>);
+      }
+
       setState(() {
         _allTransactions = transactions;
         _glMap = {for (final g in glList) g.id: g};
+        _entityDetails = entityDetails;
         _loading = false;
       });
     } catch (e) {
@@ -139,7 +152,6 @@ class _PlReportScreenState extends State<PlReportScreen> {
     final now = DateTime.now();
     setState(() {
       _periodType = type;
-      // Reset to current period when switching type.
       _year = now.year;
       _month = now.month;
       _quarter = (now.month - 1) ~/ 3 + 1;
@@ -204,7 +216,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
       (map[gl.id] ??= _GlLine(gl)).totalCents += t.totalAmount;
     }
     return map.values.toList()
-      ..sort((a, b) => a.gl.description.compareTo(b.gl.description));
+      ..sort((a, b) => a.gl.label.compareTo(b.gl.label));
   }
 
   // ── Formatting ─────────────────────────────────────────────────────────────
@@ -220,6 +232,257 @@ class _PlReportScreenState extends State<PlReportScreen> {
       c++;
     }
     return '\$${buf.toString().split('').reversed.join()}.${parts[1]}';
+  }
+
+  String _formatAbn(String abn) {
+    final d = abn.replaceAll(' ', '');
+    if (d.length != 11) return abn;
+    return '${d.substring(0, 2)} ${d.substring(2, 5)} ${d.substring(5, 8)} ${d.substring(8)}';
+  }
+
+  String _formatDateShort(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+
+  // ── PDF generation ─────────────────────────────────────────────────────────
+
+  Future<void> _generatePdf() async {
+    final txns = _periodTransactions;
+    final incomeLines = _groupByGl(txns, true);
+    final expenseLines = _groupByGl(txns, false);
+    final totalIncome = incomeLines.fold(0, (s, l) => s + l.totalCents);
+    final totalExpenses = expenseLines.fold(0, (s, l) => s + l.totalCents);
+    final net = totalIncome - totalExpenses;
+    final isProfit = net >= 0;
+    final entity = _entityDetails;
+    final generated = _formatDateShort(DateTime.now());
+
+    final doc = pw.Document(title: 'Profit & Loss - $_periodShortLabel');
+
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 50, vertical: 50),
+      header: (ctx) {
+        if (ctx.pageNumber == 1) return pw.SizedBox(height: 0);
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              '${entity?.name ?? ''}  —  Profit & Loss  —  $_periodShortLabel (continued)',
+              style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+            ),
+            pw.Divider(color: PdfColors.grey400),
+            pw.SizedBox(height: 4),
+          ],
+        );
+      },
+      footer: (ctx) => pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 8),
+        child: pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('Generated $generated',
+                style: pw.TextStyle(fontSize: 7, color: PdfColors.grey400)),
+            pw.Text('Page ${ctx.pageNumber} of ${ctx.pagesCount}',
+                style: pw.TextStyle(fontSize: 7, color: PdfColors.grey400)),
+          ],
+        ),
+      ),
+      build: (ctx) => [
+        // Entity header
+        if (entity != null) ...[
+          pw.Text(entity.name,
+              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 3),
+          pw.Text(
+            'ABN: ${_formatAbn(entity.abn)}  |  ${entity.incorporationIdentifier}',
+            style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+          ),
+          pw.SizedBox(height: 14),
+        ],
+        pw.Text('Profit & Loss',
+            style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold)),
+        pw.Text(_periodEndedLabel,
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+        pw.SizedBox(height: 16),
+        pw.Divider(thickness: 1.5),
+        pw.SizedBox(height: 10),
+
+        // Income
+        _pdfSectionHeader('Income'),
+        pw.Divider(thickness: 0.5),
+        if (incomeLines.isEmpty)
+          _pdfEmptyRow('No income recorded for this period')
+        else ...[
+          ...incomeLines.map((l) => _pdfGlRow(l, isExpense: false)),
+          _pdfSubtotalRow('Total Income', totalIncome, isExpense: false),
+        ],
+        pw.SizedBox(height: 16),
+
+        // Expenses
+        _pdfSectionHeader('Expenses'),
+        pw.Divider(thickness: 0.5),
+        if (expenseLines.isEmpty)
+          _pdfEmptyRow('No expenses recorded for this period')
+        else ...[
+          ...expenseLines.map((l) => _pdfGlRow(l, isExpense: true)),
+          _pdfSubtotalRow('Total Expenses', totalExpenses, isExpense: true),
+        ],
+        pw.SizedBox(height: 8),
+        pw.Divider(thickness: 2),
+
+        // Net
+        _pdfNetRow(net, isProfit),
+
+        pw.SizedBox(height: 24),
+        pw.Text(
+          '${txns.length} transaction${txns.length == 1 ? '' : 's'}',
+          style: pw.TextStyle(fontSize: 7, color: PdfColors.grey400),
+        ),
+      ],
+    ));
+
+    await Printing.layoutPdf(onLayout: (_) async => doc.save());
+  }
+
+  static const _pdfLabelWidth = 76.0;
+  static const _pdfAmountWidth = 100.0;
+
+  pw.Widget _pdfSectionHeader(String title) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 5),
+      child: pw.Row(
+        children: [
+          pw.SizedBox(
+            width: _pdfLabelWidth,
+            child: pw.Text('Code',
+                style: pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey700)),
+          ),
+          pw.Expanded(
+            child: pw.Text(title,
+                style: pw.TextStyle(
+                    fontSize: 10, fontWeight: pw.FontWeight.bold)),
+          ),
+          pw.SizedBox(
+            width: _pdfAmountWidth,
+            child: pw.Text('Amount',
+                style: pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey700),
+                textAlign: pw.TextAlign.right),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfGlRow(_GlLine line, {required bool isExpense}) {
+    final amountText = isExpense
+        ? '(${_formatCents(line.totalCents)})'
+        : _formatCents(line.totalCents);
+    final amountColor = isExpense ? PdfColors.red700 : PdfColors.black;
+    return pw.Column(
+      children: [
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 4),
+          child: pw.Row(
+            children: [
+              pw.SizedBox(
+                width: _pdfLabelWidth,
+                child: pw.Text(line.gl.label,
+                    style: pw.TextStyle(
+                        fontSize: 8, color: PdfColors.grey700)),
+              ),
+              pw.Expanded(
+                child: pw.Text(line.gl.description,
+                    style: pw.TextStyle(fontSize: 9)),
+              ),
+              pw.SizedBox(
+                width: _pdfAmountWidth,
+                child: pw.Text(amountText,
+                    style: pw.TextStyle(fontSize: 9, color: amountColor),
+                    textAlign: pw.TextAlign.right),
+              ),
+            ],
+          ),
+        ),
+        pw.Divider(thickness: 0.3, color: PdfColors.grey300),
+      ],
+    );
+  }
+
+  pw.Widget _pdfSubtotalRow(String label, int cents,
+      {required bool isExpense}) {
+    final amountText =
+        isExpense ? '(${_formatCents(cents)})' : _formatCents(cents);
+    final amountColor = isExpense ? PdfColors.red700 : PdfColors.black;
+    return pw.Container(
+      color: PdfColors.grey100,
+      child: pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        child: pw.Row(
+          children: [
+            pw.SizedBox(width: _pdfLabelWidth),
+            pw.Expanded(
+              child: pw.Text(label,
+                  style: pw.TextStyle(
+                      fontSize: 9, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.SizedBox(
+              width: _pdfAmountWidth,
+              child: pw.Text(amountText,
+                  style: pw.TextStyle(
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                      color: amountColor),
+                  textAlign: pw.TextAlign.right),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  pw.Widget _pdfNetRow(int net, bool isProfit) {
+    final color = isProfit ? PdfColors.black : PdfColors.red700;
+    final label = isProfit ? 'Net Profit' : 'Net Loss';
+    final amount =
+        isProfit ? _formatCents(net) : '(${_formatCents(net.abs())})';
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 8),
+      child: pw.Row(
+        children: [
+          pw.SizedBox(width: _pdfLabelWidth),
+          pw.Expanded(
+            child: pw.Text(label,
+                style: pw.TextStyle(
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                    color: color)),
+          ),
+          pw.SizedBox(
+            width: _pdfAmountWidth,
+            child: pw.Text(amount,
+                style: pw.TextStyle(
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                    color: color),
+                textAlign: pw.TextAlign.right),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfEmptyRow(String message) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 6),
+      child: pw.Text(message,
+          style: pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
+    );
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -252,12 +515,19 @@ class _PlReportScreenState extends State<PlReportScreen> {
         Text('Profit & Loss',
             style: Theme.of(context).textTheme.headlineMedium),
         const Spacer(),
-        if (!_loading)
+        if (!_loading) ...[
+          OutlinedButton.icon(
+            onPressed: _generatePdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+            label: const Text('PDF'),
+          ),
+          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
             tooltip: 'Refresh',
           ),
+        ],
       ],
     );
   }
@@ -318,10 +588,11 @@ class _PlReportScreenState extends State<PlReportScreen> {
     final net = totalIncome - totalExpenses;
     final isProfit = net >= 0;
 
+    const labelColWidth = 90.0;
     const amountWidth = 160.0;
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 680),
+      constraints: const BoxConstraints(maxWidth: 780),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -335,26 +606,30 @@ class _PlReportScreenState extends State<PlReportScreen> {
           const SizedBox(height: 20),
 
           // ── Income ──────────────────────────────────────────────────────
-          _buildSectionHeader('Income', amountWidth),
+          _buildSectionHeader('Income', labelColWidth, amountWidth),
           const Divider(height: 1),
           if (incomeLines.isEmpty)
             _buildEmptyRow('No income recorded for this period')
           else ...[
-            ...incomeLines.map((l) => _buildGlRow(l, amountWidth, isExpense: false)),
-            _buildSubtotalRow('Total Income', totalIncome, amountWidth,
+            ...incomeLines.map((l) =>
+                _buildGlRow(l, labelColWidth, amountWidth, isExpense: false)),
+            _buildSubtotalRow(
+                'Total Income', totalIncome, labelColWidth, amountWidth,
                 isExpense: false),
           ],
 
           const SizedBox(height: 24),
 
           // ── Expenses ─────────────────────────────────────────────────────
-          _buildSectionHeader('Expenses', amountWidth),
+          _buildSectionHeader('Expenses', labelColWidth, amountWidth),
           const Divider(height: 1),
           if (expenseLines.isEmpty)
             _buildEmptyRow('No expenses recorded for this period')
           else ...[
-            ...expenseLines.map((l) => _buildGlRow(l, amountWidth, isExpense: true)),
-            _buildSubtotalRow('Total Expenses', totalExpenses, amountWidth,
+            ...expenseLines.map((l) =>
+                _buildGlRow(l, labelColWidth, amountWidth, isExpense: true)),
+            _buildSubtotalRow(
+                'Total Expenses', totalExpenses, labelColWidth, amountWidth,
                 isExpense: true),
           ],
 
@@ -362,7 +637,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
           const Divider(height: 1, thickness: 2),
 
           // ── Net ───────────────────────────────────────────────────────────
-          _buildNetRow(net, isProfit, amountWidth),
+          _buildNetRow(net, isProfit, labelColWidth, amountWidth),
 
           const SizedBox(height: 32),
           Text(
@@ -378,40 +653,55 @@ class _PlReportScreenState extends State<PlReportScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title, double amountWidth) {
+  Widget _buildSectionHeader(
+      String title, double labelColWidth, double amountWidth) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
       child: Row(
         children: [
+          SizedBox(
+            width: labelColWidth,
+            child: Text('Code',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Colors.black45)),
+          ),
           Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
+            child: Text(title,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold)),
           ),
           SizedBox(
             width: amountWidth,
-            child: Text(
-              'Amount',
-              style: Theme.of(context).textTheme.labelLarge,
-              textAlign: TextAlign.right,
-            ),
+            child: Text('Amount',
+                style: Theme.of(context).textTheme.labelLarge,
+                textAlign: TextAlign.right),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGlRow(_GlLine line, double amountWidth, {required bool isExpense}) {
+  Widget _buildGlRow(_GlLine line, double labelColWidth, double amountWidth,
+      {required bool isExpense}) {
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           child: Row(
             children: [
+              SizedBox(
+                width: labelColWidth,
+                child: Text(
+                  line.gl.label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.black54),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               Expanded(
                 child: Text(
                   line.gl.description,
@@ -439,14 +729,18 @@ class _PlReportScreenState extends State<PlReportScreen> {
     );
   }
 
-  Widget _buildSubtotalRow(
-      String label, int cents, double amountWidth, {required bool isExpense}) {
+  Widget _buildSubtotalRow(String label, int cents, double labelColWidth,
+      double amountWidth, {required bool isExpense}) {
     return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(60),
+      color: Theme.of(context)
+          .colorScheme
+          .surfaceContainerHighest
+          .withAlpha(60),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         child: Row(
           children: [
+            SizedBox(width: labelColWidth),
             Expanded(
               child: Text(
                 label,
@@ -476,7 +770,8 @@ class _PlReportScreenState extends State<PlReportScreen> {
     );
   }
 
-  Widget _buildNetRow(int net, bool isProfit, double amountWidth) {
+  Widget _buildNetRow(
+      int net, bool isProfit, double labelColWidth, double amountWidth) {
     final color = isProfit ? Colors.black87 : Colors.red.shade700;
     final label = isProfit ? 'Net Profit' : 'Net Loss';
     final amount = isProfit
@@ -487,6 +782,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
       child: Row(
         children: [
+          SizedBox(width: labelColWidth),
           Expanded(
             child: Text(
               label,

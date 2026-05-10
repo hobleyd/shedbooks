@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entity_details.dart';
@@ -192,6 +195,222 @@ class _BasReportScreenState extends State<BasReportScreen> {
     return '1 ${months[startMonth]} to $endDay ${months[endMonth]} $_year';
   }
 
+  // ── PDF generation ─────────────────────────────────────────────────────────
+
+  String _formatDateShort(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+
+  Future<void> _generatePdf() async {
+    final txns = _quarterTransactions;
+    final g1 = _computeG1(txns);
+    final oneA = _compute1A(txns);
+    final oneB = _compute1B(txns);
+    final netGst = oneA - oneB;
+    final isPayable = netGst >= 0;
+    final entity = _entityDetails;
+    final generated = _formatDateShort(DateTime.now());
+
+    final doc = pw.Document(title: 'BAS Q$_quarter $_year');
+
+    doc.addPage(pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(50),
+      build: (ctx) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          // Entity header
+          if (entity != null) ...[
+            pw.Text(entity.name,
+                style: pw.TextStyle(
+                    fontSize: 18, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 3),
+            pw.Text(
+              'ABN: ${_formatAbn(entity.abn)}  |  ${entity.incorporationIdentifier}',
+              style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+            ),
+            pw.SizedBox(height: 14),
+          ],
+          pw.Text('Business Activity Statement',
+              style: pw.TextStyle(
+                  fontSize: 15, fontWeight: pw.FontWeight.bold)),
+          pw.Text(
+            'Q$_quarter $_year  —  ${_quarterMonthNames[_quarter]}',
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+          ),
+          pw.Text('Period: $_periodLabel',
+              style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+          pw.SizedBox(height: 16),
+          pw.Divider(thickness: 1.5),
+          pw.SizedBox(height: 12),
+
+          // GST on Sales
+          _basPdfSectionTitle('GST on Sales'),
+          pw.Divider(thickness: 0.5),
+          _basPdfRow('G1', 'Total sales',
+              'All income for the quarter', g1,
+              highlight: false),
+          _basPdfRow('1A', 'GST on sales',
+              'GST collected on GST-applicable income', oneA,
+              highlight: true),
+          pw.SizedBox(height: 14),
+
+          // GST on Purchases
+          _basPdfSectionTitle('GST on Purchases'),
+          pw.Divider(thickness: 0.5),
+          _basPdfRow('1B', 'GST on purchases',
+              'GST paid on GST-applicable expenses', oneB,
+              highlight: true),
+          pw.SizedBox(height: 16),
+
+          // Net GST
+          pw.Divider(thickness: 1.5),
+          pw.SizedBox(height: 4),
+          pw.Container(
+            decoration: pw.BoxDecoration(
+              color: isPayable ? PdfColors.red50 : PdfColors.green50,
+              border: pw.Border.all(
+                  color: isPayable ? PdfColors.red200 : PdfColors.green200),
+              borderRadius: pw.BorderRadius.circular(4),
+            ),
+            padding: const pw.EdgeInsets.symmetric(
+                horizontal: 14, vertical: 12),
+            child: pw.Row(
+              children: [
+                pw.Expanded(
+                  child: pw.Text(
+                    isPayable
+                        ? 'Net GST payable to ATO'
+                        : 'Net GST refundable from ATO',
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      fontWeight: pw.FontWeight.bold,
+                      color: isPayable
+                          ? PdfColors.red700
+                          : PdfColors.green700,
+                    ),
+                  ),
+                ),
+                pw.Text(
+                  isPayable
+                      ? _formatCents(netGst)
+                      : '(${_formatCents(netGst.abs())})',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    color:
+                        isPayable ? PdfColors.red700 : PdfColors.green700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 20),
+
+          // Note
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text('Note: ',
+                  style: pw.TextStyle(
+                      fontSize: 8,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey600)),
+              pw.Expanded(
+                child: pw.Text(
+                  'W1 (gross wages), W2 (PAYG withholding) and T7 (PAYG instalments) '
+                  'are not recorded in this system.',
+                  style: pw.TextStyle(
+                      fontSize: 8, color: PdfColors.grey600),
+                ),
+              ),
+            ],
+          ),
+
+          pw.Spacer(),
+
+          // Footer
+          pw.Divider(color: PdfColors.grey300),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(
+                'Period: $_periodLabel  ·  '
+                '${txns.length} transaction${txns.length == 1 ? '' : 's'}',
+                style:
+                    pw.TextStyle(fontSize: 7, color: PdfColors.grey400),
+              ),
+              pw.Text('Generated $generated',
+                  style: pw.TextStyle(
+                      fontSize: 7, color: PdfColors.grey400)),
+            ],
+          ),
+        ],
+      ),
+    ));
+
+    await Printing.layoutPdf(onLayout: (_) async => doc.save());
+  }
+
+  pw.Widget _basPdfSectionTitle(String title) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 5),
+      child: pw.Text(title,
+          style: pw.TextStyle(
+              fontSize: 10, fontWeight: pw.FontWeight.bold)),
+    );
+  }
+
+  pw.Widget _basPdfRow(
+      String code, String label, String hint, int cents,
+      {required bool highlight}) {
+    return pw.Column(
+      children: [
+        pw.Container(
+          color: highlight ? PdfColors.blue50 : null,
+          child: pw.Padding(
+            padding:
+                const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: pw.Row(
+              children: [
+                pw.SizedBox(
+                  width: 36,
+                  child: pw.Text(code,
+                      style: pw.TextStyle(
+                          fontSize: 10,
+                          fontWeight: pw.FontWeight.bold)),
+                ),
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(label,
+                          style: pw.TextStyle(fontSize: 9)),
+                      pw.Text(hint,
+                          style: pw.TextStyle(
+                              fontSize: 7, color: PdfColors.grey500)),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(
+                  width: 120,
+                  child: pw.Text(
+                    _formatCents(cents),
+                    style: pw.TextStyle(
+                      fontSize: 9,
+                      fontWeight: highlight ? pw.FontWeight.bold : null,
+                    ),
+                    textAlign: pw.TextAlign.right,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        pw.Divider(thickness: 0.3, color: PdfColors.grey300),
+      ],
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -234,12 +453,19 @@ class _BasReportScreenState extends State<BasReportScreen> {
           tooltip: 'Next quarter',
         ),
         const Spacer(),
-        if (!_loading)
+        if (!_loading) ...[
+          OutlinedButton.icon(
+            onPressed: _generatePdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+            label: const Text('PDF'),
+          ),
+          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
             tooltip: 'Refresh',
           ),
+        ],
       ],
     );
   }
