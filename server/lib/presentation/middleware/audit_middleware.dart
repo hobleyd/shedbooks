@@ -5,11 +5,16 @@ import 'package:shelf/shelf.dart';
 
 import '../../domain/entities/audit_entry.dart';
 import '../../infrastructure/repositories/postgres_audit_repository.dart';
+import '../audit_changes.dart';
 
 /// Shelf middleware that writes an [AuditEntry] after every auditable request.
 ///
 /// Must be placed **after** the auth middleware in the pipeline so that
 /// `request.context['auth.claims']` is populated.
+///
+/// An [AuditChanges] instance is injected into the request context under the
+/// key `'audit.changes'` before the inner handler runs.  Handlers may call
+/// `AuditChanges.set()` to attach field-level change details.
 ///
 /// Audit inserts are fire-and-forget — a logging failure never affects the
 /// HTTP response returned to the client.
@@ -18,14 +23,19 @@ Middleware auditMiddleware(Pool pool) {
 
   return (Handler inner) {
     return (Request request) async {
-      final response = await inner(request);
+      final changes = AuditChanges();
+      final augmented = request.change(
+        context: {...request.context, 'audit.changes': changes},
+      );
+
+      final response = await inner(augmented);
 
       final method = request.method.toUpperCase();
       final path = request.requestedUri.path;
 
       if (_shouldAudit(method, path, response.statusCode)) {
         unawaited(
-          _record(repo, request, method, path, response.statusCode)
+          _record(repo, augmented, method, path, response.statusCode, changes.data)
               .catchError((_) {}),
         );
       }
@@ -53,12 +63,16 @@ Future<void> _record(
   String method,
   String path,
   int statusCode,
+  Map<String, dynamic>? changes,
 ) async {
   final claims = request.context['auth.claims'] as Map<String, dynamic>?;
   final entityId =
       claims?['https://shedbooks.com/entity_id'] as String? ?? '';
   final userId = claims?['sub'] as String? ?? '';
-  final userEmail = claims?['email'] as String? ?? '';
+  // email may be a plain claim or namespaced — accept both.
+  final userEmail = (claims?['email'] as String?)?.isNotEmpty == true
+      ? claims!['email'] as String
+      : (claims?['https://shedbooks.com/email'] as String?) ?? '';
 
   await repo.insert(AuditEntry(
     id: '',
@@ -72,6 +86,7 @@ Future<void> _record(
     tableName: _tableName(path),
     recordId: _recordId(path),
     statusCode: statusCode,
+    changes: changes,
     createdAt: DateTime.now(),
   ));
 }

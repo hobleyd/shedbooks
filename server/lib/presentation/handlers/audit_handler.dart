@@ -49,6 +49,7 @@ class AuditHandler {
         'tableName': e.tableName,
         'recordId': e.recordId,
         'statusCode': e.statusCode,
+        'changes': e.changes,
         'createdAt': e.createdAt.toUtc().toIso8601String(),
       };
 

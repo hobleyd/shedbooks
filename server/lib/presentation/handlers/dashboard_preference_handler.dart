@@ -6,7 +6,9 @@ import 'package:shelf/shelf.dart';
 import '../../application/dashboard/get_dashboard_preference_use_case.dart';
 import '../../application/dashboard/save_dashboard_preference_use_case.dart';
 import '../../domain/entities/dashboard_preference.dart';
+import '../audit_changes.dart';
 import '../dto/dashboard_preference_response.dart';
+import 'handler_diff.dart';
 
 /// Shelf request handlers for /dashboard-preferences.
 class DashboardPreferenceHandler {
@@ -58,7 +60,14 @@ class DashboardPreferenceHandler {
           'selectedAccountPairs must be a list of {incomeGlId, expenseGlId} objects');
     }
 
+    final before = await _get.execute(entityId);
     await _save.execute(entityId, pairs);
+
+    final beforeMap = _prefsSnapshot(before.selectedAccountPairs);
+    final afterMap = _prefsSnapshot(pairs);
+    final diff = diffMaps(beforeMap, afterMap);
+    _auditChanges(request)?.set(diff.isNotEmpty ? diff : afterMap);
+
     return Response(204);
   }
 
@@ -66,6 +75,16 @@ class DashboardPreferenceHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
+
+  static Map<String, dynamic> _prefsSnapshot(List<GlAccountPair> pairs) => {
+        'selectedAccountPairs': pairs
+            .map((p) => '${p.incomeGlId}/${p.expenseGlId}')
+            .join(', '),
+        'pairCount': pairs.length,
+      };
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

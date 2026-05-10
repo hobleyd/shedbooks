@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:postgres/postgres.dart';
 
 import '../../domain/entities/audit_entry.dart';
@@ -15,10 +17,10 @@ class PostgresAuditRepository implements IAuditRepository {
       Sql.named('''
         INSERT INTO audit_log
           (entity_id, user_id, user_email, ip_address, method, path,
-           action, table_name, record_id, status_code)
+           action, table_name, record_id, status_code, changes)
         VALUES
           (@entityId, @userId, @userEmail, @ipAddress, @method, @path,
-           @action, @tableName, @recordId, @statusCode)
+           @action, @tableName, @recordId, @statusCode, @changes::jsonb)
       '''),
       parameters: {
         'entityId': entry.entityId,
@@ -31,6 +33,7 @@ class PostgresAuditRepository implements IAuditRepository {
         'tableName': entry.tableName,
         'recordId': entry.recordId,
         'statusCode': entry.statusCode,
+        'changes': entry.changes != null ? jsonEncode(entry.changes) : null,
       },
     );
   }
@@ -47,7 +50,7 @@ class PostgresAuditRepository implements IAuditRepository {
       Sql.named('''
         SELECT id::text, entity_id, user_id, user_email, ip_address,
                method, path, action, table_name, record_id,
-               status_code, created_at
+               status_code, changes, created_at
         FROM audit_log
         WHERE entity_id = @entityId
           AND (@pattern::text IS NULL OR (
@@ -101,6 +104,14 @@ class PostgresAuditRepository implements IAuditRepository {
   }
 
   static AuditEntry _mapRow(Map<String, dynamic> row) {
+    final rawChanges = row['changes'];
+    Map<String, dynamic>? changes;
+    if (rawChanges != null) {
+      changes = rawChanges is Map
+          ? Map<String, dynamic>.from(rawChanges)
+          : jsonDecode(rawChanges.toString()) as Map<String, dynamic>;
+    }
+
     return AuditEntry(
       id: row['id'] as String,
       entityId: row['entity_id'] as String,
@@ -113,6 +124,7 @@ class PostgresAuditRepository implements IAuditRepository {
       tableName: row['table_name'] as String,
       recordId: row['record_id'] as String?,
       statusCode: row['status_code'] as int,
+      changes: changes,
       createdAt: row['created_at'] as DateTime,
     );
   }

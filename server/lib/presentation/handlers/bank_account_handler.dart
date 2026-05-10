@@ -8,10 +8,13 @@ import '../../application/bank_account/delete_bank_account_use_case.dart';
 import '../../application/bank_account/get_bank_account_use_case.dart';
 import '../../application/bank_account/list_bank_accounts_use_case.dart';
 import '../../application/bank_account/update_bank_account_use_case.dart';
+import '../../domain/entities/bank_account.dart';
 import '../../domain/exceptions/bank_account_exception.dart';
+import '../audit_changes.dart';
 import '../dto/bank_account_response.dart';
 import '../dto/create_bank_account_request.dart';
 import '../dto/update_bank_account_request.dart';
+import 'handler_diff.dart';
 
 /// Shelf request handlers for /bank-accounts.
 class BankAccountHandler {
@@ -74,6 +77,7 @@ class BankAccountHandler {
         accountType: dto.accountType,
         currency: dto.currency,
       );
+      _auditChanges(request)?.set(_accountSnapshot(account));
       return Response(201,
           body: BankAccountResponse.fromEntity(account).toJsonString(),
           headers: _jsonHeaders);
@@ -116,6 +120,11 @@ class BankAccountHandler {
       return _badRequest(e.message);
     }
 
+    BankAccount? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       final account = await _update.execute(
         id: id,
@@ -127,6 +136,10 @@ class BankAccountHandler {
         accountType: dto.accountType,
         currency: dto.currency,
       );
+      if (before != null) {
+        final diff = diffMaps(_accountSnapshot(before), _accountSnapshot(account));
+        if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
+      }
       return Response.ok(
           BankAccountResponse.fromEntity(account).toJsonString(),
           headers: _jsonHeaders);
@@ -142,8 +155,14 @@ class BankAccountHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    BankAccount? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       await _delete.execute(id, entityId: entityId);
+      if (before != null) _auditChanges(request)?.set(_accountSnapshot(before));
       return Response(204);
     } on BankAccountNotFoundException catch (e) {
       return _notFound(e.message);
@@ -154,6 +173,18 @@ class BankAccountHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
+
+  static Map<String, dynamic> _accountSnapshot(BankAccount a) => {
+        'bankName': a.bankName,
+        'accountName': a.accountName,
+        'bsb': a.bsb,
+        'accountNumber': a.accountNumber,
+        'accountType': a.accountType.name,
+        'currency': a.currency,
+      };
 
   static Response _orgRequired() => Response.unauthorized(
       jsonEncode({'error': 'Organization authentication required'}),

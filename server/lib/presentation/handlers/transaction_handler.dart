@@ -7,10 +7,13 @@ import '../../application/transaction/delete_transaction_use_case.dart';
 import '../../application/transaction/get_transaction_use_case.dart';
 import '../../application/transaction/list_transactions_use_case.dart';
 import '../../application/transaction/update_transaction_use_case.dart';
+import '../../domain/entities/transaction.dart';
 import '../../domain/exceptions/transaction_exception.dart';
+import '../audit_changes.dart';
 import '../dto/create_transaction_request.dart';
 import '../dto/transaction_response.dart';
 import '../dto/update_transaction_request.dart';
+import 'handler_diff.dart';
 
 /// Shelf request handlers for the /transactions resource.
 class TransactionHandler {
@@ -75,6 +78,7 @@ class TransactionHandler {
         description: dto.description,
         transactionDate: dto.transactionDate,
       );
+      _auditChanges(request)?.set(_txSnapshot(transaction));
       return Response(
         201,
         body: TransactionResponse.fromEntity(transaction).toJsonString(),
@@ -120,6 +124,11 @@ class TransactionHandler {
       return _badRequest(e.message);
     }
 
+    Transaction? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       final transaction = await _update.execute(
         id: id,
@@ -133,6 +142,10 @@ class TransactionHandler {
         description: dto.description,
         transactionDate: dto.transactionDate,
       );
+      if (before != null) {
+        final diff = diffMaps(_txSnapshot(before), _txSnapshot(transaction));
+        if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
+      }
       return Response.ok(
         TransactionResponse.fromEntity(transaction).toJsonString(),
         headers: _jsonHeaders,
@@ -149,8 +162,14 @@ class TransactionHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    Transaction? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       await _delete.execute(id, entityId: entityId);
+      if (before != null) _auditChanges(request)?.set(_txSnapshot(before));
       return Response(204);
     } on TransactionNotFoundException catch (e) {
       return _notFound(e.message);
@@ -161,6 +180,20 @@ class TransactionHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
+
+  static Map<String, dynamic> _txSnapshot(Transaction t) => {
+        'contactId': t.contactId,
+        'generalLedgerId': t.generalLedgerId,
+        'amount': t.amount,
+        'gstAmount': t.gstAmount,
+        'transactionType': t.transactionType.name,
+        'receiptNumber': t.receiptNumber,
+        'description': t.description,
+        'transactionDate': t.transactionDate.toIso8601String(),
+      };
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

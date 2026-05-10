@@ -7,10 +7,13 @@ import '../../application/general_ledger/delete_general_ledger_use_case.dart';
 import '../../application/general_ledger/get_general_ledger_use_case.dart';
 import '../../application/general_ledger/list_general_ledgers_use_case.dart';
 import '../../application/general_ledger/update_general_ledger_use_case.dart';
+import '../../domain/entities/general_ledger.dart';
 import '../../domain/exceptions/general_ledger_exception.dart';
+import '../audit_changes.dart';
 import '../dto/create_general_ledger_request.dart';
 import '../dto/general_ledger_response.dart';
 import '../dto/update_general_ledger_request.dart';
+import 'handler_diff.dart';
 
 /// Shelf request handlers for the /general-ledger resource.
 class GeneralLedgerHandler {
@@ -71,6 +74,7 @@ class GeneralLedgerHandler {
         gstApplicable: dto.gstApplicable,
         direction: dto.direction,
       );
+      _auditChanges(request)?.set(_glSnapshot(account));
       return Response(
         201,
         body: GeneralLedgerResponse.fromEntity(account).toJsonString(),
@@ -116,6 +120,11 @@ class GeneralLedgerHandler {
       return _badRequest(e.message);
     }
 
+    GeneralLedger? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       final account = await _update.execute(
         id: id,
@@ -125,6 +134,10 @@ class GeneralLedgerHandler {
         gstApplicable: dto.gstApplicable,
         direction: dto.direction,
       );
+      if (before != null) {
+        final diff = diffMaps(_glSnapshot(before), _glSnapshot(account));
+        if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
+      }
       return Response.ok(
         GeneralLedgerResponse.fromEntity(account).toJsonString(),
         headers: _jsonHeaders,
@@ -141,8 +154,14 @@ class GeneralLedgerHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    GeneralLedger? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       await _delete.execute(id, entityId: entityId);
+      if (before != null) _auditChanges(request)?.set(_glSnapshot(before));
       return Response(204);
     } on GeneralLedgerNotFoundException catch (e) {
       return _notFound(e.message);
@@ -153,6 +172,16 @@ class GeneralLedgerHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
+
+  static Map<String, dynamic> _glSnapshot(GeneralLedger e) => {
+        'label': e.label,
+        'description': e.description,
+        'gstApplicable': e.gstApplicable,
+        'direction': e.direction.name,
+      };
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

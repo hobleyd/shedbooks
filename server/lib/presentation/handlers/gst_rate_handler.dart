@@ -8,10 +8,13 @@ import '../../application/gst_rate/get_effective_gst_rate_use_case.dart';
 import '../../application/gst_rate/get_gst_rate_use_case.dart';
 import '../../application/gst_rate/list_gst_rates_use_case.dart';
 import '../../application/gst_rate/update_gst_rate_use_case.dart';
+import '../../domain/entities/gst_rate.dart';
 import '../../domain/exceptions/gst_rate_exception.dart';
+import '../audit_changes.dart';
 import '../dto/create_gst_rate_request.dart';
 import '../dto/gst_rate_response.dart';
 import '../dto/update_gst_rate_request.dart';
+import 'handler_diff.dart';
 
 /// Shelf request handlers for the /gst-rates resource.
 class GstRateHandler {
@@ -73,6 +76,7 @@ class GstRateHandler {
         rate: dto.rate,
         effectiveFrom: dto.effectiveFrom,
       );
+      _auditChanges(request)?.set(_rateSnapshot(rate));
       return Response(
         201,
         body: GstRateResponse.fromEntity(rate).toJsonString(),
@@ -146,6 +150,11 @@ class GstRateHandler {
       return _badRequest(e.message);
     }
 
+    GstRate? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       final rate = await _update.execute(
         id: id,
@@ -153,6 +162,10 @@ class GstRateHandler {
         rate: dto.rate,
         effectiveFrom: dto.effectiveFrom,
       );
+      if (before != null) {
+        final diff = diffMaps(_rateSnapshot(before), _rateSnapshot(rate));
+        if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
+      }
       return Response.ok(
         GstRateResponse.fromEntity(rate).toJsonString(),
         headers: _jsonHeaders,
@@ -171,8 +184,14 @@ class GstRateHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    GstRate? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       await _delete.execute(id, entityId: entityId);
+      if (before != null) _auditChanges(request)?.set(_rateSnapshot(before));
       return Response(204);
     } on GstRateNotFoundException catch (e) {
       return _notFound(e.message);
@@ -183,6 +202,14 @@ class GstRateHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
+
+  static Map<String, dynamic> _rateSnapshot(GstRate r) => {
+        'rate': r.rate,
+        'effectiveFrom': r.effectiveFrom.toIso8601String(),
+      };
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

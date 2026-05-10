@@ -33,6 +33,13 @@ class AuditEntry {
   /// HTTP response status code.
   final int statusCode;
 
+  /// Field-level change details captured by the handler, or null when not
+  /// applicable (e.g. BACKUP, RESTORE).
+  ///
+  /// For UPDATE: `{"field": {"from": oldValue, "to": newValue}, ...}`
+  /// For CREATE / DELETE: flat snapshot of the affected record's values.
+  final Map<String, dynamic>? changes;
+
   /// Timestamp when the action occurred.
   final DateTime createdAt;
 
@@ -48,6 +55,7 @@ class AuditEntry {
     required this.tableName,
     this.recordId,
     required this.statusCode,
+    this.changes,
     required this.createdAt,
   });
 }

@@ -8,10 +8,13 @@ import '../../application/contact/get_contact_use_case.dart';
 import '../../application/contact/list_contacts_use_case.dart';
 import '../../application/contact/merge_contacts_use_case.dart';
 import '../../application/contact/update_contact_use_case.dart';
+import '../../domain/entities/contact.dart';
 import '../../domain/exceptions/contact_exception.dart';
+import '../audit_changes.dart';
 import '../dto/contact_response.dart';
 import '../dto/create_contact_request.dart';
 import '../dto/update_contact_request.dart';
+import 'handler_diff.dart';
 
 /// Shelf request handlers for the /contacts resource.
 class ContactHandler {
@@ -75,6 +78,7 @@ class ContactHandler {
         gstRegistered: dto.gstRegistered,
         abn: dto.abn,
       );
+      _auditChanges(request)?.set(_contactSnapshot(contact));
       return Response(
         201,
         body: ContactResponse.fromEntity(contact).toJsonString(),
@@ -120,6 +124,11 @@ class ContactHandler {
       return _badRequest(e.message);
     }
 
+    Contact? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       final contact = await _update.execute(
         id: id,
@@ -129,6 +138,10 @@ class ContactHandler {
         gstRegistered: dto.gstRegistered,
         abn: dto.abn,
       );
+      if (before != null) {
+        final diff = diffMaps(_contactSnapshot(before), _contactSnapshot(contact));
+        if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
+      }
       return Response.ok(
         ContactResponse.fromEntity(contact).toJsonString(),
         headers: _jsonHeaders,
@@ -145,8 +158,14 @@ class ContactHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    Contact? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       await _delete.execute(id, entityId: entityId);
+      if (before != null) _auditChanges(request)?.set(_contactSnapshot(before));
       return Response(204);
     } on ContactNotFoundException catch (e) {
       return _notFound(e.message);
@@ -205,6 +224,16 @@ class ContactHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
+
+  static Map<String, dynamic> _contactSnapshot(Contact c) => {
+        'name': c.name,
+        'contactType': c.contactType.name,
+        'gstRegistered': c.gstRegistered,
+        'abn': c.abn,
+      };
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

@@ -17,6 +17,7 @@ class _AuditEntry {
   final String method;
   final String path;
   final int statusCode;
+  final Map<String, dynamic>? changes;
   final DateTime createdAt;
 
   const _AuditEntry({
@@ -30,6 +31,7 @@ class _AuditEntry {
     required this.method,
     required this.path,
     required this.statusCode,
+    this.changes,
     required this.createdAt,
   });
 
@@ -44,6 +46,9 @@ class _AuditEntry {
         method: j['method'] as String? ?? '',
         path: j['path'] as String? ?? '',
         statusCode: j['statusCode'] as int? ?? 0,
+        changes: j['changes'] != null
+            ? Map<String, dynamic>.from(j['changes'] as Map)
+            : null,
         createdAt: DateTime.parse(j['createdAt'] as String),
       );
 }
@@ -237,6 +242,7 @@ class _AuditScreenState extends State<AuditScreen> {
                 DataColumn(label: Text('Action')),
                 DataColumn(label: Text('Table')),
                 DataColumn(label: Text('Record ID')),
+                DataColumn(label: Text('Changes')),
               ],
               rows: _entries.map(_buildRow).toList(),
             ),
@@ -254,7 +260,6 @@ class _AuditScreenState extends State<AuditScreen> {
   }
 
   DataRow _buildRow(_AuditEntry e) {
-    final label = e.userEmail.isNotEmpty ? e.userEmail : e.userId;
     final shortId = e.recordId != null && e.recordId!.length > 8
         ? e.recordId!.substring(0, 8)
         : e.recordId ?? '—';
@@ -262,14 +267,7 @@ class _AuditScreenState extends State<AuditScreen> {
     return DataRow(cells: [
       DataCell(Text(_formatDateTime(e.createdAt),
           style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))),
-      DataCell(
-        Tooltip(
-          message: e.userId,
-          child: Text(label,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13)),
-        ),
-      ),
+      DataCell(_buildUserCell(e)),
       DataCell(Text(e.ipAddress.isNotEmpty ? e.ipAddress : '—',
           style: const TextStyle(fontSize: 13))),
       DataCell(_buildActionBadge(e.action)),
@@ -284,7 +282,178 @@ class _AuditScreenState extends State<AuditScreen> {
               )
             : const Text('—', style: TextStyle(fontSize: 13)),
       ),
+      DataCell(_buildChangesCell(e)),
     ]);
+  }
+
+  Widget _buildUserCell(_AuditEntry e) {
+    if (e.userEmail.isNotEmpty) {
+      return Tooltip(
+        message: e.userId,
+        child: Text(e.userEmail,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13)),
+      );
+    }
+    // No email claim — show a friendlier label derived from the sub.
+    final sub = e.userId;
+    final atIndex = sub.indexOf('|');
+    final shortSub =
+        atIndex >= 0 && sub.length > atIndex + 9
+            ? sub.substring(atIndex + 1, atIndex + 9)
+            : sub;
+    return Tooltip(
+      message: sub,
+      child: Text('user:$shortSub',
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+              fontSize: 12, fontFamily: 'monospace', color: Colors.black54)),
+    );
+  }
+
+  Widget _buildChangesCell(_AuditEntry e) {
+    final changes = e.changes;
+    if (changes == null || changes.isEmpty) {
+      return const Text('—', style: TextStyle(fontSize: 13));
+    }
+    final summary = _changesSummary(changes);
+    return InkWell(
+      onTap: () => _showChangesDialog(e),
+      child: Tooltip(
+        message: 'Tap to view details',
+        child: Text(
+          summary,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.blue.shade700,
+            decoration: TextDecoration.underline,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _changesSummary(Map<String, dynamic> changes) {
+    final isDiff =
+        changes.values.any((v) => v is Map && v.containsKey('from'));
+    if (isDiff) {
+      final count = changes.length;
+      return '$count field${count == 1 ? '' : 's'} changed';
+    }
+    return '${changes.length} field${changes.length == 1 ? '' : 's'}';
+  }
+
+  void _showChangesDialog(_AuditEntry e) {
+    final changes = e.changes!;
+    final isDiff =
+        changes.values.any((v) => v is Map && v.containsKey('from'));
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          isDiff ? 'Changes — ${e.tableName}' : '${e.action} — ${e.tableName}',
+        ),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: changes.entries
+                  .map((entry) => _buildChangeRow(entry, isDiff))
+                  .toList(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChangeRow(MapEntry<String, dynamic> entry, bool isDiff) {
+    final fieldName = _humanise(entry.key);
+
+    if (isDiff && entry.value is Map) {
+      final change = entry.value as Map;
+      final from = change['from']?.toString() ?? '—';
+      final to = change['to']?.toString() ?? '—';
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 140,
+              child: Text(fieldName,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54)),
+            ),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(fontSize: 13, color: Colors.black87),
+                  children: [
+                    TextSpan(
+                      text: from,
+                      style: TextStyle(
+                          color: Colors.red.shade700,
+                          decoration: TextDecoration.lineThrough,
+                          fontFamily: 'monospace'),
+                    ),
+                    const TextSpan(text: '  →  '),
+                    TextSpan(
+                      text: to,
+                      style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontFamily: 'monospace'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(fieldName,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54)),
+          ),
+          Expanded(
+            child: Text(
+              entry.value?.toString() ?? '—',
+              style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _humanise(String camelCase) {
+    final spaced =
+        camelCase.replaceAllMapped(RegExp(r'[A-Z]'), (m) => ' ${m.group(0)}');
+    return spaced[0].toUpperCase() + spaced.substring(1);
   }
 
   Widget _buildActionBadge(String action) {
