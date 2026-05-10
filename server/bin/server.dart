@@ -4,6 +4,7 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import '../lib/infrastructure/database/database_connection.dart';
 import '../lib/infrastructure/database/database_migrator.dart';
+import '../lib/infrastructure/encryption/field_encryptor.dart';
 import '../lib/presentation/router.dart';
 
 void main() async {
@@ -29,11 +30,14 @@ void main() async {
   final corsOrigin = Platform.environment['CORS_ORIGIN'] ?? '*';
   final port = int.parse(Platform.environment['PORT'] ?? '8080');
   final abrGuid = Platform.environment['ABR_GUID'] ?? '';
+  final encryptionKey = _require('ENCRYPTION_KEY');
+  final fieldEncryptor = FieldEncryptor(encryptionKey);
 
   final handler = buildRouter(
     auth0Domain: auth0Domain,
     audience: audience,
     corsOrigin: corsOrigin,
+    fieldEncryptor: fieldEncryptor,
     abrGuid: abrGuid,
   );
 

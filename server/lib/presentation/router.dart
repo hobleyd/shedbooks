@@ -4,6 +4,7 @@ import 'package:shelf_router/shelf_router.dart';
 import '../infrastructure/auth/auth0_middleware.dart';
 import '../infrastructure/auth/jwks_client.dart';
 import '../infrastructure/database/database_connection.dart';
+import '../infrastructure/encryption/field_encryptor.dart';
 import '../infrastructure/repositories/postgres_audit_repository.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
@@ -65,6 +66,7 @@ Handler buildRouter({
   required String auth0Domain,
   required String audience,
   required String corsOrigin,
+  required FieldEncryptor fieldEncryptor,
   String abrGuid = '',
 }) {
   final jwksClient = JwksClient(auth0Domain);
@@ -111,7 +113,7 @@ Handler buildRouter({
     getEffective: GetEffectiveGstRateUseCase(gstRateRepository),
   );
 
-  final bankAccountRepository = PostgresBankAccountRepository(pool);
+  final bankAccountRepository = PostgresBankAccountRepository(pool, fieldEncryptor);
   final bankAccountHandler = BankAccountHandler(
     create: CreateBankAccountUseCase(bankAccountRepository),
     get: GetBankAccountUseCase(bankAccountRepository),

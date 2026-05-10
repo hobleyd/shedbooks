@@ -46,6 +46,7 @@ services:
       DB_USER: shedbooks
       DB_PASSWORD: ${DB_PASSWORD}
       MIGRATIONS_DIR: /app/migrations
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     depends_on:
       db:
         condition: service_healthy

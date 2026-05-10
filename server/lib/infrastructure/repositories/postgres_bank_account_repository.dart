@@ -4,14 +4,17 @@ import 'package:uuid/uuid.dart';
 import '../../domain/entities/bank_account.dart';
 import '../../domain/exceptions/bank_account_exception.dart';
 import '../../domain/repositories/i_bank_account_repository.dart';
+import '../encryption/field_encryptor.dart';
 
 /// PostgreSQL implementation of [IBankAccountRepository].
 class PostgresBankAccountRepository implements IBankAccountRepository {
   final Pool _pool;
   final Uuid _uuid;
+  final FieldEncryptor _enc;
 
-  PostgresBankAccountRepository(this._pool, [Uuid? uuid])
-      : _uuid = uuid ?? const Uuid();
+  PostgresBankAccountRepository(this._pool, FieldEncryptor encryptor, [Uuid? uuid])
+      : _enc = encryptor,
+        _uuid = uuid ?? const Uuid();
 
   static const _cols =
       'id, entity_id, bank_name, account_name, bsb, account_number, '
@@ -39,10 +42,10 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
       parameters: {
         'id': id,
         'entityId': entityId,
-        'bankName': bankName,
-        'accountName': accountName,
-        'bsb': bsb,
-        'accountNumber': accountNumber,
+        'bankName': _enc.encrypt(bankName),
+        'accountName': _enc.encrypt(accountName),
+        'bsb': _enc.encrypt(bsb),
+        'accountNumber': _enc.encrypt(accountNumber),
         'accountType': _typeToDb(accountType),
         'currency': currency,
       },
@@ -103,10 +106,10 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
       parameters: {
         'id': id,
         'entityId': entityId,
-        'bankName': bankName,
-        'accountName': accountName,
-        'bsb': bsb,
-        'accountNumber': accountNumber,
+        'bankName': _enc.encrypt(bankName),
+        'accountName': _enc.encrypt(accountName),
+        'bsb': _enc.encrypt(bsb),
+        'accountNumber': _enc.encrypt(accountNumber),
         'accountType': _typeToDb(accountType),
         'currency': currency,
       },
@@ -140,13 +143,13 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
         _ => BankAccountType.transaction,
       };
 
-  static BankAccount _mapRow(Map<String, dynamic> row) => BankAccount(
+  BankAccount _mapRow(Map<String, dynamic> row) => BankAccount(
         id: row['id'].toString(),
         entityId: row['entity_id'] as String,
-        bankName: row['bank_name'] as String,
-        accountName: row['account_name'] as String,
-        bsb: (row['bsb'] as String).trim(),
-        accountNumber: row['account_number'] as String,
+        bankName: _enc.decrypt(row['bank_name'] as String),
+        accountName: _enc.decrypt(row['account_name'] as String),
+        bsb: _enc.decrypt((row['bsb'] as String).trim()),
+        accountNumber: _enc.decrypt(row['account_number'] as String),
         accountType: _typeFromDb(row['account_type'] as String),
         currency: (row['currency'] as String).trim(),
         createdAt: row['created_at'] as DateTime,
