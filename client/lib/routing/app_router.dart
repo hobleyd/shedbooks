@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_state.dart';
+import '../models/contact_entry.dart';
 import '../screens/app_shell.dart';
 import '../screens/audit_screen.dart';
 import '../screens/backup_screen.dart';
@@ -58,7 +59,9 @@ GoRouter createRouter(AuthState authState) {
           ),
           GoRoute(
             path: '/transactions',
-            builder: (context, state) => const TransactionsScreen(),
+            builder: (context, state) => TransactionsScreen(
+              initialContact: state.extra as ContactEntry?,
+            ),
           ),
           GoRoute(
             path: '/bank-reconciliation',

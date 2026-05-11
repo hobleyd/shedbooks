@@ -581,7 +581,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
             child: _colHeader('GST Registered', 3,
                 align: MainAxisAlignment.center),
           ),
-          const SizedBox(width: 48),
+          const SizedBox(width: 48), // delete
+          const SizedBox(width: 40), // view transactions
         ],
       ),
     );
@@ -703,6 +704,35 @@ class _ContactsScreenState extends State<ContactsScreen> {
               tooltip: hasTxns
                   ? 'Cannot delete: contact has transactions'
                   : 'Delete',
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            child: IconButton(
+              icon: Icon(
+                Icons.receipt_long_outlined,
+                size: 18,
+                color: (row.id == null || _isDirty)
+                    ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)
+                    : Theme.of(context).colorScheme.primary,
+              ),
+              onPressed: (row.id == null || _isDirty)
+                  ? null
+                  : () {
+                      final contact = ContactEntry(
+                        id: row.id!,
+                        name: row.nameController.text,
+                        contactType: row.contactType,
+                        gstRegistered: row.gstRegistered,
+                        abn: row.contactType == ContactType.company
+                            ? row.abnController.text.trim()
+                            : null,
+                      );
+                      context.go('/transactions', extra: contact);
+                    },
+              tooltip: _isDirty
+                  ? 'Save or discard changes first'
+                  : 'View transactions',
             ),
           ),
         ],

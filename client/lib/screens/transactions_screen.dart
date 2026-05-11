@@ -13,13 +13,17 @@ import 'import_transactions_screen.dart';
 
 /// Entry screen for creating transactions, with a month-view list above the form.
 class TransactionsScreen extends StatefulWidget {
-  const TransactionsScreen({super.key});
+  final ContactEntry? initialContact;
+
+  const TransactionsScreen({super.key, this.initialContact});
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
 }
 
-class _TransactionsScreenState extends State<TransactionsScreen> {
+class _TransactionsScreenState extends State<TransactionsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   bool _loading = true;
   String? _loadError;
   bool _saving = false;
@@ -32,6 +36,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   bool _sortAscending = true;
 
   late DateTime _viewMonth;
+
+  // ── Contact search / year-view state ───────────────────────────────────────
+  ContactEntry? _searchContact;
+  int _searchYear = DateTime.now().year;
+  int _searchResetKey = 0;
 
   ContactEntry? _selectedContact;
   String _contactTypedText = '';
@@ -80,11 +89,22 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     super.initState();
     final now = DateTime.now();
     _viewMonth = DateTime(now.year, now.month);
+    final startOnMoneyOut = widget.initialContact != null;
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: startOnMoneyOut ? 1 : 0,
+    );
+    if (startOnMoneyOut) {
+      _searchContact = widget.initialContact;
+      _searchYear = now.year;
+    }
     _load();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _amountController.dispose();
     _gstController.dispose();
     _totalController.dispose();
@@ -177,6 +197,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   List<TransactionEntry> get _viewMonthTransactions => _allTransactions
       .where((t) => t.transactionDate.startsWith(
           '${_viewMonth.year}-${_viewMonth.month.toString().padLeft(2, '0')}'))
+      .toList();
+
+  bool get _isSearchMode => _searchContact != null;
+
+  List<TransactionEntry> get _searchResults => _allTransactions
+      .where((t) =>
+          t.contactId == _searchContact!.id &&
+          t.transactionDate.startsWith('$_searchYear'))
       .toList();
 
   bool get _canGoForward {
@@ -686,12 +714,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           const SizedBox(height: 16),
           const Divider(),
         ],
-        Expanded(
-          child: DefaultTabController(
-            length: 2,
-            child: _buildMonthSection(),
-          ),
-        ),
+        Expanded(child: _buildMonthSection()),
       ],
     );
   }
@@ -699,7 +722,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   // ── Month transaction list ─────────────────────────────────────────────────
 
   Widget _buildMonthSection() {
-    final txns = _viewMonthTransactions;
+    final txns = _isSearchMode ? _searchResults : _viewMonthTransactions;
     final moneyIn = txns.where((t) => t.isCredit).toList();
     final moneyOut = txns.where((t) => !t.isCredit).toList();
 
@@ -708,11 +731,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 16),
-          child: _buildMonthNav(),
+          child: _buildSearchBar(),
         ),
+        const SizedBox(height: 8),
+        if (_isSearchMode) _buildYearNav() else _buildMonthNav(),
         const SizedBox(height: 12),
-        const TabBar(
-          tabs: [
+        TabBar(
+          controller: _tabController,
+          tabs: const [
             Tab(text: 'Money In'),
             Tab(text: 'Money Out'),
           ],
@@ -720,6 +746,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         const SizedBox(height: 8),
         Expanded(
           child: TabBarView(
+            controller: _tabController,
             children: [
               _buildTransactionTab(moneyIn),
               _buildTransactionTab(moneyOut),
@@ -730,11 +757,120 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
+  Widget _buildSearchBar() {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: SizedBox(
+      width: 320,
+      child: Autocomplete<ContactEntry>(
+        key: ValueKey(_searchResetKey),
+        displayStringForOption: (c) => c.name,
+        optionsBuilder: (textEditingValue) {
+          if (textEditingValue.text.isEmpty) return _contacts;
+          final q = textEditingValue.text.toLowerCase();
+          return _contacts.where((c) => c.name.toLowerCase().contains(q));
+        },
+        onSelected: (contact) {
+          setState(() => _searchContact = contact);
+          _tabController.animateTo(1);
+        },
+        fieldViewBuilder: (context, textController, focusNode, _) {
+          return TextFormField(
+            controller: textController,
+            focusNode: focusNode,
+            decoration: InputDecoration(
+              labelText: 'Search by contact',
+              border: const OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              prefixIcon: const Icon(Icons.search, size: 18),
+              suffixIcon: _isSearchMode
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      tooltip: 'Clear search',
+                      onPressed: () => setState(() {
+                        _searchContact = null;
+                        _searchResetKey++;
+                      }),
+                    )
+                  : null,
+            ),
+          );
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(4),
+              child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxHeight: 220, maxWidth: 320),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  itemBuilder: (_, i) {
+                    final c = options.elementAt(i);
+                    return ListTile(
+                      dense: true,
+                      title: Text(c.name),
+                      subtitle: Text(
+                          c.contactType == ContactType.company
+                              ? 'Company'
+                              : 'Person',
+                          style: const TextStyle(fontSize: 11)),
+                      onTap: () => onSelected(c),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+      ),
+    );
+  }
+
+  Widget _buildYearNav() {
+    return Row(
+      children: [
+        Text(
+          '${_searchContact!.name} — $_searchYear',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          onPressed: () => setState(() => _searchYear--),
+          tooltip: 'Previous year',
+        ),
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          onPressed: _searchYear < DateTime.now().year
+              ? () => setState(() => _searchYear++)
+              : null,
+          tooltip: 'Next year',
+        ),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: _load,
+          tooltip: 'Refresh',
+        ),
+      ],
+    );
+  }
+
   Widget _buildTransactionTab(List<TransactionEntry> txns) {
     if (txns.isEmpty) {
-      return const Center(
-        child: Text('No transactions for this month.',
-            style: TextStyle(color: Colors.black54)),
+      final message = _isSearchMode
+          ? 'No transactions for ${_searchContact!.name} in $_searchYear.'
+          : 'No transactions for this month.';
+      return Center(
+        child: Text(message, style: const TextStyle(color: Colors.black54)),
       );
     }
     return SingleChildScrollView(
