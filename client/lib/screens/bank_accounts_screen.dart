@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
 import '../services/api_client.dart';
 
@@ -197,6 +198,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isAdmin = context.watch<AuthState>().isAdmin;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -215,7 +217,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
                 ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
-                  onPressed: () => _openDialog(),
+                  onPressed: isAdmin ? () => _openDialog() : null,
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Add Bank Account'),
                 ),
@@ -249,6 +251,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
   }
 
   Widget _buildList() {
+    final bool isAdmin = context.watch<AuthState>().isAdmin;
     if (_accounts.isEmpty) {
       return Center(
         child: Column(
@@ -264,7 +267,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
                     ?.copyWith(color: Colors.black54)),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: () => _openDialog(),
+              onPressed: isAdmin ? () => _openDialog() : null,
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Add Bank Account'),
             ),
@@ -301,6 +304,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
   }
 
   Widget _buildRow(BankAccountEntry account) {
+    final bool isAdmin = context.watch<AuthState>().isAdmin;
     return Column(
       children: [
         Padding(
@@ -346,14 +350,14 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
                     IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       tooltip: 'Edit',
-                      onPressed: () => _openDialog(existing: account),
+                      onPressed: isAdmin ? () => _openDialog(existing: account) : null,
                     ),
                     IconButton(
                       icon: Icon(Icons.delete_outline,
                           size: 18,
                           color: Theme.of(context).colorScheme.error),
                       tooltip: 'Delete',
-                      onPressed: () => _delete(account),
+                      onPressed: isAdmin ? () => _delete(account) : null,
                     ),
                   ],
                 ),

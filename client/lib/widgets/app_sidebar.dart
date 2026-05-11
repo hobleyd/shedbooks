@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/app_role.dart';
 import '../auth/auth_state.dart';
 import '../services/navigation_guard.dart';
 
@@ -250,7 +251,7 @@ class _AdminNavGroup extends StatelessWidget {
     required this.onExpansionChanged,
   });
 
-  static const _subItems = [
+  static const _allSubItems = [
     (label: 'Audit Log', icon: Icons.history_outlined, path: '/admin/audit-log'),
     (label: 'Backup', icon: Icons.backup_outlined, path: '/admin/backup'),
     (label: 'Bank Accounts', icon: Icons.account_balance_outlined, path: '/admin/bank-accounts'),
@@ -260,10 +261,24 @@ class _AdminNavGroup extends StatelessWidget {
     (label: 'GST Management', icon: Icons.percent_outlined, path: '/admin/gst-management'),
   ];
 
+  // Paths hidden from contributors.
+  static const _contributorHidden = {
+    '/admin/audit-log',
+    '/admin/backup',
+    '/admin/bank-accounts',
+    '/admin/gst-management',
+  };
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isAdminActive = currentPath.startsWith('/admin');
+    final role = context.watch<AuthState>().role;
+    final subItems = role == AppRole.contributor
+        ? _allSubItems
+            .where((i) => !_contributorHidden.contains(i.path))
+            .toList()
+        : _allSubItems;
 
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -283,7 +298,7 @@ class _AdminNavGroup extends StatelessWidget {
         onExpansionChanged: onExpansionChanged,
         tilePadding: const EdgeInsets.symmetric(horizontal: 16),
         childrenPadding: EdgeInsets.zero,
-        children: _subItems.map((item) {
+        children: subItems.map((item) {
           final isActive = currentPath == item.path;
           return ListTile(
             leading: Icon(

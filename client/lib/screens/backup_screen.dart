@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../services/api_client.dart';
 
 /// Admin screen for database backup and restore.
@@ -144,6 +145,7 @@ class _BackupScreenState extends State<BackupScreen> {
   @override
   Widget build(BuildContext context) {
     final busy = _backupBusy || _restoreBusy;
+    final bool isAdmin = context.watch<AuthState>().isAdmin;
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -221,7 +223,7 @@ class _BackupScreenState extends State<BackupScreen> {
                 foregroundColor: Theme.of(context).colorScheme.error,
                 side: BorderSide(color: Theme.of(context).colorScheme.error),
               ),
-              onPressed: busy ? null : _restore,
+              onPressed: (busy || !isAdmin) ? null : _restore,
               icon: _restoreBusy
                   ? SizedBox(
                       width: 16,

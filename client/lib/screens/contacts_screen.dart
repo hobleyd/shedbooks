@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../models/contact_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
@@ -468,11 +469,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   Widget _buildTitleRow() {
     final busy = _saving || _merging;
+    final bool canEdit = context.watch<AuthState>().canEdit;
     return Row(
       children: [
         Text('Contacts', style: Theme.of(context).textTheme.headlineMedium),
         const Spacer(),
-        if (_selectedIds.length >= 2) ...[
+        if (_selectedIds.length >= 2 && canEdit) ...[
           FilledButton.icon(
             onPressed: busy ? null : _mergeContacts,
             icon: _merging
@@ -487,7 +489,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
           ),
           const SizedBox(width: 8),
         ],
-        if (_isDirty && !_loading) ...[
+        if (_isDirty && !_loading && canEdit) ...[
           OutlinedButton(
             onPressed: busy ? null : _discard,
             child: const Text('Discard'),
@@ -532,6 +534,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Widget _buildTable() {
+    final bool canEdit = context.watch<AuthState>().canEdit;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -552,7 +555,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: TextButton.icon(
-            onPressed: _saving ? null : _addRow,
+            onPressed: (_saving || !canEdit) ? null : _addRow,
             icon: const Icon(Icons.add),
             label: const Text('Add contact'),
           ),
@@ -590,6 +593,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final isSelected = row.id != null && _selectedIds.contains(row.id);
     final hasTxns = row.id != null && _contactsWithTransactions.contains(row.id);
     final busy = _saving || _merging;
+    final bool canEdit = context.watch<AuthState>().canEdit;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -614,7 +618,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
           Expanded(
             child: TextFormField(
               controller: row.nameController,
-              enabled: !_saving,
+              enabled: !_saving && canEdit,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding:
@@ -651,7 +655,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     child: Text('Company'),
                   ),
                 ],
-                onChanged: _saving
+                onChanged: (_saving || !canEdit)
                     ? null
                     : (value) {
                         if (value == null) return;
@@ -674,7 +678,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
             child: Center(
               child: Checkbox(
                 value: row.gstRegistered,
-                onChanged: (_saving || !isCompany)
+                onChanged: (_saving || !isCompany || !canEdit)
                     ? null
                     : (v) {
                         setState(() => row.gstRegistered = v ?? false);
@@ -695,7 +699,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                         .withValues(alpha: 0.38)
                     : Theme.of(context).colorScheme.error,
               ),
-              onPressed: (busy || hasTxns) ? null : () => _deleteRow(index),
+              onPressed: (busy || hasTxns || !canEdit) ? null : () => _deleteRow(index),
               tooltip: hasTxns
                   ? 'Cannot delete: contact has transactions'
                   : 'Delete',
@@ -707,6 +711,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Widget _buildAbnField(_ContactRow row, bool isCompany) {
+    final bool canEdit = context.watch<AuthState>().canEdit;
     Widget? suffixIcon;
     switch (row.abnLookupState) {
       case _AbnLookupState.loading:
@@ -735,13 +740,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
       width: 130,
       child: TextFormField(
         controller: row.abnController,
-        enabled: !_saving && isCompany,
+        enabled: !_saving && isCompany && canEdit,
         keyboardType: TextInputType.number,
         inputFormatters: [
           FilteringTextInputFormatter.digitsOnly,
           LengthLimitingTextInputFormatter(11),
         ],
-        onChanged: isCompany
+        onChanged: (isCompany && canEdit)
             ? (value) {
                 setState(() => row.abnLookupState = _AbnLookupState.idle);
                 _markDirty();

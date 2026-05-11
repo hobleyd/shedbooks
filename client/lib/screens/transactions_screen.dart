@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../models/contact_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
@@ -676,12 +677,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Widget _buildContent() {
+    final bool canEdit = context.watch<AuthState>().canEdit;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildFormSection(),
-        const SizedBox(height: 16),
-        const Divider(),
+        if (canEdit) ...[
+          _buildFormSection(),
+          const SizedBox(height: 16),
+          const Divider(),
+        ],
         Expanded(
           child: DefaultTabController(
             length: 2,
@@ -870,26 +874,31 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               ),
               SizedBox(
                 width: 76,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      onPressed: () => _startEdit(t),
-                      tooltip: 'Edit',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.delete_outline,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.error),
-                      onPressed: () => _deleteTransaction(t),
-                      tooltip: 'Delete',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    ),
-                  ],
+                child: Builder(
+                  builder: (context) {
+                    final bool canEdit = context.watch<AuthState>().canEdit;
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          onPressed: canEdit ? () => _startEdit(t) : null,
+                          tooltip: 'Edit',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.delete_outline,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.error),
+                          onPressed: canEdit ? () => _deleteTransaction(t) : null,
+                          tooltip: 'Delete',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],

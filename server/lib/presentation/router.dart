@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
@@ -60,6 +62,7 @@ import 'handlers/gst_rate_handler.dart';
 import 'middleware/audit_middleware.dart';
 import 'middleware/cors_middleware.dart';
 import 'middleware/error_handler_middleware.dart';
+import 'middleware/role_guard.dart';
 
 /// Builds and returns the application [Handler] with all routes wired up.
 Handler buildRouter({
@@ -183,70 +186,96 @@ Handler buildRouter({
       .addHandler(router.call);
 }
 
+/// Wraps a plain [Handler] with a role-guard [middleware].
+Handler _role(Middleware middleware, Handler inner) =>
+    Pipeline().addMiddleware(middleware).addHandler(inner);
+
+/// Wraps a path-parameterised handler `(Request, String)` with a role-guard.
+///
+/// shelf_router passes the path segment as a second positional argument, so
+/// the signature differs from a plain [Handler].  This adapter captures the
+/// id in a closure and delegates to the guarded plain handler.
+FutureOr<Response> Function(Request, String) _roleId(
+  Middleware middleware,
+  FutureOr<Response> Function(Request, String) inner,
+) =>
+    (Request request, String id) =>
+        _role(middleware, (Request r) => inner(r, id))(request);
+
+// ── Route sub-routers ──────────────────────────────────────────────────────
+
+// Viewers can read; contributors and admins can write.
 Router _transactionRouter(TransactionHandler h) {
   return Router()
     ..get('/', h.handleList)
-    ..post('/', h.handleCreate)
+    ..post('/', _role(requireContributor(), h.handleCreate))
     ..get('/<id>', h.handleGet)
-    ..put('/<id>', h.handleUpdate)
-    ..delete('/<id>', h.handleDelete);
+    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
 }
 
+// Viewers can read; contributors and admins can write.
 Router _generalLedgerRouter(GeneralLedgerHandler h) {
   return Router()
     ..get('/', h.handleList)
-    ..post('/', h.handleCreate)
+    ..post('/', _role(requireContributor(), h.handleCreate))
     ..get('/<id>', h.handleGet)
-    ..put('/<id>', h.handleUpdate)
-    ..delete('/<id>', h.handleDelete);
+    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
 }
 
+// Viewers can read; contributors and admins can write.
 Router _contactRouter(ContactHandler h) {
   return Router()
     ..get('/', h.handleList)
-    ..post('/', h.handleCreate)
+    ..post('/', _role(requireContributor(), h.handleCreate))
     // /merge must be registered before /<id> to avoid being shadowed
-    ..post('/merge', h.handleMerge)
+    ..post('/merge', _role(requireContributor(), h.handleMerge))
     ..get('/<id>', h.handleGet)
-    ..put('/<id>', h.handleUpdate)
-    ..delete('/<id>', h.handleDelete);
+    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
 }
 
+// Contributors have no access. Viewers can read; only admins can write.
 Router _bankAccountRouter(BankAccountHandler h) {
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', h.handleCreate)
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', h.handleUpdate)
-    ..delete('/<id>', h.handleDelete);
+    ..get('/', _role(blockContributor(), h.handleList))
+    ..post('/', _role(requireAdministrator(), h.handleCreate))
+    ..get('/<id>', _roleId(blockContributor(), h.handleGet))
+    ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
 }
 
+// Viewers can read; contributors and admins can write.
 Router _entityDetailsRouter(EntityDetailsHandler h) {
   return Router()
     ..get('/', h.handleGet)
-    ..put('/', h.handleSave);
+    ..put('/', _role(requireContributor(), h.handleSave));
 }
 
+// Viewers can read; contributors and admins can write.
 Router _dashboardPreferenceRouter(DashboardPreferenceHandler h) {
   return Router()
     ..get('/', h.handleGet)
-    ..put('/', h.handleSave);
+    ..put('/', _role(requireContributor(), h.handleSave));
 }
 
+// Contributors have no access. Viewers can read; only admins can write.
 Router _gstRateRouter(GstRateHandler h) {
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', h.handleCreate)
+    ..get('/', _role(blockContributor(), h.handleList))
+    ..post('/', _role(requireAdministrator(), h.handleCreate))
     // /effective must be registered before /<id> to avoid shadowing
-    ..get('/effective', h.handleGetEffective)
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', h.handleUpdate)
-    ..delete('/<id>', h.handleDelete);
+    ..get('/effective', _role(blockContributor(), h.handleGetEffective))
+    ..get('/<id>', _roleId(blockContributor(), h.handleGet))
+    ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
 }
 
+// Contributors have no access to audit or backup. Only admins can restore.
 Router _adminRouter(BackupHandler backup, AuditHandler audit) {
   return Router()
-    ..get('/backup', backup.handleBackup)
-    ..post('/restore', backup.handleRestore)
-    ..get('/audit-log', audit.handleList);
+    ..get('/backup', _role(blockContributor(), backup.handleBackup))
+    ..post('/restore', _role(requireAdministrator(), backup.handleRestore))
+    ..get('/audit-log', _role(blockContributor(), audit.handleList));
 }

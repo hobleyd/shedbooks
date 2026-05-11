@@ -16,6 +16,14 @@ import '../screens/login_screen.dart';
 import '../screens/placeholder_screen.dart';
 import '../screens/transactions_screen.dart';
 
+/// Routes that contributors may not access.
+const _contributorBlockedPaths = {
+  '/admin/bank-accounts',
+  '/admin/gst-management',
+  '/admin/audit-log',
+  '/admin/backup',
+};
+
 /// Creates the application router with auth-based redirect guards.
 GoRouter createRouter(AuthState authState) {
   return GoRouter(
@@ -27,6 +35,13 @@ GoRouter createRouter(AuthState authState) {
 
       if (!isAuthenticated && !isOnLogin) return '/';
       if (isAuthenticated && isOnLogin) return '/dashboard';
+
+      // Contributors cannot navigate to restricted admin screens.
+      if (authState.isContributor &&
+          _contributorBlockedPaths.contains(state.uri.path)) {
+        return '/dashboard';
+      }
+
       return null;
     },
     routes: [

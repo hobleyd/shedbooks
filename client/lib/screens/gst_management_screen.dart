@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../models/gst_rate_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
@@ -313,6 +314,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
   }
 
   Widget _buildTitleRow() {
+    final bool isAdmin = context.watch<AuthState>().isAdmin;
     return Row(
       children: [
         Text(
@@ -320,7 +322,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         const Spacer(),
-        if (_isDirty && !_loading) ...[
+        if (_isDirty && !_loading && isAdmin) ...[
           OutlinedButton(
             onPressed: _saving ? null : _discard,
             child: const Text('Discard'),
@@ -365,6 +367,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
   }
 
   Widget _buildTable() {
+    final bool isAdmin = context.watch<AuthState>().isAdmin;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -385,7 +388,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: TextButton.icon(
-            onPressed: _saving ? null : _addRow,
+            onPressed: (_saving || !isAdmin) ? null : _addRow,
             icon: const Icon(Icons.add),
             label: const Text('Add rate'),
           ),
@@ -411,6 +414,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
 
   Widget _buildTableRow(int index) {
     final row = _rows[index];
+    final bool isAdmin = context.read<AuthState>().isAdmin;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Row(
@@ -420,7 +424,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
             width: 160,
             child: TextFormField(
               controller: row.rateController,
-              enabled: !_saving,
+              enabled: !_saving && isAdmin,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
@@ -446,7 +450,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
                 Icons.delete_outline,
                 color: Theme.of(context).colorScheme.error,
               ),
-              onPressed: _saving ? null : () => _deleteRow(index),
+              onPressed: (_saving || !isAdmin) ? null : () => _deleteRow(index),
               tooltip: 'Delete',
             ),
           ),
@@ -460,15 +464,16 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
     final date = row.effectiveFrom;
     final colorScheme = Theme.of(context).colorScheme;
 
+    final bool isAdmin = context.read<AuthState>().isAdmin;
     return InkWell(
-      onTap: _saving ? null : () => _pickDate(index),
+      onTap: (_saving || !isAdmin) ? null : () => _pickDate(index),
       borderRadius: BorderRadius.circular(4),
       child: Container(
         width: 200,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
           border: Border.all(
-            color: _saving
+            color: (_saving || !isAdmin)
                 ? colorScheme.onSurface.withAlpha(61)
                 : colorScheme.outline,
           ),

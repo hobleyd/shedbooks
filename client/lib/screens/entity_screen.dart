@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../models/entity_details.dart';
 import '../services/api_client.dart';
 
@@ -207,19 +208,20 @@ class _EntityScreenState extends State<EntityScreen> {
   }
 
   Widget _buildHeader() {
+    final canEdit = context.watch<AuthState>().canEdit;
     return Row(
       children: [
         Text('Entity Details',
             style: Theme.of(context).textTheme.headlineMedium),
         const Spacer(),
         if (!_loading && _loadError == null) ...[
-          if (!_editing && !_isCreating)
+          if (canEdit && !_editing && !_isCreating)
             FilledButton.icon(
               onPressed: _startEdit,
               icon: const Icon(Icons.edit_outlined, size: 18),
               label: const Text('Edit'),
             ),
-          if (_editing && !_isCreating) ...[
+          if (canEdit && _editing && !_isCreating) ...[
             OutlinedButton(
               onPressed: _saving ? null : _cancelEdit,
               child: const Text('Cancel'),
@@ -237,7 +239,7 @@ class _EntityScreenState extends State<EntityScreen> {
                   : const Text('Update'),
             ),
           ],
-          if (_isCreating)
+          if (canEdit && _isCreating)
             FilledButton(
               onPressed: _saving ? null : _save,
               child: _saving

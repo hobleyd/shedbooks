@@ -70,10 +70,40 @@ Authentication is handled through **Auth0**.
 - Backups are entity-scoped JSON (not pg_dump). Downloaded as `.json`.
 - Restore deletes entity rows in reverse FK order then re-inserts within a single transaction.
 
+## Roles and Permissions
+
+Three roles managed in Auth0 RBAC and enforced on both server and client:
+
+| Role | Read | Write general | Write admin resources |
+|------|------|---------------|----------------------|
+| `viewer` | all | none | none |
+| `contributor` | general only | yes | none |
+| `administrator` | all | yes | yes |
+
+**Admin resources** (contributor has no access, viewer can read):
+- Bank accounts (`/bank-accounts/*`)
+- GST rates (`/gst-rates/*`)
+- Audit log (`/admin/audit-log`)
+- Backup/restore (`/admin/backup`, `/admin/restore`)
+
+**Server enforcement**: `server/lib/presentation/middleware/role_guard.dart` provides
+`blockContributor()`, `requireContributor()`, `requireAdministrator()` Shelf middleware
+applied per-route in `router.dart`.
+
+**Client enforcement**: `AuthState.canEdit` (contributor+admin), `AuthState.isAdmin`
+(admin only) gate buttons/fields in each screen. Router redirects contributors away from
+restricted paths. Sidebar hides restricted admin nav items for contributors.
+
+**Auth0 setup**:
+1. Create roles `viewer`, `contributor`, `administrator` in Auth0 dashboard → User Management → Roles.
+2. Assign roles to users within their Organisation.
+3. Update the Auth0 Action (see below) to include roles in the access token.
+
 ## Key Custom Claims (Auth0 Action)
 ```javascript
 const ns = 'https://shedbooks.com/';
 api.accessToken.setCustomClaim(ns + 'entity_id', event.organization?.id ?? '');
 api.accessToken.setCustomClaim('email', event.user.email ?? '');
+api.accessToken.setCustomClaim(ns + 'roles', event.authorization?.roles ?? []);
 ```
 

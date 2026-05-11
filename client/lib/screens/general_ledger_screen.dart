@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/auth_state.dart';
 import '../models/general_ledger_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
@@ -346,6 +347,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   }
 
   Widget _buildTitleRow() {
+    final bool canEdit = context.watch<AuthState>().canEdit;
     return Row(
       children: [
         Text(
@@ -353,7 +355,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           style: Theme.of(context).textTheme.headlineMedium,
         ),
         const Spacer(),
-        if (_isDirty && !_loading) ...[
+        if (_isDirty && !_loading && canEdit) ...[
           OutlinedButton(
             onPressed: _saving ? null : _discard,
             child: const Text('Discard'),
@@ -419,6 +421,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
 
   Widget _buildTable(GlDirection direction) {
     final rows = _rows.where((r) => r.direction == direction).toList();
+    final bool canEdit = context.watch<AuthState>().canEdit;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -441,7 +444,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           child: Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
-              onPressed: _saving ? null : () => _addRow(direction),
+              onPressed: (_saving || !canEdit) ? null : () => _addRow(direction),
               icon: const Icon(Icons.add),
               label: const Text('Add entry'),
             ),
@@ -472,6 +475,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   }
 
   Widget _buildTableRow(_GlRow row) {
+    final bool canEdit = context.watch<AuthState>().canEdit;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Row(
@@ -482,7 +486,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
             child: TextFormField(
               controller: row.labelController,
               focusNode: row.labelFocusNode,
-              enabled: !_saving,
+              enabled: !_saving && canEdit,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -495,7 +499,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           Expanded(
             child: TextFormField(
               controller: row.descriptionController,
-              enabled: !_saving,
+              enabled: !_saving && canEdit,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -510,7 +514,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
             child: Center(
               child: Checkbox(
                 value: row.gstApplicable,
-                onChanged: _saving
+                onChanged: (_saving || !canEdit)
                     ? null
                     : (v) {
                         setState(() => row.gstApplicable = v ?? false);
@@ -526,7 +530,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
                 Icons.delete_outline,
                 color: Theme.of(context).colorScheme.error,
               ),
-              onPressed: _saving ? null : () => _deleteRow(row),
+              onPressed: (_saving || !canEdit) ? null : () => _deleteRow(row),
               tooltip: 'Delete',
             ),
           ),
