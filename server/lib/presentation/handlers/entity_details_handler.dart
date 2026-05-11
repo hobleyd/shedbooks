@@ -69,6 +69,8 @@ class EntityDetailsHandler {
         name: dto.name,
         abn: dto.abn,
         incorporationIdentifier: dto.incorporationIdentifier,
+        moneyInReceiptFormat: dto.moneyInReceiptFormat,
+        moneyOutReceiptFormat: dto.moneyOutReceiptFormat,
       );
       if (before == null) {
         _auditChanges(request)?.set(_detailsSnapshot(details));
@@ -97,6 +99,8 @@ class EntityDetailsHandler {
         'name': d.name,
         'abn': d.abn,
         'incorporationIdentifier': d.incorporationIdentifier,
+        'moneyInReceiptFormat': d.moneyInReceiptFormat,
+        'moneyOutReceiptFormat': d.moneyOutReceiptFormat,
       };
 
   static Response _orgRequired() => Response.unauthorized(

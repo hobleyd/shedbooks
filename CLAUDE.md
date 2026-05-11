@@ -61,6 +61,24 @@ Authentication is handled through **Auth0**.
   Handlers read it to attach field-level change details (diff for UPDATE, snapshot for CREATE/DELETE).
 - Pipeline order in router: `authMiddleware → auditMiddleware → handler`.
 
+## Flutter Widget Notes
+- **Never use `DropdownButtonFormField`** — its `value` parameter is deprecated (as of Flutter 3.33) and triggers a lint error. Use `DropdownButton` directly instead, managing state with a local field and `setState`.
+
+## Receipt Format Notation
+Stored in `entity_details.money_in_receipt_format` / `money_out_receipt_format`. Parsed by `client/lib/utils/receipt_format.dart` (`ReceiptFormat` class).
+
+| Token | Meaning |
+|-------|---------|
+| `YYYY` | 4-digit year (e.g. 2026) |
+| `YY` | 2-digit year (e.g. 26) |
+| `#` | any digit |
+| `@` | any letter |
+| `*` | any alphanumeric |
+| `x?` | literal character x is optional |
+| other | required literal |
+
+Example: `P-?YY###` matches `P-26062` or `P26062` (dash optional); `example()` returns `P-26000`.
+
 ## PostgreSQL / Dart Package Notes
 - Use `Sql.named()` for parameterised queries. Cast JSONB parameters explicitly: `@param::jsonb`.
 - Pass JSONB as `jsonEncode(map)` in parameters; on read, handle both `Map` (already decoded) and `String` (decode manually).

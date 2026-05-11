@@ -8,6 +8,7 @@ import '../infrastructure/auth/jwks_client.dart';
 import '../infrastructure/database/database_connection.dart';
 import '../infrastructure/encryption/field_encryptor.dart';
 import '../infrastructure/repositories/postgres_audit_repository.dart';
+import '../infrastructure/repositories/postgres_bank_import_repository.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
@@ -44,12 +45,16 @@ import '../application/gst_rate/get_effective_gst_rate_use_case.dart';
 import '../application/gst_rate/get_gst_rate_use_case.dart';
 import '../application/gst_rate/list_gst_rates_use_case.dart';
 import '../application/gst_rate/update_gst_rate_use_case.dart';
+import '../application/bank_import/get_bank_imports_use_case.dart';
+import '../application/bank_import/save_bank_imports_use_case.dart';
+import '../application/transaction/bank_match_transactions_use_case.dart';
 import '../application/transaction/create_transaction_use_case.dart';
 import '../application/transaction/delete_transaction_use_case.dart';
 import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
 import 'handlers/abn_lookup_handler.dart';
+import 'handlers/bank_imports_handler.dart';
 import 'handlers/audit_handler.dart';
 import 'handlers/backup_handler.dart';
 import 'handlers/contact_handler.dart';
@@ -104,6 +109,7 @@ Handler buildRouter({
     list: ListTransactionsUseCase(transactionRepository),
     update: UpdateTransactionUseCase(transactionRepository),
     delete: DeleteTransactionUseCase(transactionRepository),
+    bankMatch: BankMatchTransactionsUseCase(transactionRepository),
   );
 
   final gstRateRepository = PostgresGstRateRepository(pool);
@@ -144,6 +150,11 @@ Handler buildRouter({
     list: ListAuditEntriesUseCase(PostgresAuditRepository(pool)),
   );
 
+  final bankImportsHandler = BankImportsHandler(
+    get: GetBankImportsUseCase(PostgresBankImportRepository(pool)),
+    save: SaveBankImportsUseCase(PostgresBankImportRepository(pool)),
+  );
+
   final authMiddleware = auth0Middleware(
     auth0Domain: auth0Domain,
     audience: audience,
@@ -176,6 +187,8 @@ Handler buildRouter({
         _authed(_bankAccountRouter(bankAccountHandler)))
     ..mount('/entity-details',
         _authed(_entityDetailsRouter(entityDetailsHandler)))
+    ..mount('/bank-imports',
+        _authed(_bankImportsRouter(bankImportsHandler)))
     ..mount('/admin',
         _authed(_adminRouter(backupHandler, auditHandler)));
 
@@ -209,6 +222,8 @@ Router _transactionRouter(TransactionHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireContributor(), h.handleCreate))
+    // /bank-match must be registered before /<id> to avoid being shadowed
+    ..post('/bank-match', _role(requireContributor(), h.handleBankMatch))
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
@@ -270,6 +285,13 @@ Router _gstRateRouter(GstRateHandler h) {
     ..get('/<id>', _roleId(blockContributor(), h.handleGet))
     ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
+}
+
+// Viewers can read; contributors and admins can write.
+Router _bankImportsRouter(BankImportsHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..post('/', _role(requireContributor(), h.handleSave));
 }
 
 // Contributors have no access to audit or backup. Only admins can restore.

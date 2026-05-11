@@ -9,6 +9,7 @@ import '../models/contact_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import 'import_cba_screen.dart';
 import 'import_transactions_screen.dart';
 
 /// Entry screen for creating transactions, with a month-view list above the form.
@@ -522,6 +523,16 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       context,
       MaterialPageRoute(
         builder: (_) => const ImportTransactionsScreen(),
+      ),
+    );
+    if (didImport == true) _load();
+  }
+
+  Future<void> _openCbaImport() async {
+    final didImport = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ImportCbaScreen(),
       ),
     );
     if (didImport == true) _load();
@@ -1297,6 +1308,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                   leadingIcon: const Icon(Icons.table_chart_outlined, size: 18),
                   onPressed: _saving ? null : _openImport,
                   child: const Text("Woodgate Men's Shed Spreadsheet"),
+                ),
+                MenuItemButton(
+                  leadingIcon: const Icon(Icons.account_balance_outlined, size: 18),
+                  onPressed: _saving ? null : _openCbaImport,
+                  child: const Text('CBA Transactions'),
                 ),
               ],
             ),

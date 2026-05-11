@@ -19,6 +19,8 @@ void main() {
     name: 'Woodgate Mens Shed',
     abn: '12345678901',
     incorporationIdentifier: 'IA-2024-001',
+    moneyInReceiptFormat: '',
+    moneyOutReceiptFormat: 'P-#####',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );
@@ -40,6 +42,8 @@ void main() {
         name: 'Woodgate Mens Shed',
         abn: '12345678901',
         incorporationIdentifier: 'IA-2024-001',
+        moneyInReceiptFormat: '',
+        moneyOutReceiptFormat: 'P-#####',
       );
 
       // Assert
@@ -58,6 +62,8 @@ void main() {
         name: '  Woodgate Mens Shed  ',
         abn: '  12345678901  ',
         incorporationIdentifier: '  IA-2024-001  ',
+        moneyInReceiptFormat: '  ####  ',
+        moneyOutReceiptFormat: '  P-#####  ',
       );
 
       // Assert
@@ -67,6 +73,8 @@ void main() {
       expect(captured.name, equals('Woodgate Mens Shed'));
       expect(captured.abn, equals('12345678901'));
       expect(captured.incorporationIdentifier, equals('IA-2024-001'));
+      expect(captured.moneyInReceiptFormat, equals('####'));
+      expect(captured.moneyOutReceiptFormat, equals('P-#####'));
     });
 
     test('throws EntityDetailsValidationException when name is blank', () {
@@ -77,6 +85,8 @@ void main() {
           name: '   ',
           abn: '12345678901',
           incorporationIdentifier: 'IA-2024-001',
+          moneyInReceiptFormat: '',
+          moneyOutReceiptFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -90,6 +100,8 @@ void main() {
           name: 'Woodgate Mens Shed',
           abn: '1234567890',
           incorporationIdentifier: 'IA-2024-001',
+          moneyInReceiptFormat: '',
+          moneyOutReceiptFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -103,6 +115,8 @@ void main() {
           name: 'Woodgate Mens Shed',
           abn: '123456789012',
           incorporationIdentifier: 'IA-2024-001',
+          moneyInReceiptFormat: '',
+          moneyOutReceiptFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -116,6 +130,8 @@ void main() {
           name: 'Woodgate Mens Shed',
           abn: '1234567890A',
           incorporationIdentifier: 'IA-2024-001',
+          moneyInReceiptFormat: '',
+          moneyOutReceiptFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -129,6 +145,8 @@ void main() {
           name: 'Woodgate Mens Shed',
           abn: '12345678901',
           incorporationIdentifier: '   ',
+          moneyInReceiptFormat: '',
+          moneyOutReceiptFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );

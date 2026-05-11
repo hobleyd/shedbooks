@@ -14,7 +14,9 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
   Future<EntityDetails?> find(String entityId) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT entity_id, name, abn, incorporation_identifier, created_at, updated_at
+        SELECT entity_id, name, abn, incorporation_identifier,
+               money_in_receipt_format, money_out_receipt_format,
+               created_at, updated_at
         FROM entity_details
         WHERE entity_id = @entityId
       '''),
@@ -31,20 +33,30 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
   Future<EntityDetails> save(EntityDetails details) async {
     final result = await _pool.execute(
       Sql.named('''
-        INSERT INTO entity_details (entity_id, name, abn, incorporation_identifier)
-        VALUES (@entityId, @name, @abn, @incorporationIdentifier)
+        INSERT INTO entity_details
+          (entity_id, name, abn, incorporation_identifier,
+           money_in_receipt_format, money_out_receipt_format)
+        VALUES
+          (@entityId, @name, @abn, @incorporationIdentifier,
+           @moneyInReceiptFormat, @moneyOutReceiptFormat)
         ON CONFLICT (entity_id) DO UPDATE
           SET name                     = EXCLUDED.name,
               abn                      = EXCLUDED.abn,
               incorporation_identifier = EXCLUDED.incorporation_identifier,
+              money_in_receipt_format  = EXCLUDED.money_in_receipt_format,
+              money_out_receipt_format = EXCLUDED.money_out_receipt_format,
               updated_at               = NOW()
-        RETURNING entity_id, name, abn, incorporation_identifier, created_at, updated_at
+        RETURNING entity_id, name, abn, incorporation_identifier,
+                  money_in_receipt_format, money_out_receipt_format,
+                  created_at, updated_at
       '''),
       parameters: {
         'entityId': details.entityId,
         'name': details.name,
         'abn': details.abn,
         'incorporationIdentifier': details.incorporationIdentifier,
+        'moneyInReceiptFormat': details.moneyInReceiptFormat,
+        'moneyOutReceiptFormat': details.moneyOutReceiptFormat,
       },
     );
 
@@ -56,6 +68,8 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
         name: row['name'] as String,
         abn: (row['abn'] as String).trim(),
         incorporationIdentifier: row['incorporation_identifier'] as String,
+        moneyInReceiptFormat: (row['money_in_receipt_format'] as String?) ?? '',
+        moneyOutReceiptFormat: (row['money_out_receipt_format'] as String?) ?? '',
         createdAt: row['created_at'] as DateTime,
         updatedAt: row['updated_at'] as DateTime,
       );

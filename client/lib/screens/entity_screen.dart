@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../auth/auth_state.dart';
 import '../models/entity_details.dart';
 import '../services/api_client.dart';
+import '../utils/receipt_format.dart';
 
 /// Admin screen for viewing and editing entity identity details.
 class EntityScreen extends StatefulWidget {
@@ -27,20 +28,28 @@ class _EntityScreenState extends State<EntityScreen> {
   final _nameController = TextEditingController();
   final _abnController = TextEditingController();
   final _incorporationController = TextEditingController();
+  final _moneyInReceiptFormatController = TextEditingController();
+  final _moneyOutReceiptFormatController = TextEditingController();
 
   bool get _isCreating => _saved == null;
 
   @override
   void initState() {
     super.initState();
+    _moneyInReceiptFormatController.addListener(_onFormatChanged);
+    _moneyOutReceiptFormatController.addListener(_onFormatChanged);
     _load();
   }
+
+  void _onFormatChanged() => setState(() {});
 
   @override
   void dispose() {
     _nameController.dispose();
     _abnController.dispose();
     _incorporationController.dispose();
+    _moneyInReceiptFormatController.dispose();
+    _moneyOutReceiptFormatController.dispose();
     super.dispose();
   }
 
@@ -78,6 +87,8 @@ class _EntityScreenState extends State<EntityScreen> {
         _nameController.text = details.name;
         _abnController.text = details.abn;
         _incorporationController.text = details.incorporationIdentifier;
+        _moneyInReceiptFormatController.text = details.moneyInReceiptFormat;
+        _moneyOutReceiptFormatController.text = details.moneyOutReceiptFormat;
         _loading = false;
       });
     } catch (e) {
@@ -121,6 +132,8 @@ class _EntityScreenState extends State<EntityScreen> {
         'name': _nameController.text.trim(),
         'abn': _abnController.text.trim(),
         'incorporationIdentifier': _incorporationController.text.trim(),
+        'moneyInReceiptFormat': _moneyInReceiptFormatController.text.trim(),
+        'moneyOutReceiptFormat': _moneyOutReceiptFormatController.text.trim(),
       });
 
       final res =
@@ -174,6 +187,8 @@ class _EntityScreenState extends State<EntityScreen> {
       _nameController.text = _saved!.name;
       _abnController.text = _saved!.abn;
       _incorporationController.text = _saved!.incorporationIdentifier;
+      _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
+      _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
       _editing = true;
     });
   }
@@ -183,6 +198,8 @@ class _EntityScreenState extends State<EntityScreen> {
       _nameController.text = _saved!.name;
       _abnController.text = _saved!.abn;
       _incorporationController.text = _saved!.incorporationIdentifier;
+      _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
+      _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
       _editing = false;
     });
   }
@@ -308,7 +325,52 @@ class _EntityScreenState extends State<EntityScreen> {
             controller: _incorporationController,
             enabled: _editing,
           ),
+          const SizedBox(height: 24),
+          Text('Receipt Number Formats',
+              style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(
+            'Tokens: # digit  @ letter  * alphanumeric  '
+            'YY 2-digit year  YYYY 4-digit year  x? optional literal.\n'
+            'All other characters are required literals. '
+            'Leave blank for no constraint.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          _buildField(
+            label: 'Money-In Receipt Format',
+            controller: _moneyInReceiptFormatController,
+            enabled: _editing,
+            helperText: 'e.g. #######',
+          ),
+          _buildFormatExample(_moneyInReceiptFormatController.text),
+          const SizedBox(height: 16),
+          _buildField(
+            label: 'Money-Out Receipt Format',
+            controller: _moneyOutReceiptFormatController,
+            enabled: _editing,
+            helperText: 'e.g. P-?YY###',
+          ),
+          _buildFormatExample(_moneyOutReceiptFormatController.text),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFormatExample(String pattern) {
+    final fmt = ReceiptFormat(pattern);
+    if (fmt.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, left: 2),
+      child: Text(
+        'Example: ${fmt.example()}',
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: Colors.black45),
       ),
     );
   }

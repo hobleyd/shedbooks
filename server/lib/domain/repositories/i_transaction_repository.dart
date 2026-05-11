@@ -52,4 +52,8 @@ abstract interface class ITransactionRepository {
     String toContactId, {
     required String entityId,
   });
+
+  /// Marks all transactions in [ids] as bank-matched within [entityId].
+  /// Silently ignores IDs that do not exist or are already matched.
+  Future<void> bankMatch(List<String> ids, {required String entityId});
 }

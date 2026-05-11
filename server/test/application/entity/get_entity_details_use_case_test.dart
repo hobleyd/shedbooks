@@ -19,6 +19,8 @@ void main() {
     name: 'Woodgate Mens Shed',
     abn: '12345678901',
     incorporationIdentifier: 'IA-2024-001',
+    moneyInReceiptFormat: '',
+    moneyOutReceiptFormat: 'P-#####',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );

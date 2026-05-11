@@ -41,7 +41,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at
+            created_at, updated_at, deleted_at, bank_matched
         '''),
         parameters: {
           'id': id,
@@ -70,7 +70,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at
+          created_at, updated_at, deleted_at, bank_matched
         FROM transactions
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -90,7 +90,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at
+          created_at, updated_at, deleted_at, bank_matched
         FROM transactions
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -134,7 +134,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at
+            created_at, updated_at, deleted_at, bank_matched
         '''),
         parameters: {
           'id': id,
@@ -234,6 +234,25 @@ class PostgresTransactionRepository implements ITransactionRepository {
     }
   }
 
+  @override
+  Future<void> bankMatch(List<String> ids, {required String entityId}) async {
+    if (ids.isEmpty) return;
+    await _pool.execute(
+      Sql.named('''
+        UPDATE transactions
+        SET bank_matched = TRUE,
+            updated_at   = NOW()
+        WHERE id = ANY(string_to_array(@ids, ',')::uuid[])
+          AND entity_id = @entityId
+          AND deleted_at IS NULL
+      '''),
+      parameters: {
+        'ids': ids.join(','),
+        'entityId': entityId,
+      },
+    );
+  }
+
   Transaction _mapRow(Map<String, dynamic> row) {
     final transactionDate = row['transaction_date'] as DateTime;
 
@@ -256,6 +275,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,
+      bankMatched: row['bank_matched'] as bool? ?? false,
     );
   }
 }

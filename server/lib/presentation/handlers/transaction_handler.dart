@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
 
+import '../../application/transaction/bank_match_transactions_use_case.dart';
 import '../../application/transaction/create_transaction_use_case.dart';
 import '../../application/transaction/delete_transaction_use_case.dart';
 import '../../application/transaction/get_transaction_use_case.dart';
@@ -10,6 +11,7 @@ import '../../application/transaction/update_transaction_use_case.dart';
 import '../../domain/entities/transaction.dart';
 import '../../domain/exceptions/transaction_exception.dart';
 import '../audit_changes.dart';
+import '../dto/bank_match_request.dart';
 import '../dto/create_transaction_request.dart';
 import '../dto/transaction_response.dart';
 import '../dto/update_transaction_request.dart';
@@ -22,6 +24,7 @@ class TransactionHandler {
   final ListTransactionsUseCase _list;
   final UpdateTransactionUseCase _update;
   final DeleteTransactionUseCase _delete;
+  final BankMatchTransactionsUseCase _bankMatch;
 
   const TransactionHandler({
     required CreateTransactionUseCase create,
@@ -29,11 +32,13 @@ class TransactionHandler {
     required ListTransactionsUseCase list,
     required UpdateTransactionUseCase update,
     required DeleteTransactionUseCase delete,
+    required BankMatchTransactionsUseCase bankMatch,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
-        _delete = delete;
+        _delete = delete,
+        _bankMatch = bankMatch;
 
   /// GET /transactions
   Future<Response> handleList(Request request) async {
@@ -174,6 +179,29 @@ class TransactionHandler {
     } on TransactionNotFoundException catch (e) {
       return _notFound(e.message);
     }
+  }
+
+  /// POST /transactions/bank-match
+  Future<Response> handleBankMatch(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final Map<String, dynamic> json;
+    try {
+      json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    final BankMatchRequest dto;
+    try {
+      dto = BankMatchRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    }
+
+    await _bankMatch.execute(ids: dto.transactionIds, entityId: entityId);
+    return Response(204);
   }
 
   static String? _entityId(Request request) {

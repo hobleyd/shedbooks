@@ -50,7 +50,7 @@ class BackupHandler {
                amount, gst_amount,
                transaction_type::text AS transaction_type,
                receipt_number, description, transaction_date,
-               created_at, updated_at, deleted_at
+               created_at, updated_at, deleted_at, bank_matched
         FROM transactions WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -319,12 +319,12 @@ class BackupHandler {
               INSERT INTO transactions
                 (id, entity_id, contact_id, general_ledger_id, amount,
                  gst_amount, transaction_type, receipt_number, description,
-                 transaction_date, created_at, updated_at, deleted_at)
+                 transaction_date, created_at, updated_at, deleted_at, bank_matched)
               VALUES (
                 @id::uuid, @e, @cid::uuid, @glid::uuid,
                 @amt, @gst, @tt::transaction_type,
                 @rcpt, @desc, @td::date,
-                @ca::timestamptz, @ua::timestamptz, @da::timestamptz
+                @ca::timestamptz, @ua::timestamptz, @da::timestamptz, @bm
               )
             '''),
             parameters: {
@@ -341,6 +341,7 @@ class BackupHandler {
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],
+              'bm': (r['bank_matched'] as bool?) ?? false,
             },
           );
         }

@@ -39,6 +39,9 @@ class Transaction {
   /// Soft-delete timestamp; null when the record is active.
   final DateTime? deletedAt;
 
+  /// Whether this transaction has been matched to a bank statement entry.
+  final bool bankMatched;
+
   const Transaction({
     required this.id,
     required this.contactId,
@@ -52,6 +55,7 @@ class Transaction {
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    this.bankMatched = false,
   });
 
   bool get isDeleted => deletedAt != null;

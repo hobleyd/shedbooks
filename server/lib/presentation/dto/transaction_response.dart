@@ -15,6 +15,7 @@ class TransactionResponse {
   final String transactionDate;
   final String createdAt;
   final String updatedAt;
+  final bool bankMatched;
 
   const TransactionResponse({
     required this.id,
@@ -29,6 +30,7 @@ class TransactionResponse {
     required this.transactionDate,
     required this.createdAt,
     required this.updatedAt,
+    required this.bankMatched,
   });
 
   factory TransactionResponse.fromEntity(Transaction entity) {
@@ -45,6 +47,7 @@ class TransactionResponse {
       transactionDate: entity.transactionDate.toIso8601String().substring(0, 10),
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
+      bankMatched: entity.bankMatched,
     );
   }
 
@@ -61,6 +64,7 @@ class TransactionResponse {
         'transactionDate': transactionDate,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
+        'bankMatched': bankMatched,
       };
 
   String toJsonString() => jsonEncode(toJson());
