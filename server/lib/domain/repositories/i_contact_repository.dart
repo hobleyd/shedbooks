@@ -9,6 +9,8 @@ abstract interface class IContactRepository {
     required ContactType contactType,
     required bool gstRegistered,
     String? abn,
+    String? bsb,
+    String? accountNumber,
   });
 
   /// Returns a contact by [id] within [entityId], or null if not found / deleted.
@@ -26,6 +28,8 @@ abstract interface class IContactRepository {
     required ContactType contactType,
     required bool gstRegistered,
     String? abn,
+    String? bsb,
+    String? accountNumber,
   });
 
   /// Soft-deletes the contact with [id] within [entityId].

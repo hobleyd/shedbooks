@@ -9,6 +9,7 @@ import '../../application/transaction/get_transaction_use_case.dart';
 import '../../application/transaction/list_transactions_use_case.dart';
 import '../../application/transaction/update_transaction_use_case.dart';
 import '../../domain/entities/transaction.dart';
+import '../../domain/exceptions/locked_month_exception.dart';
 import '../../domain/exceptions/transaction_exception.dart';
 import '../audit_changes.dart';
 import '../dto/bank_match_request.dart';
@@ -89,6 +90,8 @@ class TransactionHandler {
         body: TransactionResponse.fromEntity(transaction).toJsonString(),
         headers: _jsonHeaders,
       );
+    } on MonthIsLockedException catch (e) {
+      return _locked(e.message);
     } on TransactionValidationException catch (e) {
       return _badRequest(e.message);
     }
@@ -155,6 +158,8 @@ class TransactionHandler {
         TransactionResponse.fromEntity(transaction).toJsonString(),
         headers: _jsonHeaders,
       );
+    } on MonthIsLockedException catch (e) {
+      return _locked(e.message);
     } on TransactionNotFoundException catch (e) {
       return _notFound(e.message);
     } on TransactionValidationException catch (e) {
@@ -176,6 +181,8 @@ class TransactionHandler {
       await _delete.execute(id, entityId: entityId);
       if (before != null) _auditChanges(request)?.set(_txSnapshot(before));
       return Response(204);
+    } on MonthIsLockedException catch (e) {
+      return _locked(e.message);
     } on TransactionNotFoundException catch (e) {
       return _notFound(e.message);
     }
@@ -240,6 +247,12 @@ class TransactionHandler {
 
   static Response _notFound(String message) => Response.notFound(
         jsonEncode({'error': message}),
+        headers: _jsonHeaders,
+      );
+
+  static Response _locked(String message) => Response(
+        422,
+        body: jsonEncode({'error': message}),
         headers: _jsonHeaders,
       );
 }

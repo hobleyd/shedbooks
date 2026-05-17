@@ -28,6 +28,7 @@ class _EntityScreenState extends State<EntityScreen> {
   final _nameController = TextEditingController();
   final _abnController = TextEditingController();
   final _incorporationController = TextEditingController();
+  final _apcaIdController = TextEditingController();
   final _moneyInReceiptFormatController = TextEditingController();
   final _moneyOutReceiptFormatController = TextEditingController();
 
@@ -36,18 +37,23 @@ class _EntityScreenState extends State<EntityScreen> {
   @override
   void initState() {
     super.initState();
-    _moneyInReceiptFormatController.addListener(_onFormatChanged);
-    _moneyOutReceiptFormatController.addListener(_onFormatChanged);
+    _nameController.addListener(_onFieldChanged);
+    _abnController.addListener(_onFieldChanged);
+    _incorporationController.addListener(_onFieldChanged);
+    _apcaIdController.addListener(_onFieldChanged);
+    _moneyInReceiptFormatController.addListener(_onFieldChanged);
+    _moneyOutReceiptFormatController.addListener(_onFieldChanged);
     _load();
   }
 
-  void _onFormatChanged() => setState(() {});
+  void _onFieldChanged() => setState(() {});
 
   @override
   void dispose() {
     _nameController.dispose();
     _abnController.dispose();
     _incorporationController.dispose();
+    _apcaIdController.dispose();
     _moneyInReceiptFormatController.dispose();
     _moneyOutReceiptFormatController.dispose();
     super.dispose();
@@ -87,6 +93,7 @@ class _EntityScreenState extends State<EntityScreen> {
         _nameController.text = details.name;
         _abnController.text = details.abn;
         _incorporationController.text = details.incorporationIdentifier;
+        _apcaIdController.text = details.apcaId ?? '';
         _moneyInReceiptFormatController.text = details.moneyInReceiptFormat;
         _moneyOutReceiptFormatController.text = details.moneyOutReceiptFormat;
         _loading = false;
@@ -132,6 +139,7 @@ class _EntityScreenState extends State<EntityScreen> {
         'name': _nameController.text.trim(),
         'abn': _abnController.text.trim(),
         'incorporationIdentifier': _incorporationController.text.trim(),
+        'apcaId': _apcaIdController.text.trim(),
         'moneyInReceiptFormat': _moneyInReceiptFormatController.text.trim(),
         'moneyOutReceiptFormat': _moneyOutReceiptFormatController.text.trim(),
       });
@@ -187,6 +195,7 @@ class _EntityScreenState extends State<EntityScreen> {
       _nameController.text = _saved!.name;
       _abnController.text = _saved!.abn;
       _incorporationController.text = _saved!.incorporationIdentifier;
+      _apcaIdController.text = _saved!.apcaId ?? '';
       _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
       _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
       _editing = true;
@@ -198,6 +207,7 @@ class _EntityScreenState extends State<EntityScreen> {
       _nameController.text = _saved!.name;
       _abnController.text = _saved!.abn;
       _incorporationController.text = _saved!.incorporationIdentifier;
+      _apcaIdController.text = _saved!.apcaId ?? '';
       _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
       _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
       _editing = false;
@@ -306,12 +316,14 @@ class _EntityScreenState extends State<EntityScreen> {
             label: 'Organisation Name',
             controller: _nameController,
             enabled: _editing,
+            isRequired: true,
           ),
           const SizedBox(height: 16),
           _buildField(
             label: 'ABN',
             controller: _abnController,
             enabled: _editing,
+            isRequired: true,
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(11),
@@ -324,6 +336,19 @@ class _EntityScreenState extends State<EntityScreen> {
             label: 'Incorporation Identifier',
             controller: _incorporationController,
             enabled: _editing,
+            isRequired: true,
+          ),
+          const SizedBox(height: 16),
+          _buildField(
+            label: 'APCA ID (User ID)',
+            controller: _apcaIdController,
+            enabled: _editing,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
+            helperText: '6-digit User ID assigned by your bank for Direct Entry',
+            keyboardType: TextInputType.number,
           ),
           const SizedBox(height: 24),
           Text('Receipt Number Formats',
@@ -379,17 +404,20 @@ class _EntityScreenState extends State<EntityScreen> {
     required String label,
     required TextEditingController controller,
     required bool enabled,
+    bool isRequired = false,
     List<TextInputFormatter>? inputFormatters,
     String? helperText,
     TextInputType? keyboardType,
   }) {
+    final isEmpty = isRequired && controller.text.trim().isEmpty;
     return TextFormField(
       controller: controller,
       enabled: enabled && !_saving,
       inputFormatters: inputFormatters,
       keyboardType: keyboardType,
       decoration: InputDecoration(
-        labelText: label,
+        labelText: isEmpty ? '$label (!)' : label,
+        labelStyle: isEmpty ? const TextStyle(color: Colors.red) : null,
         helperText: helperText,
         border: const OutlineInputBorder(),
         isDense: true,

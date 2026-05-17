@@ -9,11 +9,13 @@ import '../infrastructure/database/database_connection.dart';
 import '../infrastructure/encryption/field_encryptor.dart';
 import '../infrastructure/repositories/postgres_audit_repository.dart';
 import '../infrastructure/repositories/postgres_bank_import_repository.dart';
+import '../infrastructure/repositories/postgres_locked_month_repository.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
 import '../infrastructure/repositories/postgres_dashboard_preference_repository.dart';
 import '../infrastructure/repositories/postgres_bank_account_repository.dart';
+import '../infrastructure/repositories/postgres_closing_bank_balance_repository.dart';
 import '../infrastructure/repositories/postgres_entity_details_repository.dart';
 import '../infrastructure/repositories/postgres_gst_rate_repository.dart';
 import '../infrastructure/repositories/postgres_transaction_repository.dart';
@@ -47,6 +49,11 @@ import '../application/gst_rate/list_gst_rates_use_case.dart';
 import '../application/gst_rate/update_gst_rate_use_case.dart';
 import '../application/bank_import/get_bank_imports_use_case.dart';
 import '../application/bank_import/save_bank_imports_use_case.dart';
+import '../application/closing_bank_balance/list_closing_bank_balances_use_case.dart';
+import '../application/closing_bank_balance/save_closing_bank_balance_use_case.dart';
+import '../application/locked_month/list_locked_months_use_case.dart';
+import '../application/locked_month/lock_month_use_case.dart';
+import '../application/locked_month/unlock_month_use_case.dart';
 import '../application/transaction/bank_match_transactions_use_case.dart';
 import '../application/transaction/create_transaction_use_case.dart';
 import '../application/transaction/delete_transaction_use_case.dart';
@@ -54,7 +61,10 @@ import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
 import 'handlers/abn_lookup_handler.dart';
+import 'handlers/bank_reconciliation_handler.dart';
 import 'handlers/bank_imports_handler.dart';
+import 'handlers/closing_bank_balance_handler.dart';
+import 'handlers/locked_month_handler.dart';
 import 'handlers/audit_handler.dart';
 import 'handlers/backup_handler.dart';
 import 'handlers/contact_handler.dart';
@@ -88,7 +98,7 @@ Handler buildRouter({
     delete: DeleteGeneralLedgerUseCase(PostgresGeneralLedgerRepository(pool)),
   );
 
-  final contactRepository = PostgresContactRepository(pool);
+  final contactRepository = PostgresContactRepository(pool, fieldEncryptor);
   final contactTransactionRepository = PostgresTransactionRepository(pool);
   final contactHandler = ContactHandler(
     create: CreateContactUseCase(contactRepository),
@@ -102,13 +112,20 @@ Handler buildRouter({
     lookup: LookupAbnUseCase(AbnLookupService(authGuid: abrGuid)),
   );
 
+  final lockedMonthRepository = PostgresLockedMonthRepository(pool);
+  final lockedMonthHandler = LockedMonthHandler(
+    list: ListLockedMonthsUseCase(lockedMonthRepository),
+    lock: LockMonthUseCase(lockedMonthRepository),
+    unlock: UnlockMonthUseCase(lockedMonthRepository),
+  );
+
   final transactionRepository = PostgresTransactionRepository(pool);
   final transactionHandler = TransactionHandler(
-    create: CreateTransactionUseCase(transactionRepository),
+    create: CreateTransactionUseCase(transactionRepository, lockedMonthRepository),
     get: GetTransactionUseCase(transactionRepository),
     list: ListTransactionsUseCase(transactionRepository),
-    update: UpdateTransactionUseCase(transactionRepository),
-    delete: DeleteTransactionUseCase(transactionRepository),
+    update: UpdateTransactionUseCase(transactionRepository, lockedMonthRepository),
+    delete: DeleteTransactionUseCase(transactionRepository, lockedMonthRepository),
     bankMatch: BankMatchTransactionsUseCase(transactionRepository),
   );
 
@@ -131,7 +148,7 @@ Handler buildRouter({
     delete: DeleteBankAccountUseCase(bankAccountRepository),
   );
 
-  final entityDetailsRepository = PostgresEntityDetailsRepository(pool);
+  final entityDetailsRepository = PostgresEntityDetailsRepository(pool, fieldEncryptor);
   final entityDetailsHandler = EntityDetailsHandler(
     get: GetEntityDetailsUseCase(entityDetailsRepository),
     save: SaveEntityDetailsUseCase(entityDetailsRepository),
@@ -142,6 +159,17 @@ Handler buildRouter({
   final dashboardPreferenceHandler = DashboardPreferenceHandler(
     get: GetDashboardPreferenceUseCase(dashboardPreferenceRepository),
     save: SaveDashboardPreferenceUseCase(dashboardPreferenceRepository),
+  );
+
+  final closingBankBalanceRepository =
+      PostgresClosingBankBalanceRepository(pool);
+  final closingBankBalanceHandler = ClosingBankBalanceHandler(
+    save: SaveClosingBankBalanceUseCase(closingBankBalanceRepository),
+    list: ListClosingBankBalancesUseCase(closingBankBalanceRepository),
+  );
+
+  final bankReconciliationHandler = BankReconciliationHandler(
+    listBankAccounts: ListBankAccountsUseCase(bankAccountRepository),
   );
 
   final backupHandler = BackupHandler(pool: pool);
@@ -189,6 +217,12 @@ Handler buildRouter({
         _authed(_entityDetailsRouter(entityDetailsHandler)))
     ..mount('/bank-imports',
         _authed(_bankImportsRouter(bankImportsHandler)))
+    ..mount('/locked-months',
+        _authed(_lockedMonthsRouter(lockedMonthHandler)))
+    ..mount('/closing-bank-balances',
+        _authed(_closingBankBalanceRouter(closingBankBalanceHandler)))
+    ..mount('/bank-reconciliation',
+        _authed(_bankReconciliationRouter(bankReconciliationHandler)))
     ..mount('/admin',
         _authed(_adminRouter(backupHandler, auditHandler)));
 
@@ -292,6 +326,28 @@ Router _bankImportsRouter(BankImportsHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireContributor(), h.handleSave));
+}
+
+// All roles can read; only admins can lock or unlock.
+Router _lockedMonthsRouter(LockedMonthHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..post('/', _role(requireAdministrator(), h.handleLock))
+    ..delete('/<monthYear>', _roleId(requireAdministrator(), h.handleUnlock));
+}
+
+// All authenticated users can read; contributors and admins can write.
+Router _closingBankBalanceRouter(ClosingBankBalanceHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..post('/', _role(requireContributor(), h.handleSave));
+}
+
+// Contributors can post; bank-accounts list accessible to all authenticated users.
+Router _bankReconciliationRouter(BankReconciliationHandler h) {
+  return Router()
+    ..get('/bank-accounts', h.handleListBankAccounts)
+    ..post('/parse-statement', _role(requireContributor(), h.handleParseStatement));
 }
 
 // Contributors have no access to audit or backup. Only admins can restore.

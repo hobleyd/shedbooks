@@ -10,6 +10,8 @@ import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../utils/formatters.dart';
+import '../widgets/pdf_report_components.dart';
 
 /// BAS (Business Activity Statement) report screen.
 class BasReportScreen extends StatefulWidget {
@@ -163,26 +165,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
           !t.isCredit && (_glMap[t.generalLedgerId]?.gstApplicable ?? false))
       .fold(0, (s, t) => s + t.gstAmount);
 
-  // ── Formatting ─────────────────────────────────────────────────────────────
-
-  String _formatCents(int cents) {
-    final dollars = cents / 100;
-    final parts = dollars.toStringAsFixed(2).split('.');
-    final buf = StringBuffer();
-    int c = 0;
-    for (int i = parts[0].length - 1; i >= 0; i--) {
-      if (c > 0 && c % 3 == 0) buf.write(',');
-      buf.write(parts[0][i]);
-      c++;
-    }
-    return '\$${buf.toString().split('').reversed.join()}.${parts[1]}';
-  }
-
-  String _formatAbn(String abn) {
-    final d = abn.replaceAll(' ', '');
-    if (d.length != 11) return abn;
-    return '${d.substring(0, 2)} ${d.substring(2, 5)} ${d.substring(5, 8)} ${d.substring(8)}';
-  }
+  // ── Period label ───────────────────────────────────────────────────────────
 
   String get _periodLabel {
     final startMonth = (_quarter - 1) * 3 + 1;
@@ -197,9 +180,6 @@ class _BasReportScreenState extends State<BasReportScreen> {
 
   // ── PDF generation ─────────────────────────────────────────────────────────
 
-  String _formatDateShort(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-
   Future<void> _generatePdf() async {
     final txns = _quarterTransactions;
     final g1 = _computeG1(txns);
@@ -208,7 +188,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
     final netGst = oneA - oneB;
     final isPayable = netGst >= 0;
     final entity = _entityDetails;
-    final generated = _formatDateShort(DateTime.now());
+    final generated = Formatters.formatDateShort(DateTime.now());
 
     final doc = pw.Document(title: 'BAS Q$_quarter $_year');
 
@@ -218,18 +198,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
       build: (ctx) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          // Entity header
-          if (entity != null) ...[
-            pw.Text(entity.name,
-                style: pw.TextStyle(
-                    fontSize: 18, fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(height: 3),
-            pw.Text(
-              'ABN: ${_formatAbn(entity.abn)}  |  ${entity.incorporationIdentifier}',
-              style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
-            ),
-            pw.SizedBox(height: 14),
-          ],
+          PdfReportComponents.entityHeader(entity),
           pw.Text('Business Activity Statement',
               style: pw.TextStyle(
                   fontSize: 15, fontWeight: pw.FontWeight.bold)),
@@ -292,8 +261,8 @@ class _BasReportScreenState extends State<BasReportScreen> {
                 ),
                 pw.Text(
                   isPayable
-                      ? _formatCents(netGst)
-                      : '(${_formatCents(netGst.abs())})',
+                      ? Formatters.formatCents(netGst)
+                      : '(${Formatters.formatCents(netGst.abs())})',
                   style: pw.TextStyle(
                     fontSize: 14,
                     fontWeight: pw.FontWeight.bold,
@@ -394,7 +363,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
                 pw.SizedBox(
                   width: 120,
                   child: pw.Text(
-                    _formatCents(cents),
+                    Formatters.formatCents(cents),
                     style: pw.TextStyle(
                       fontSize: 9,
                       fontWeight: highlight ? pw.FontWeight.bold : null,
@@ -567,7 +536,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
                   Text(e.name,
                       style: Theme.of(context).textTheme.bodyMedium),
                   Text(
-                    'ABN ${_formatAbn(e.abn)}  ·  ${e.incorporationIdentifier}',
+                    'ABN ${Formatters.formatAbn(e.abn)}  ·  ${e.incorporationIdentifier}',
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -677,7 +646,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
                 SizedBox(
                   width: amountWidth,
                   child: Text(
-                    _formatCents(row.cents),
+                    Formatters.formatCents(row.cents),
                     style: TextStyle(
                       fontFeatures: const [FontFeature.tabularFigures()],
                       fontWeight: row.highlighted ? FontWeight.bold : null,
@@ -699,8 +668,8 @@ class _BasReportScreenState extends State<BasReportScreen> {
     final label =
         isPayable ? 'Net GST payable to ATO' : 'Net GST refundable from ATO';
     final amount = isPayable
-        ? _formatCents(netGst)
-        : '(${_formatCents(netGst.abs())})';
+        ? Formatters.formatCents(netGst)
+        : '(${Formatters.formatCents(netGst.abs())})';
 
     return Card(
       elevation: 0,
@@ -748,7 +717,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
   Widget _buildPayrollNote() {
     return Row(
       children: [
-        Icon(Icons.info_outline, size: 14, color: Colors.black38),
+        const Icon(Icons.info_outline, size: 14, color: Colors.black38),
         const SizedBox(width: 6),
         Text(
           'W1 (gross wages), W2 (PAYG withholding) and T7 (PAYG instalments) '

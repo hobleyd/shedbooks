@@ -9,6 +9,7 @@ import '../../application/contact/list_contacts_use_case.dart';
 import '../../application/contact/merge_contacts_use_case.dart';
 import '../../application/contact/update_contact_use_case.dart';
 import '../../domain/entities/contact.dart';
+import '../../domain/enums/app_role.dart';
 import '../../domain/exceptions/contact_exception.dart';
 import '../audit_changes.dart';
 import '../dto/contact_response.dart';
@@ -44,9 +45,15 @@ class ContactHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    final role = _userRole(request);
+    final isAuthorized = role.atLeast(AppRole.administrator);
+
     final contacts = await _list.execute(entityId: entityId);
     final body = jsonEncode(
-      contacts.map((c) => ContactResponse.fromEntity(c).toJson()).toList(),
+      contacts.map((c) {
+        final contact = isAuthorized ? c : _redact(c);
+        return ContactResponse.fromEntity(contact).toJson();
+      }).toList(),
     );
     return Response.ok(body, headers: _jsonHeaders);
   }
@@ -77,6 +84,8 @@ class ContactHandler {
         contactType: dto.contactType,
         gstRegistered: dto.gstRegistered,
         abn: dto.abn,
+        bsb: dto.bsb,
+        accountNumber: dto.accountNumber,
       );
       _auditChanges(request)?.set(_contactSnapshot(contact));
       return Response(
@@ -94,10 +103,14 @@ class ContactHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    final role = _userRole(request);
+    final isAuthorized = role.atLeast(AppRole.administrator);
+
     try {
       final contact = await _get.execute(id, entityId: entityId);
+      final result = isAuthorized ? contact : _redact(contact);
       return Response.ok(
-        ContactResponse.fromEntity(contact).toJsonString(),
+        ContactResponse.fromEntity(result).toJsonString(),
         headers: _jsonHeaders,
       );
     } on ContactNotFoundException catch (e) {
@@ -137,6 +150,8 @@ class ContactHandler {
         contactType: dto.contactType,
         gstRegistered: dto.gstRegistered,
         abn: dto.abn,
+        bsb: dto.bsb,
+        accountNumber: dto.accountNumber,
       );
       if (before != null) {
         final diff = diffMaps(_contactSnapshot(before), _contactSnapshot(contact));
@@ -225,6 +240,25 @@ class ContactHandler {
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
 
+  static AppRole _userRole(Request request) {
+    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
+    final roles = claims?['https://shedbooks.com/roles'] as List<dynamic>? ?? [];
+    return AppRole.fromClaims(roles);
+  }
+
+  static Contact _redact(Contact c) => Contact(
+        id: c.id,
+        name: c.name,
+        contactType: c.contactType,
+        gstRegistered: c.gstRegistered,
+        abn: c.abn,
+        bsb: null,
+        accountNumber: null,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        deletedAt: c.deletedAt,
+      );
+
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;
 
@@ -233,6 +267,8 @@ class ContactHandler {
         'contactType': c.contactType.name,
         'gstRegistered': c.gstRegistered,
         'abn': c.abn,
+        'bsb': c.bsb,
+        'accountNumber': c.accountNumber,
       };
 
   static Response _orgRequired() => Response.unauthorized(

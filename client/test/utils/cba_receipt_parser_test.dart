@@ -187,6 +187,40 @@ void main() {
       );
     });
 
+    // ── Credit descriptions with range notation ───────────────────────────────────
+
+    test('parses range from a Direct Credit description', () {
+      // "Direct Credit 301500 WoodgateMenShed Com P-26075-81" should expand to
+      // P-26075 through P-26081 (7 receipts).
+      final result = parseCbaReceiptNumbers(
+        'Direct Credit 301500 WoodgateMenShed Com P-26075-81',
+        pFormat,
+        at: date2026,
+      );
+      expect(result, equals([
+        'P-26075', 'P-26076', 'P-26077', 'P-26078',
+        'P-26079', 'P-26080', 'P-26081',
+      ]));
+    });
+
+    test('parses single receipt from a Direct Credit description', () {
+      final result = parseCbaReceiptNumbers(
+        'Direct Credit 301500 WoodgateMenShed Com P-26075',
+        pFormat,
+        at: date2026,
+      );
+      expect(result, equals(['P-26075']));
+    });
+
+    test('parses comma-separated receipts from a credit description', () {
+      final result = parseCbaReceiptNumbers(
+        'Direct Credit WoodgateMenShed P-26075,76,78',
+        pFormat,
+        at: date2026,
+      );
+      expect(result, equals(['P-26075', 'P-26076', 'P-26078']));
+    });
+
     // ── Different format ─────────────────────────────────────────────────────────
 
     test('works with a plain 7-digit format', () {
@@ -251,8 +285,9 @@ void main() {
       );
     });
 
-    test('returns first match only (not range-expanded)', () {
-      // For credit rows there is only ever one receipt.
+    test('returns first match only — does not expand CBA range notation', () {
+      // extractCreditReceipt intentionally stops at the first match.
+      // Use parseCbaReceiptNumbers when the description may contain a range.
       expect(
         extractCreditReceipt('P-26001-10', pFormat, at: date2026),
         equals('P-26001'),

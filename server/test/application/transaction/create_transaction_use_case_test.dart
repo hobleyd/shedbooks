@@ -2,18 +2,23 @@ import 'package:mocktail/mocktail.dart';
 import 'package:test/test.dart';
 
 import 'package:shedbooks_server/domain/entities/transaction.dart';
+import 'package:shedbooks_server/domain/exceptions/locked_month_exception.dart';
 import 'package:shedbooks_server/domain/exceptions/transaction_exception.dart';
+import 'package:shedbooks_server/domain/repositories/i_locked_month_repository.dart';
 import 'package:shedbooks_server/domain/repositories/i_transaction_repository.dart';
 import 'package:shedbooks_server/application/transaction/create_transaction_use_case.dart';
 
 class MockTransactionRepository extends Mock implements ITransactionRepository {}
+class MockLockedMonthRepository extends Mock implements ILockedMonthRepository {}
 
 void main() {
   late MockTransactionRepository repository;
+  late MockLockedMonthRepository lockedMonths;
   late CreateTransactionUseCase sut;
 
   const tEntityId = 'entity-1';
   final tDate = DateTime.utc(2026, 5, 1);
+  const tMonthYear = '2026-05';
   final tTransaction = Transaction(
     id: '00000000-0000-0000-0000-000000000001',
     contactId: '00000000-0000-0000-0000-000000000002',
@@ -30,13 +35,16 @@ void main() {
 
   setUp(() {
     repository = MockTransactionRepository();
-    sut = CreateTransactionUseCase(repository);
+    lockedMonths = MockLockedMonthRepository();
+    sut = CreateTransactionUseCase(repository, lockedMonths);
     registerFallbackValue(TransactionType.debit);
     registerFallbackValue(tDate);
+    // Default: month is not locked.
+    when(() => lockedMonths.isLocked(any(), any())).thenAnswer((_) async => false);
   });
 
   group('CreateTransactionUseCase', () {
-    test('creates a transaction and returns the persisted entity', () async {
+    test('creates a money-out (debit) transaction and returns the persisted entity', () async {
       // Arrange
       when(
         () => repository.create(
@@ -67,7 +75,55 @@ void main() {
 
       // Assert
       expect(result, equals(tTransaction));
+      expect(result.transactionType, equals(TransactionType.debit));
       expect(result.totalAmount, equals(12000));
+    });
+
+    test('creates a money-in (credit) transaction and returns the persisted entity', () async {
+      // Arrange
+      final tCreditTransaction = Transaction(
+        id: '00000000-0000-0000-0000-000000000001',
+        contactId: '00000000-0000-0000-0000-000000000002',
+        generalLedgerId: '00000000-0000-0000-0000-000000000005',
+        amount: 20000,
+        gstAmount: 2000,
+        transactionType: TransactionType.credit,
+        receiptNumber: 'Bank Transfer',
+        description: '',
+        transactionDate: tDate,
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 1),
+      );
+      when(
+        () => repository.create(
+          entityId: tEntityId,
+          contactId: tCreditTransaction.contactId,
+          generalLedgerId: tCreditTransaction.generalLedgerId,
+          amount: 20000,
+          gstAmount: 2000,
+          transactionType: TransactionType.credit,
+          receiptNumber: 'Bank Transfer',
+          description: '',
+          transactionDate: tDate,
+        ),
+      ).thenAnswer((_) async => tCreditTransaction);
+
+      // Act
+      final result = await sut.execute(
+        entityId: tEntityId,
+        contactId: tCreditTransaction.contactId,
+        generalLedgerId: tCreditTransaction.generalLedgerId,
+        amount: 20000,
+        gstAmount: 2000,
+        transactionType: TransactionType.credit,
+        receiptNumber: 'Bank Transfer',
+        description: '',
+        transactionDate: tDate,
+      );
+
+      // Assert — credit (money-in) must not be silently changed to debit
+      expect(result.transactionType, equals(TransactionType.credit));
+      expect(result.totalAmount, equals(22000));
     });
 
     test('totalAmount equals amount plus gstAmount', () async {
@@ -146,6 +202,39 @@ void main() {
           transactionDate: any(named: 'transactionDate'),
         ),
       ).called(1);
+    });
+
+    test('throws MonthIsLockedException when month is locked', () async {
+      // Arrange
+      when(() => lockedMonths.isLocked(tEntityId, tMonthYear))
+          .thenAnswer((_) async => true);
+
+      // Act / Assert
+      await expectLater(
+        () => sut.execute(
+          entityId: tEntityId,
+          contactId: 'c1',
+          generalLedgerId: 'g1',
+          amount: 1000,
+          gstAmount: 0,
+          transactionType: TransactionType.debit,
+          receiptNumber: 'REC-001',
+          description: '',
+          transactionDate: tDate,
+        ),
+        throwsA(isA<MonthIsLockedException>()),
+      );
+      verifyNever(() => repository.create(
+            entityId: any(named: 'entityId'),
+            contactId: any(named: 'contactId'),
+            generalLedgerId: any(named: 'generalLedgerId'),
+            amount: any(named: 'amount'),
+            gstAmount: any(named: 'gstAmount'),
+            transactionType: any(named: 'transactionType'),
+            receiptNumber: any(named: 'receiptNumber'),
+            description: any(named: 'description'),
+            transactionDate: any(named: 'transactionDate'),
+          ));
     });
 
     test('throws TransactionValidationException when amount is zero', () {

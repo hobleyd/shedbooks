@@ -20,6 +20,12 @@ class Contact {
   /// always null for [ContactType.person].
   final String? abn;
 
+  /// Bank State Branch code (6 digits) for ABA payments.
+  final String? bsb;
+
+  /// Bank account number (6-10 digits) for ABA payments.
+  final String? accountNumber;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -35,6 +41,8 @@ class Contact {
     required this.contactType,
     required this.gstRegistered,
     this.abn,
+    this.bsb,
+    this.accountNumber,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,

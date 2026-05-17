@@ -40,7 +40,8 @@ scripts/*.bak
 .packages
 .pub-cache/
 .pub/
-/build/
+client/build/
+server/build/
 
 # Symbolication related
 app.*.symbols

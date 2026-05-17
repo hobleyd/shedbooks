@@ -19,12 +19,14 @@ class SaveEntityDetailsUseCase {
     required String name,
     required String abn,
     required String incorporationIdentifier,
+    String? apcaId,
     required String moneyInReceiptFormat,
     required String moneyOutReceiptFormat,
   }) async {
     final trimmedName = name.trim();
     final trimmedAbn = abn.trim();
     final trimmedIncorporation = incorporationIdentifier.trim();
+    final trimmedApcaId = apcaId?.trim();
 
     if (trimmedName.isEmpty) {
       throw const EntityDetailsValidationException('Name must not be empty');
@@ -38,11 +40,18 @@ class SaveEntityDetailsUseCase {
           'Incorporation identifier must not be empty');
     }
 
+    if (trimmedApcaId != null && trimmedApcaId.isNotEmpty) {
+      if (!RegExp(r'^\d{6}$').hasMatch(trimmedApcaId)) {
+        throw const EntityDetailsValidationException('APCA ID must be 6 digits');
+      }
+    }
+
     return _repository.save(EntityDetails(
       entityId: entityId,
       name: trimmedName,
       abn: trimmedAbn,
       incorporationIdentifier: trimmedIncorporation,
+      apcaId: trimmedApcaId,
       moneyInReceiptFormat: moneyInReceiptFormat.trim(),
       moneyOutReceiptFormat: moneyOutReceiptFormat.trim(),
       createdAt: DateTime.now().toUtc(),

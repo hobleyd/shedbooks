@@ -4,14 +4,17 @@ import 'package:uuid/uuid.dart';
 import '../../domain/entities/contact.dart';
 import '../../domain/exceptions/contact_exception.dart';
 import '../../domain/repositories/i_contact_repository.dart';
+import '../encryption/field_encryptor.dart';
 
 /// PostgreSQL implementation of [IContactRepository].
 class PostgresContactRepository implements IContactRepository {
   final Pool _pool;
   final Uuid _uuid;
+  final FieldEncryptor _enc;
 
-  PostgresContactRepository(this._pool, [Uuid? uuid])
-      : _uuid = uuid ?? const Uuid();
+  PostgresContactRepository(this._pool, FieldEncryptor encryptor, [Uuid? uuid])
+      : _enc = encryptor,
+        _uuid = uuid ?? const Uuid();
 
   @override
   Future<Contact> create({
@@ -20,13 +23,15 @@ class PostgresContactRepository implements IContactRepository {
     required ContactType contactType,
     required bool gstRegistered,
     String? abn,
+    String? bsb,
+    String? accountNumber,
   }) async {
     final id = _uuid.v4();
     final result = await _pool.execute(
       Sql.named('''
-        INSERT INTO contacts (id, entity_id, name, contact_type, gst_registered, abn)
-        VALUES (@id::uuid, @entityId, @name, @contactType::contact_type, @gstRegistered, @abn)
-        RETURNING id, name, contact_type::text, gst_registered, abn, created_at, updated_at, deleted_at
+        INSERT INTO contacts (id, entity_id, name, contact_type, gst_registered, abn, bsb, account_number)
+        VALUES (@id::uuid, @entityId, @name, @contactType::contact_type, @gstRegistered, @abn, @bsb, @accountNumber)
+        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
@@ -35,6 +40,8 @@ class PostgresContactRepository implements IContactRepository {
         'contactType': contactType.name,
         'gstRegistered': gstRegistered,
         'abn': abn,
+        'bsb': bsb != null ? _enc.encrypt(bsb) : null,
+        'accountNumber': accountNumber != null ? _enc.encrypt(accountNumber) : null,
       },
     );
     return _mapRow(result.first.toColumnMap());
@@ -44,7 +51,7 @@ class PostgresContactRepository implements IContactRepository {
   Future<Contact?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, name, contact_type::text, gst_registered, abn, created_at, updated_at, deleted_at
+        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
         FROM contacts
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -61,7 +68,7 @@ class PostgresContactRepository implements IContactRepository {
   Future<List<Contact>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, name, contact_type::text, gst_registered, abn, created_at, updated_at, deleted_at
+        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
         FROM contacts
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -81,6 +88,8 @@ class PostgresContactRepository implements IContactRepository {
     required ContactType contactType,
     required bool gstRegistered,
     String? abn,
+    String? bsb,
+    String? accountNumber,
   }) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -89,11 +98,13 @@ class PostgresContactRepository implements IContactRepository {
             contact_type   = @contactType::contact_type,
             gst_registered = @gstRegistered,
             abn            = @abn,
+            bsb            = @bsb,
+            account_number = @accountNumber,
             updated_at     = NOW()
         WHERE id = @id::uuid
           AND entity_id = @entityId
           AND deleted_at IS NULL
-        RETURNING id, name, contact_type::text, gst_registered, abn, created_at, updated_at, deleted_at
+        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
@@ -102,6 +113,8 @@ class PostgresContactRepository implements IContactRepository {
         'contactType': contactType.name,
         'gstRegistered': gstRegistered,
         'abn': abn,
+        'bsb': bsb != null ? _enc.encrypt(bsb) : null,
+        'accountNumber': accountNumber != null ? _enc.encrypt(accountNumber) : null,
       },
     );
 
@@ -133,6 +146,10 @@ class PostgresContactRepository implements IContactRepository {
       contactType: ContactType.values.byName(row['contact_type'] as String),
       gstRegistered: row['gst_registered'] as bool,
       abn: (row['abn'] as String?)?.trim(),
+      bsb: row['bsb'] != null ? _enc.decrypt(row['bsb'] as String) : null,
+      accountNumber: row['account_number'] != null
+          ? _enc.decrypt(row['account_number'] as String)
+          : null,
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,

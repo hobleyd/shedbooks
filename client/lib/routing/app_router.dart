@@ -10,11 +10,14 @@ import '../screens/contacts_screen.dart';
 import '../screens/entity_screen.dart';
 import '../screens/bas_report_screen.dart';
 import '../screens/pl_report_screen.dart';
+import '../screens/monthly_report_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/general_ledger_screen.dart';
 import '../screens/gst_management_screen.dart';
+import '../screens/invoices_screen.dart';
+import '../screens/bank_reconciliation_screen.dart';
+import '../screens/locked_months_screen.dart';
 import '../screens/login_screen.dart';
-import '../screens/placeholder_screen.dart';
 import '../screens/transactions_screen.dart';
 
 /// Routes that contributors may not access.
@@ -23,6 +26,7 @@ const _contributorBlockedPaths = {
   '/admin/gst-management',
   '/admin/audit-log',
   '/admin/backup',
+  '/admin/locked-months',
 };
 
 /// Creates the application router with auth-based redirect guards.
@@ -65,8 +69,11 @@ GoRouter createRouter(AuthState authState) {
           ),
           GoRoute(
             path: '/bank-reconciliation',
-            builder: (context, state) =>
-                const PlaceholderScreen(title: 'Bank Reconciliation'),
+            builder: (context, state) => const BankReconciliationScreen(),
+          ),
+          GoRoute(
+            path: '/invoices',
+            builder: (context, state) => const InvoicesScreen(),
           ),
           GoRoute(
             path: '/reports/bas',
@@ -75,6 +82,10 @@ GoRouter createRouter(AuthState authState) {
           GoRoute(
             path: '/reports/pl',
             builder: (context, state) => const PlReportScreen(),
+          ),
+          GoRoute(
+            path: '/reports/monthly',
+            builder: (context, state) => const MonthlyReportScreen(),
           ),
           GoRoute(
             path: '/admin/entity',
@@ -103,6 +114,10 @@ GoRouter createRouter(AuthState authState) {
           GoRoute(
             path: '/admin/backup',
             builder: (context, state) => const BackupScreen(),
+          ),
+          GoRoute(
+            path: '/admin/locked-months',
+            builder: (context, state) => const LockedMonthsScreen(),
           ),
         ],
       ),

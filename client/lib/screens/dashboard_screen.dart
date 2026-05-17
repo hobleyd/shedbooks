@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/general_ledger_entry.dart';
+import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 
@@ -50,6 +52,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<TransactionEntry> _allTransactions = [];
   List<GeneralLedgerEntry> _glEntries = [];
   List<_MonthSummary> _months = [];
+  List<LockedMonthEntry> _lockedMonths = [];
 
   int _viewYear = DateTime.now().year;
   final List<_GlPair> _selectedPairs = [];
@@ -80,6 +83,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         client.get('/transactions'),
         client.get('/general-ledger'),
         client.get('/dashboard-preferences'),
+        client.get('/locked-months'),
       ]);
       if (!mounted) return;
 
@@ -114,9 +118,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               glEntries.any((g) => g.id == p.expenseId))
           .toList();
 
+      final lockedMonths = (jsonDecode(results[3].body) as List)
+          .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+
       setState(() {
         _allTransactions = transactions;
         _glEntries = glEntries;
+        _lockedMonths = lockedMonths;
         _selectedPairs
           ..clear()
           ..addAll(savedPairs);
@@ -214,6 +223,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _savePreference();
   }
 
+  bool _isMonthLocked(_MonthSummary m) {
+    final key = '$_viewYear-${m.month.toString().padLeft(2, '0')}';
+    return _lockedMonths.any((l) => l.monthYear == key);
+  }
+
   bool get _canGoForwardYear => _viewYear < DateTime.now().year;
 
   void _prevYear() => setState(() {
@@ -280,12 +294,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
           tooltip: 'Next year',
         ),
         const Spacer(),
-        if (!_loading)
+        if (!_loading) ...[
+          IconButton(
+            icon: const Icon(Icons.assignment_outlined),
+            onPressed: () => context.go('/reports/monthly'),
+            tooltip: 'Generate Monthly Report',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
             tooltip: 'Refresh',
           ),
+        ],
       ],
     );
   }
@@ -390,8 +410,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               SizedBox(
                 width: 140,
-                child: Text(_monthNames[m.month],
-                    style: Theme.of(context).textTheme.bodyMedium),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(_monthNames[m.month],
+                          style: Theme.of(context).textTheme.bodyMedium),
+                    ),
+                    if (_isMonthLocked(m))
+                      Tooltip(
+                        message: 'Month is locked',
+                        child: Icon(Icons.lock_outlined,
+                            size: 14, color: Colors.orange.shade700),
+                      )
+                    else
+                      const SizedBox(width: 14),
+                  ],
+                ),
               ),
               SizedBox(
                   width: colWidth,

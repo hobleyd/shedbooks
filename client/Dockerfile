@@ -7,6 +7,15 @@ RUN flutter pub get
 
 COPY . .
 
+RUN apt-get update -qq && apt-get install -y --no-install-recommends imagemagick \
+    && rm -rf /var/lib/apt/lists/* \
+    && convert assets/logo.png web/logo.png \
+    && convert assets/logo.png -resize 32x32 web/favicon.png \
+    && convert assets/logo.png -resize 16x16 /tmp/fav16.png \
+    && convert assets/logo.png -resize 32x32 /tmp/fav32.png \
+    && convert assets/logo.png -resize 48x48 /tmp/fav48.png \
+    && convert /tmp/fav16.png /tmp/fav32.png /tmp/fav48.png web/favicon.ico
+
 ARG AUTH0_DOMAIN
 ARG AUTH0_CLIENT_ID
 ARG AUTH0_AUDIENCE

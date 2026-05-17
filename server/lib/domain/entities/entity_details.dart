@@ -5,6 +5,9 @@ class EntityDetails {
   final String abn;
   final String incorporationIdentifier;
 
+  /// 6-digit User ID assigned by the bank for ABA file generation.
+  final String? apcaId;
+
   /// Receipt number format pattern for money-in transactions.
   /// Uses `#` (digit), `@` (letter), `*` (alphanumeric); other chars are literals.
   /// Empty string means no format is enforced.
@@ -23,6 +26,7 @@ class EntityDetails {
     required this.name,
     required this.abn,
     required this.incorporationIdentifier,
+    this.apcaId,
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
     required this.createdAt,

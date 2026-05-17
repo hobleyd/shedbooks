@@ -7,6 +7,7 @@ class EntityDetailsResponse {
   final String name;
   final String abn;
   final String incorporationIdentifier;
+  final String? apcaId;
   final String moneyInReceiptFormat;
   final String moneyOutReceiptFormat;
 
@@ -14,6 +15,7 @@ class EntityDetailsResponse {
     required this.name,
     required this.abn,
     required this.incorporationIdentifier,
+    this.apcaId,
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
   });
@@ -23,6 +25,7 @@ class EntityDetailsResponse {
         name: e.name,
         abn: e.abn,
         incorporationIdentifier: e.incorporationIdentifier,
+        apcaId: e.apcaId,
         moneyInReceiptFormat: e.moneyInReceiptFormat,
         moneyOutReceiptFormat: e.moneyOutReceiptFormat,
       );
@@ -31,6 +34,7 @@ class EntityDetailsResponse {
         'name': name,
         'abn': abn,
         'incorporationIdentifier': incorporationIdentifier,
+        'apcaId': apcaId,
         'moneyInReceiptFormat': moneyInReceiptFormat,
         'moneyOutReceiptFormat': moneyOutReceiptFormat,
       };

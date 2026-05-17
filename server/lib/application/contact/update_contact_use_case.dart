@@ -15,6 +15,8 @@ class UpdateContactUseCase {
     required ContactType contactType,
     required bool gstRegistered,
     String? abn,
+    String? bsb,
+    String? accountNumber,
   }) async {
     if (name.trim().isEmpty) {
       throw const ContactValidationException('Name must not be empty');
@@ -38,6 +40,19 @@ class UpdateContactUseCase {
       }
     }
 
+    if (bsb != null && bsb.trim().isNotEmpty) {
+      if (!RegExp(r'^\d{6}$').hasMatch(bsb.trim())) {
+        throw const ContactValidationException('BSB must be 6 digits');
+      }
+    }
+    if (accountNumber != null && accountNumber.trim().isNotEmpty) {
+      if (!RegExp(r'^\d{6,10}$').hasMatch(accountNumber.trim())) {
+        throw const ContactValidationException(
+          'Account number must be 6-10 digits',
+        );
+      }
+    }
+
     return _repository.update(
       id: id,
       entityId: entityId,
@@ -45,6 +60,8 @@ class UpdateContactUseCase {
       contactType: contactType,
       gstRegistered: gstRegistered,
       abn: contactType == ContactType.company ? abn?.trim() : null,
+      bsb: bsb?.trim(),
+      accountNumber: accountNumber?.trim(),
     );
   }
 }

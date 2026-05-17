@@ -2,6 +2,11 @@
 export 'application/bank_import/get_bank_imports_use_case.dart';
 export 'application/bank_import/save_bank_imports_use_case.dart';
 
+// Application — Locked Month
+export 'application/locked_month/list_locked_months_use_case.dart';
+export 'application/locked_month/lock_month_use_case.dart';
+export 'application/locked_month/unlock_month_use_case.dart';
+
 // Application — Transaction
 export 'application/transaction/bank_match_transactions_use_case.dart';
 export 'application/transaction/create_transaction_use_case.dart';

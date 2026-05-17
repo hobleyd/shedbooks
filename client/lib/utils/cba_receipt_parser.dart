@@ -69,9 +69,10 @@ List<String> parseCbaReceiptNumbers(
       .toList();
 }
 
-/// Finds a single receipt number in [description] that matches [format].
+/// Finds the first receipt number in [description] that matches [format].
 ///
-/// Used for credit (money-in) rows where CBA records a single receipt.
+/// Does **not** expand CBA range notation (e.g. `P-26075-81`); use
+/// [parseCbaReceiptNumbers] when a credit row may contain a range.
 /// Returns `null` when [format] is empty or no match is found.
 String? extractCreditReceipt(
   String description,

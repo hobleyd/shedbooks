@@ -6,6 +6,7 @@ import 'package:shelf/shelf.dart';
 import '../../application/entity/get_entity_details_use_case.dart';
 import '../../application/entity/save_entity_details_use_case.dart';
 import '../../domain/entities/entity_details.dart';
+import '../../domain/enums/app_role.dart';
 import '../../domain/exceptions/entity_details_exception.dart';
 import '../audit_changes.dart';
 import '../dto/entity_details_response.dart';
@@ -28,10 +29,14 @@ class EntityDetailsHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    final role = _userRole(request);
+    final isAuthorized = role.atLeast(AppRole.administrator);
+
     try {
       final details = await _get.execute(entityId);
+      final result = isAuthorized ? details : _redact(details);
       return Response.ok(
-        EntityDetailsResponse.fromEntity(details).toJsonString(),
+        EntityDetailsResponse.fromEntity(result).toJsonString(),
         headers: _jsonHeaders,
       );
     } on EntityDetailsNotFoundException catch (e) {
@@ -69,6 +74,7 @@ class EntityDetailsHandler {
         name: dto.name,
         abn: dto.abn,
         incorporationIdentifier: dto.incorporationIdentifier,
+        apcaId: dto.apcaId,
         moneyInReceiptFormat: dto.moneyInReceiptFormat,
         moneyOutReceiptFormat: dto.moneyOutReceiptFormat,
       );
@@ -92,6 +98,24 @@ class EntityDetailsHandler {
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
 
+  static AppRole _userRole(Request request) {
+    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
+    final roles = claims?['https://shedbooks.com/roles'] as List<dynamic>? ?? [];
+    return AppRole.fromClaims(roles);
+  }
+
+  static EntityDetails _redact(EntityDetails d) => EntityDetails(
+        entityId: d.entityId,
+        name: d.name,
+        abn: d.abn,
+        incorporationIdentifier: d.incorporationIdentifier,
+        apcaId: null,
+        moneyInReceiptFormat: d.moneyInReceiptFormat,
+        moneyOutReceiptFormat: d.moneyOutReceiptFormat,
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+      );
+
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;
 
@@ -99,6 +123,7 @@ class EntityDetailsHandler {
         'name': d.name,
         'abn': d.abn,
         'incorporationIdentifier': d.incorporationIdentifier,
+        'apcaId': d.apcaId,
         'moneyInReceiptFormat': d.moneyInReceiptFormat,
         'moneyOutReceiptFormat': d.moneyOutReceiptFormat,
       };

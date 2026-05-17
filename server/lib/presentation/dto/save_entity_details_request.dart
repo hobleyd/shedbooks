@@ -3,6 +3,7 @@ class SaveEntityDetailsRequest {
   final String name;
   final String abn;
   final String incorporationIdentifier;
+  final String? apcaId;
   final String moneyInReceiptFormat;
   final String moneyOutReceiptFormat;
 
@@ -10,6 +11,7 @@ class SaveEntityDetailsRequest {
     required this.name,
     required this.abn,
     required this.incorporationIdentifier,
+    this.apcaId,
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
   });
@@ -18,6 +20,7 @@ class SaveEntityDetailsRequest {
     final name = json['name'];
     final abn = json['abn'];
     final inc = json['incorporationIdentifier'];
+    final apcaId = json['apcaId'];
     final moneyIn = json['moneyInReceiptFormat'] ?? '';
     final moneyOut = json['moneyOutReceiptFormat'] ?? '';
 
@@ -25,6 +28,9 @@ class SaveEntityDetailsRequest {
     if (abn is! String) throw const FormatException('abn must be a string');
     if (inc is! String) {
       throw const FormatException('incorporationIdentifier must be a string');
+    }
+    if (apcaId != null && apcaId is! String) {
+      throw const FormatException('apcaId must be a string');
     }
     if (moneyIn is! String) {
       throw const FormatException('moneyInReceiptFormat must be a string');
@@ -37,6 +43,7 @@ class SaveEntityDetailsRequest {
       name: name,
       abn: abn,
       incorporationIdentifier: inc,
+      apcaId: apcaId,
       moneyInReceiptFormat: moneyIn,
       moneyOutReceiptFormat: moneyOut,
     );

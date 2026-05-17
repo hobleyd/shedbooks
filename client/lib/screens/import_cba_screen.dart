@@ -12,19 +12,9 @@ import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../utils/cba_receipt_parser.dart';
 import '../utils/receipt_format.dart';
+import '../widgets/bank_match_widgets.dart';
 
 // ── Data classes ──────────────────────────────────────────────────────────────
-
-enum _MatchStatus {
-  autoMatched,
-  amountMismatch, // receipts found but totals don't add up
-  needsSelection, // multiple credit candidates
-  manuallyMatched,
-  newTransaction, // no match — user created a new transaction from this row
-  unmatched,
-  skipped,
-  alreadyImported, // row was actioned in a previous import session
-}
 
 class _CbaRow {
   final String processDate; // YYYY-MM-DD
@@ -33,7 +23,7 @@ class _CbaRow {
   final int amountCents;
 
   List<String> parsedReceipts;
-  _MatchStatus status = _MatchStatus.unmatched;
+  BankMatchStatus status = BankMatchStatus.unmatched;
   List<TransactionEntry> matched = const [];
 
   _CbaRow({
@@ -44,15 +34,12 @@ class _CbaRow {
     this.parsedReceipts = const [],
   });
 
-  bool get needsAction =>
-      status == _MatchStatus.unmatched ||
-      status == _MatchStatus.needsSelection ||
-      status == _MatchStatus.amountMismatch;
+  bool get needsAction => status.needsAction;
 
   bool get isResolved =>
-      status == _MatchStatus.autoMatched ||
-      status == _MatchStatus.manuallyMatched ||
-      status == _MatchStatus.newTransaction;
+      status == BankMatchStatus.autoMatched ||
+      status == BankMatchStatus.manuallyMatched ||
+      status == BankMatchStatus.newTransaction;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -238,8 +225,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       if (isDebit) {
         receipts = parseCbaReceiptNumbers(desc, _moneyOutFormat, at: now);
       } else {
-        final r = extractCreditReceipt(desc, _moneyInFormat, at: now);
-        receipts = r != null ? [r] : [];
+        receipts = parseCbaReceiptNumbers(desc, _moneyInFormat, at: now);
       }
 
       final row = _CbaRow(
@@ -256,7 +242,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         isDebit: isDebit,
       ).dedupKey;
       if (_importedKeys.contains(key)) {
-        row.status = _MatchStatus.alreadyImported;
+        row.status = BankMatchStatus.alreadyImported;
       }
       rows.add(row);
     }
@@ -314,16 +300,16 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
             t.transactionType == 'debit' &&
             row.parsedReceipts.contains(t.receiptNumber));
         row.status =
-            alreadyMatched ? _MatchStatus.alreadyImported : _MatchStatus.unmatched;
+            alreadyMatched ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched;
         row.matched = [];
         return;
       }
 
-      final total = found.fold(0, (s, t) => s + t.totalAmount);
-      row.matched = found;
-      row.status = total == row.amountCents
-          ? _MatchStatus.autoMatched
-          : _MatchStatus.amountMismatch;
+      final subset = findMatchingSubset(found, row.amountCents);
+      row.matched = subset ?? found;
+      row.status = subset != null
+          ? BankMatchStatus.autoMatched
+          : BankMatchStatus.amountMismatch;
       return;
     }
 
@@ -338,10 +324,10 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         .toList();
 
     if (candidates.length == 1) {
-      row.status = _MatchStatus.autoMatched;
+      row.status = BankMatchStatus.autoMatched;
       row.matched = candidates;
     } else if (candidates.length > 1) {
-      row.status = _MatchStatus.needsSelection;
+      row.status = BankMatchStatus.needsSelection;
       row.matched = candidates;
     } else {
       final alreadyMatched = _allTransactions.any((t) =>
@@ -350,7 +336,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           t.transactionDate == row.processDate &&
           t.totalAmount == row.amountCents);
       row.status =
-          alreadyMatched ? _MatchStatus.alreadyImported : _MatchStatus.unmatched;
+          alreadyMatched ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched;
       row.matched = [];
     }
   }
@@ -366,11 +352,11 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           .toList();
 
       if (found.isNotEmpty) {
-        row.matched = found;
-        final total = found.fold(0, (s, t) => s + t.totalAmount);
-        row.status = total == row.amountCents
-            ? _MatchStatus.autoMatched
-            : _MatchStatus.amountMismatch;
+        final subset = findMatchingSubset(found, row.amountCents);
+        row.matched = subset ?? found;
+        row.status = subset != null
+            ? BankMatchStatus.autoMatched
+            : BankMatchStatus.amountMismatch;
         return;
       }
 
@@ -380,7 +366,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           t.transactionType == 'credit' &&
           row.parsedReceipts.contains(t.receiptNumber));
       if (alreadyMatchedByReceipt) {
-        row.status = _MatchStatus.alreadyImported;
+        row.status = BankMatchStatus.alreadyImported;
         row.matched = [];
         return;
       }
@@ -397,10 +383,10 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         .toList();
 
     if (candidates.length == 1) {
-      row.status = _MatchStatus.autoMatched;
+      row.status = BankMatchStatus.autoMatched;
       row.matched = candidates;
     } else if (candidates.length > 1) {
-      row.status = _MatchStatus.needsSelection;
+      row.status = BankMatchStatus.needsSelection;
       row.matched = candidates;
     } else {
       final alreadyMatched = _allTransactions.any((t) =>
@@ -409,7 +395,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           t.transactionDate == row.processDate &&
           t.totalAmount == row.amountCents);
       row.status =
-          alreadyMatched ? _MatchStatus.alreadyImported : _MatchStatus.unmatched;
+          alreadyMatched ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched;
       row.matched = [];
     }
   }
@@ -427,11 +413,11 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     }
   }
 
-  static bool _isUserResolved(_MatchStatus s) =>
-      s == _MatchStatus.manuallyMatched ||
-      s == _MatchStatus.newTransaction ||
-      s == _MatchStatus.skipped ||
-      s == _MatchStatus.alreadyImported;
+  static bool _isUserResolved(BankMatchStatus s) =>
+      s == BankMatchStatus.manuallyMatched ||
+      s == BankMatchStatus.newTransaction ||
+      s == BankMatchStatus.skipped ||
+      s == BankMatchStatus.alreadyImported;
 
   // ── Manual matching dialog ────────────────────────────────────────────────────
 
@@ -454,8 +440,10 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
 
     final result = await showDialog<List<TransactionEntry>>(
       context: context,
-      builder: (ctx) => _ManualMatchDialog(
-        row: row,
+      builder: (ctx) => ManualMatchDialog(
+        description: row.description,
+        processDate: row.processDate,
+        bankAmountCents: row.amountCents,
         candidates: candidates,
         contactNames: _contactNames,
         initialSelection: Set<String>.from(row.matched.map((t) => t.id)),
@@ -472,8 +460,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       for (final t in result) _reservedIds.add(t.id);
       row.matched = result;
       row.status = result.isEmpty
-          ? _MatchStatus.unmatched
-          : _MatchStatus.manuallyMatched;
+          ? BankMatchStatus.unmatched
+          : BankMatchStatus.manuallyMatched;
       _recomputeFrom(rowIndex + 1);
     });
   }
@@ -502,7 +490,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       _allTransactions.add(result);
       _reservedIds.add(result.id);
       row.matched = [result];
-      row.status = _MatchStatus.newTransaction;
+      row.status = BankMatchStatus.newTransaction;
       _recomputeFrom(rowIndex + 1);
     });
   }
@@ -512,14 +500,14 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
   void _toggleSkip(_CbaRow row) {
     final rowIndex = _rows.indexOf(row);
     setState(() {
-      if (row.status == _MatchStatus.skipped) {
-        row.status = _MatchStatus.unmatched;
+      if (row.status == BankMatchStatus.skipped) {
+        row.status = BankMatchStatus.unmatched;
         row.matched = [];
         _recomputeFrom(rowIndex);
       } else {
         for (final t in row.matched) _reservedIds.remove(t.id);
         row.matched = [];
-        row.status = _MatchStatus.skipped;
+        row.status = BankMatchStatus.skipped;
         _recomputeFrom(rowIndex + 1);
       }
     });
@@ -555,10 +543,10 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       // Record every actioned row so re-imports skip them.
       final rowsToRecord = _rows
           .where((r) =>
-              r.status != _MatchStatus.alreadyImported &&
-              r.status != _MatchStatus.unmatched &&
-              r.status != _MatchStatus.needsSelection &&
-              r.status != _MatchStatus.amountMismatch)
+              r.status != BankMatchStatus.alreadyImported &&
+              r.status != BankMatchStatus.unmatched &&
+              r.status != BankMatchStatus.needsSelection &&
+              r.status != BankMatchStatus.amountMismatch)
           .map((r) => {
                 'processDate': r.processDate,
                 'description': r.description,
@@ -608,12 +596,6 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     final value = double.tryParse(src);
     if (value == null) return null;
     return (value * 100).round();
-  }
-
-  static String formatAmount(int cents) {
-    final dollars = cents ~/ 100;
-    final remainder = cents % 100;
-    return '\$${dollars.toString()}.${remainder.toString().padLeft(2, '0')}';
   }
 
   // ── Computed ──────────────────────────────────────────────────────────────────
@@ -738,12 +720,18 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
               style: theme.textTheme.bodySmall
                   ?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(width: 24),
-          _indicator(Icons.check_circle_outline,
-              '$_matchedCount matched', Colors.green),
+          SummaryIndicator(
+            icon: Icons.check_circle_outline,
+            label: '$_matchedCount matched',
+            color: Colors.green,
+          ),
           const SizedBox(width: 12),
           if (_unmatchedCount > 0)
-            _indicator(Icons.warning_amber_outlined,
-                '$_unmatchedCount need attention', Colors.orange),
+            SummaryIndicator(
+              icon: Icons.warning_amber_outlined,
+              label: '$_unmatchedCount need attention',
+              color: Colors.orange,
+            ),
           const Spacer(),
           OutlinedButton(
             onPressed: _saving ? null : _pickFile,
@@ -753,15 +741,6 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       ),
     );
   }
-
-  Widget _indicator(IconData icon, String label, Color color) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: color),
-          const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 12, color: color)),
-        ],
-      );
 
   DataRow _buildDataRow(_CbaRow row) {
     final color = row.isBankDebit ? Colors.red.shade700 : Colors.green.shade700;
@@ -785,110 +764,26 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
               fontSize: 13,
               color: color,
               fontWeight: FontWeight.w500))),
-      DataCell(_statusBadge(row)),
+      DataCell(MatchStatusBadge(status: row.status)),
       DataCell(ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 260),
-        child: _matchedToCell(row),
+        child: MatchedToCell(
+          receipts: row.matched.map((t) => t.receiptNumber).toList(),
+          matchedTotal: row.matched.fold(0, (int s, t) => s + t.totalAmount),
+          bankAmount: row.amountCents,
+          parsedReceipts: row.parsedReceipts,
+        ),
       )),
       DataCell(_actionCell(row)),
     ]);
   }
 
-  Widget _statusBadge(_CbaRow row) {
-    final (label, icon, color) = switch (row.status) {
-      _MatchStatus.autoMatched => (
-          'Matched',
-          Icons.check_circle_outline,
-          Colors.green
-        ),
-      _MatchStatus.manuallyMatched => (
-          'Manual',
-          Icons.handshake_outlined,
-          Colors.blue
-        ),
-      _MatchStatus.newTransaction => (
-          'New',
-          Icons.add_circle_outline,
-          Colors.teal
-        ),
-      _MatchStatus.amountMismatch => (
-          'Mismatch',
-          Icons.warning_amber_outlined,
-          Colors.orange
-        ),
-      _MatchStatus.needsSelection => (
-          'Select',
-          Icons.help_outline,
-          Colors.orange
-        ),
-      _MatchStatus.unmatched => (
-          'Unmatched',
-          Icons.cancel_outlined,
-          Colors.red
-        ),
-      _MatchStatus.skipped => (
-          'Skipped',
-          Icons.remove_circle_outline,
-          Colors.grey
-        ),
-      _MatchStatus.alreadyImported => (
-          'Imported',
-          Icons.check_circle,
-          Colors.grey
-        ),
-    };
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 4),
-        Text(label,
-            style: TextStyle(
-                fontSize: 12,
-                color: color,
-                fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
-  Widget _matchedToCell(_CbaRow row) {
-    if (row.matched.isEmpty) {
-      if (row.parsedReceipts.isNotEmpty) {
-        return Text(row.parsedReceipts.join(', '),
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis);
-      }
-      return const SizedBox.shrink();
-    }
-
-    final receipts = row.matched.map((t) => t.receiptNumber).join(', ');
-    final total = row.matched.fold(0, (s, t) => s + t.totalAmount);
-    final mismatch = total != row.amountCents;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(receipts,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis),
-        if (mismatch)
-          Text(
-            'Sum ${formatAmount(total)} ≠ bank ${formatAmount(row.amountCents)}',
-            style: TextStyle(fontSize: 11, color: Colors.orange.shade700),
-          ),
-      ],
-    );
-  }
-
   Widget _actionCell(_CbaRow row) {
-    if (row.status == _MatchStatus.alreadyImported) {
+    if (row.status == BankMatchStatus.alreadyImported) {
       return const SizedBox.shrink();
     }
 
-    if (row.status == _MatchStatus.skipped) {
+    if (row.status == BankMatchStatus.skipped) {
       return TextButton(
         onPressed: () => _toggleSkip(row),
         child: const Text('Unskip'),
@@ -913,160 +808,6 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           tooltip: 'Skip',
           onPressed: _saving ? null : () => _toggleSkip(row),
           color: Colors.grey,
-        ),
-      ],
-    );
-  }
-}
-
-// ── Manual match dialog ───────────────────────────────────────────────────────
-
-class _ManualMatchDialog extends StatefulWidget {
-  final _CbaRow row;
-  final List<TransactionEntry> candidates;
-  final Map<String, String> contactNames;
-  final Set<String> initialSelection;
-
-  const _ManualMatchDialog({
-    required this.row,
-    required this.candidates,
-    required this.contactNames,
-    required this.initialSelection,
-  });
-
-  @override
-  State<_ManualMatchDialog> createState() => _ManualMatchDialogState();
-}
-
-class _ManualMatchDialogState extends State<_ManualMatchDialog> {
-  late Set<String> _selected;
-  String _filter = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = Set.from(widget.initialSelection);
-  }
-
-  int get _selectedTotal => widget.candidates
-      .where((t) => _selected.contains(t.id))
-      .fold(0, (s, t) => s + t.totalAmount);
-
-  bool get _totalsMatch => _selectedTotal == widget.row.amountCents;
-
-  List<TransactionEntry> get _filtered {
-    if (_filter.isEmpty) return widget.candidates;
-    final q = _filter.toLowerCase();
-    return widget.candidates.where((t) {
-      final name = (widget.contactNames[t.contactId] ?? '').toLowerCase();
-      return t.receiptNumber.toLowerCase().contains(q) ||
-          name.contains(q) ||
-          t.transactionDate.contains(q);
-    }).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bankAmt = _ImportCbaScreenState.formatAmount(widget.row.amountCents);
-    final selAmt = _ImportCbaScreenState.formatAmount(_selectedTotal);
-    final amtColor = _totalsMatch ? Colors.green : Colors.orange;
-    final diff = (_selectedTotal - widget.row.amountCents).abs();
-
-    return AlertDialog(
-      title: Text(
-        'Match transaction',
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      content: SizedBox(
-        width: 600,
-        height: 480,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.row.description,
-                style: const TextStyle(fontWeight: FontWeight.bold,
-                    fontSize: 13)),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Text('${widget.row.processDate}  '),
-                Text(
-                  'Bank: $bankAmt',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  'Selected: $selAmt',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, color: amtColor),
-                ),
-                if (!_totalsMatch && _selected.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    'Δ ${_ImportCbaScreenState.formatAmount(diff)}',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.orange.shade700),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              decoration: const InputDecoration(
-                hintText: 'Filter by receipt, contact or date',
-                isDense: true,
-                prefixIcon: Icon(Icons.search, size: 18),
-              ),
-              onChanged: (v) => setState(() => _filter = v),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: widget.candidates.isEmpty
-                  ? const Center(
-                      child: Text('No unmatched transactions available.'))
-                  : ListView.builder(
-                      itemCount: _filtered.length,
-                      itemBuilder: (_, i) {
-                        final t = _filtered[i];
-                        final name = widget.contactNames[t.contactId] ?? '';
-                        return CheckboxListTile(
-                          dense: true,
-                          value: _selected.contains(t.id),
-                          onChanged: (v) => setState(() {
-                            if (v == true) {
-                              _selected.add(t.id);
-                            } else {
-                              _selected.remove(t.id);
-                            }
-                          }),
-                          title: Text(
-                            '${t.receiptNumber}  '
-                            '${_ImportCbaScreenState.formatAmount(t.totalAmount)}  '
-                            '${t.transactionDate}',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                          subtitle: Text(name,
-                              style: const TextStyle(fontSize: 12)),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            final result = widget.candidates
-                .where((t) => _selected.contains(t.id))
-                .toList();
-            Navigator.of(context).pop(result);
-          },
-          child: Text(_selected.isEmpty ? 'Clear Match' : 'Apply'),
         ),
       ],
     );
@@ -1261,7 +1002,7 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
                     const SizedBox(height: 2),
                     Text(
                       '${widget.row.processDate}  '
-                      '${_ImportCbaScreenState.formatAmount(widget.row.amountCents)}  '
+                      '${formatAmount(widget.row.amountCents)}  '
                       '$typeLabel',
                       style: const TextStyle(fontSize: 12),
                     ),

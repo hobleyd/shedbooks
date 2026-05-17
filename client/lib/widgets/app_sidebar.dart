@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/app_role.dart';
 import '../auth/auth_state.dart';
+import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 
 /// Persistent left navigation sidebar for authenticated screens.
@@ -46,6 +49,28 @@ Future<void> _guardedNavigate(BuildContext context, String path) async {
 class _AppSidebarState extends State<AppSidebar> {
   bool _adminExpanded = false;
   bool _reportsExpanded = false;
+  String? _entityName;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEntityName();
+  }
+
+  Future<void> _fetchEntityName() async {
+    try {
+      final client = context.read<ApiClient>();
+      final res = await client.get('/entity-details');
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (mounted) {
+          setState(() {
+            _entityName = data['name'] as String?;
+          });
+        }
+      }
+    } catch (_) {}
+  }
 
   @override
   void didChangeDependencies() {
@@ -66,53 +91,71 @@ class _AppSidebarState extends State<AppSidebar> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_entityName != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              _entityName!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Image.asset(
             'assets/logo.png',
             width: 240,
             fit: BoxFit.contain,
           ),
-          const Text(
-            'ShedBooks',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
           const SizedBox(height: 12),
           const Divider(height: 1),
-          const SizedBox(height: 4),
-          _NavItem(
-            label: 'Dashboard',
-            icon: Icons.dashboard_outlined,
-            path: '/dashboard',
-            currentPath: currentPath,
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 4),
+                  _NavItem(
+                    label: 'Dashboard',
+                    icon: Icons.dashboard_outlined,
+                    path: '/dashboard',
+                    currentPath: currentPath,
+                  ),
+                  _NavItem(
+                    label: 'Transactions',
+                    icon: Icons.receipt_long_outlined,
+                    path: '/transactions',
+                    currentPath: currentPath,
+                  ),
+                  _NavItem(
+                    label: 'Bank Reconciliation',
+                    icon: Icons.account_balance_outlined,
+                    path: '/bank-reconciliation',
+                    currentPath: currentPath,
+                  ),
+                  _NavItem(
+                    label: 'Invoices',
+                    icon: Icons.description_outlined,
+                    path: '/invoices',
+                    currentPath: currentPath,
+                  ),
+                  _ReportsNavGroup(
+                    currentPath: currentPath,
+                    expanded: _reportsExpanded,
+                    onExpansionChanged: (v) => setState(() => _reportsExpanded = v),
+                  ),
+                  _AdminNavGroup(
+                    currentPath: currentPath,
+                    expanded: _adminExpanded,
+                    onExpansionChanged: (expanded) =>
+                        setState(() => _adminExpanded = expanded),
+                  ),
+                ],
+              ),
+            ),
           ),
-          _NavItem(
-            label: 'Transactions',
-            icon: Icons.receipt_long_outlined,
-            path: '/transactions',
-            currentPath: currentPath,
-          ),
-          _NavItem(
-            label: 'Bank Reconciliation',
-            icon: Icons.account_balance_outlined,
-            path: '/bank-reconciliation',
-            currentPath: currentPath,
-          ),
-          _ReportsNavGroup(
-            currentPath: currentPath,
-            expanded: _reportsExpanded,
-            onExpansionChanged: (v) => setState(() => _reportsExpanded = v),
-          ),
-          _AdminNavGroup(
-            currentPath: currentPath,
-            expanded: _adminExpanded,
-            onExpansionChanged: (expanded) =>
-                setState(() => _adminExpanded = expanded),
-          ),
-          const Spacer(),
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.account_circle_outlined),
@@ -259,6 +302,7 @@ class _AdminNavGroup extends StatelessWidget {
     (label: 'Entity', icon: Icons.business_outlined, path: '/admin/entity'),
     (label: 'General Ledger', icon: Icons.book_outlined, path: '/admin/general-ledger'),
     (label: 'GST Management', icon: Icons.percent_outlined, path: '/admin/gst-management'),
+    (label: 'Locked Months', icon: Icons.lock_outlined, path: '/admin/locked-months'),
   ];
 
   // Paths hidden from contributors.
@@ -267,6 +311,7 @@ class _AdminNavGroup extends StatelessWidget {
     '/admin/backup',
     '/admin/bank-accounts',
     '/admin/gst-management',
+    '/admin/locked-months',
   };
 
   @override

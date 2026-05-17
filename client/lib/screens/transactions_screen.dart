@@ -1,12 +1,16 @@
 import 'dart:convert';
+import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
+import '../models/bank_account_entry.dart';
 import '../models/contact_entry.dart';
+import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import 'import_cba_screen.dart';
@@ -32,9 +36,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   List<ContactEntry> _contacts = [];
   List<GeneralLedgerEntry> _glEntries = [];
   List<TransactionEntry> _allTransactions = [];
+  List<BankAccountEntry> _bankAccounts = [];
+  EntityDetails? _entityDetails;
+  Set<String> _lockedMonths = {}; // YYYY-MM values
   int _nextMoneyOutSeq = 1;
   int? _sortColumn;
   bool _sortAscending = true;
+  final Set<String> _selectedTransactionIds = {};
 
   late DateTime _viewMonth;
 
@@ -131,11 +139,14 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         client.get('/contacts'),
         client.get('/general-ledger'),
         client.get('/transactions'),
+        client.get('/locked-months'),
+        client.get('/bank-accounts'),
+        client.get('/entity-details'),
       ]);
 
       if (!mounted) return;
 
-      if (results.any((r) => r.statusCode != 200)) {
+      if (results.take(3).any((r) => r.statusCode != 200)) {
         setState(() {
           _loadError = 'Failed to load reference data';
           _loading = false;
@@ -158,10 +169,30 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           .toList()
         ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
 
+      Set<String> lockedMonths = {};
+      if (results[3].statusCode == 200) {
+        lockedMonths = (jsonDecode(results[3].body) as List)
+            .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>).monthYear)
+            .toSet();
+      }
+
+      final bankAccounts = results[4].statusCode == 200
+          ? (jsonDecode(results[4].body) as List)
+              .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <BankAccountEntry>[];
+
+      final entityDetails = results[5].statusCode == 200
+          ? EntityDetails.fromJson(jsonDecode(results[5].body) as Map<String, dynamic>)
+          : null;
+
       setState(() {
         _contacts = contacts;
         _glEntries = glEntries;
         _allTransactions = transactions;
+        _bankAccounts = bankAccounts;
+        _entityDetails = entityDetails;
+        _lockedMonths = lockedMonths;
         _nextMoneyOutSeq = _computeNextMoneyOutSeq(transactions);
         _loading = false;
         _applySort();
@@ -174,6 +205,189 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         });
       }
     }
+  }
+
+  void _handleBankUpload() async {
+    if (_selectedTransactionIds.isEmpty) return;
+
+    if (_entityDetails == null ||
+        _entityDetails!.apcaId == null ||
+        _entityDetails!.apcaId!.isEmpty) {
+      _showSnackbar('Entity APCA ID is missing. Please update Entity Details.');
+      return;
+    }
+
+    if (_bankAccounts.isEmpty) {
+      _showSnackbar('No bank accounts configured.');
+      return;
+    }
+
+    // Identify selected transactions
+    final selectedTxns = _allTransactions
+        .where((t) => _selectedTransactionIds.contains(t.id))
+        .toList();
+
+    // Check for missing contact bank details
+    final missingDetails = <String>[];
+    for (final t in selectedTxns) {
+      final contact = _contacts.firstWhere((c) => c.id == t.contactId);
+      if (contact.bsb == null ||
+          contact.bsb!.isEmpty ||
+          contact.accountNumber == null ||
+          contact.accountNumber!.isEmpty) {
+        missingDetails.add(contact.name);
+      }
+    }
+
+    if (missingDetails.isNotEmpty) {
+      _showSnackbar(
+          'Missing bank details for: ${missingDetails.join(", ")}. Please update Contacts.');
+      return;
+    }
+
+    // Select sender bank account if multiple
+    BankAccountEntry? senderAccount;
+    if (_bankAccounts.length == 1) {
+      senderAccount = _bankAccounts.first;
+    } else {
+      senderAccount = await showDialog<BankAccountEntry>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Select Sender Bank Account'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: _bankAccounts
+                .map((a) => ListTile(
+                      title: Text(a.accountName),
+                      subtitle: Text('${a.bsbFormatted} ${a.accountNumber}'),
+                      onTap: () => Navigator.of(ctx).pop(a),
+                    ))
+                .toList(),
+          ),
+        ),
+      );
+    }
+
+    if (senderAccount == null) return;
+
+    // Generate ABA
+    try {
+      final abaContent = _generateAba(selectedTxns, senderAccount);
+      final bytes = utf8.encode(abaContent);
+      final blob = html.Blob([bytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', 'direct_entry_${DateTime.now().millisecondsSinceEpoch}.aba')
+        ..click();
+      html.Url.revokeObjectUrl(url);
+
+      _showSnackbar('ABA file generated.');
+      setState(() => _selectedTransactionIds.clear());
+    } catch (e) {
+      _showSnackbar('Failed to generate ABA: $e');
+    }
+  }
+
+  String _generateAba(List<TransactionEntry> txns, BankAccountEntry sender) {
+    final buffer = StringBuffer();
+
+    // Record 0: Descriptive Record
+    // 01: Record Type (1) - '0'
+    // 02-18: Blank (17)
+    // 19-20: Reel Sequence Number (2) - '01'
+    // 21-23: Name of User's Financial Institution (3) - e.g. 'CBA'
+    // 24-30: Blank (7)
+    // 31-56: Name of User Supplying File (26)
+    // 57-62: Number of User Supplying File (6) - APCA ID
+    // 63-74: Description of entries (12) - e.g. 'PAYMENTS'
+    // 75-80: Date to be processed (6) - DDMMYY
+    // 81-120: Blank (40)
+
+    final now = DateTime.now();
+    final dateStr = '${now.day.toString().padLeft(2, '0')}${now.month.toString().padLeft(2, '0')}${now.year.toString().substring(2)}';
+
+    buffer.write('0'); // 01
+    buffer.write(' ' * 17); // 02-18
+    buffer.write('01'); // 19-20
+    buffer.write(sender.bankName.padRight(3).substring(0, 3).toUpperCase()); // 21-23
+    buffer.write(' ' * 7); // 24-30
+    buffer.write(_entityDetails!.name.padRight(26).substring(0, 26).toUpperCase()); // 31-56
+    buffer.write(_entityDetails!.apcaId!.padLeft(6, '0')); // 57-62
+    buffer.write('PAYMENTS'.padRight(12)); // 63-74
+    buffer.write(dateStr); // 75-80
+    buffer.write(' ' * 40); // 81-120
+    buffer.write('\r\n');
+
+    int totalCents = 0;
+    int recordCount = 0;
+
+    for (final t in txns) {
+      final contact = _contacts.firstWhere((c) => c.id == t.contactId);
+      final bsb = contact.bsb!.replaceAll('-', '');
+      final accNo = contact.accountNumber!;
+      final amount = t.totalAmount;
+      final name = contact.name.padRight(32).substring(0, 32).toUpperCase();
+      final ref = t.receiptNumber.padRight(18).substring(0, 18);
+
+      // Record 1: Detail Record
+      // 01: Record Type (1) - '1'
+      // 02-08: BSB (7) - XXX-XXX (with dash)
+      // 09-17: Account Number (9) - Right justified, blank filled
+      // 18: Indicator (1) - Blank
+      // 19-20: Transaction Code (2) - '50' for credit (we are paying them)
+      // 21-30: Amount (10) - Cents, zero filled
+      // 31-62: Title of Account (32)
+      // 63-80: Lodgement Reference (18)
+      // 81-87: Trace BSB (7) - Sender BSB
+      // 88-96: Trace Account Number (9)
+      // 97-112: Name of Remitter (16)
+      // 113-120: Amount of Withholding Tax (8) - Zero filled
+
+      final bsbFormatted = '${bsb.substring(0, 3)}-${bsb.substring(3)}';
+      final senderBsb = sender.bsb.replaceAll('-', '');
+      final senderBsbFormatted = '${senderBsb.substring(0, 3)}-${senderBsb.substring(3)}';
+
+      buffer.write('1'); // 01
+      buffer.write(bsbFormatted); // 02-08
+      buffer.write(accNo.padLeft(9)); // 09-17
+      buffer.write(' '); // 18
+      buffer.write('50'); // 19-20
+      buffer.write(amount.toString().padLeft(10, '0')); // 21-30
+      buffer.write(name); // 31-62
+      buffer.write(ref); // 63-80
+      buffer.write(senderBsbFormatted); // 81-87
+      buffer.write(sender.accountNumber.padLeft(9)); // 88-96
+      buffer.write(_entityDetails!.name.padRight(16).substring(0, 16).toUpperCase()); // 97-112
+      buffer.write('0' * 8); // 113-120
+      buffer.write('\r\n');
+
+      totalCents += amount;
+      recordCount++;
+    }
+
+    // Record 7: File Total Record
+    // 01: Record Type (1) - '7'
+    // 02-08: BSB Format Filler (7) - '999-999'
+    // 09-20: Blank (12)
+    // 21-30: Net Total Amount (10) - Cents
+    // 31-40: Credit Total Amount (10) - Cents
+    // 41-50: Debit Total Amount (10) - Cents
+    // 51-74: Blank (24)
+    // 75-80: Count of Detail Records (6)
+    // 81-120: Blank (40)
+
+    buffer.write('7'); // 01
+    buffer.write('999-999'); // 02-08
+    buffer.write(' ' * 12); // 09-20
+    buffer.write(totalCents.toString().padLeft(10, '0')); // 21-30
+    buffer.write(totalCents.toString().padLeft(10, '0')); // 31-40
+    buffer.write('0' * 10); // 41-50
+    buffer.write(' ' * 24); // 51-74
+    buffer.write(recordCount.toString().padLeft(6, '0')); // 75-80
+    buffer.write(' ' * 40); // 81-120
+    buffer.write('\r\n');
+
+    return buffer.toString();
   }
 
   int _computeNextMoneyOutSeq(List<TransactionEntry> transactions) {
@@ -292,6 +506,19 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         ),
       ),
     );
+  }
+
+  bool _isDateLocked(DateTime date) {
+    final monthYear = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+    return _lockedMonths.contains(monthYear);
+  }
+
+  bool _isTransactionLocked(TransactionEntry t) {
+    try {
+      return _isDateLocked(DateTime.parse(t.transactionDate));
+    } catch (_) {
+      return false;
+    }
   }
 
   String? _contactName(String id) =>
@@ -439,6 +666,12 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     final error = _validate();
     if (error != null) { _showSnackbar(error); return; }
 
+    if (_isDateLocked(_date)) {
+      _showSnackbar(
+          'Cannot create transaction: ${_date.year}-${_date.month.toString().padLeft(2, '0')} is locked.');
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       // Create contact on-the-fly if checkbox was ticked.
@@ -565,6 +798,12 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     if (amount == null || amount <= 0) { _showSnackbar('Amount must be greater than zero'); return; }
     final gst = _parseAmount(_editGstController.text);
     if (gst == null || gst < 0) { _showSnackbar('GST must be zero or more'); return; }
+
+    if (_isDateLocked(_editDate)) {
+      _showSnackbar(
+          'Cannot update transaction: ${_editDate.year}-${_editDate.month.toString().padLeft(2, '0')} is locked.');
+      return;
+    }
 
     setState(() => _editSaving = true);
 
@@ -759,8 +998,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildTransactionTab(moneyIn),
-              _buildTransactionTab(moneyOut),
+              _buildTransactionTab(moneyIn, false),
+              _buildTransactionTab(moneyOut, true),
             ],
           ),
         ),
@@ -875,7 +1114,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     );
   }
 
-  Widget _buildTransactionTab(List<TransactionEntry> txns) {
+  Widget _buildTransactionTab(List<TransactionEntry> txns, bool isMoneyOut) {
     if (txns.isEmpty) {
       final message = _isSearchMode
           ? 'No transactions for ${_searchContact!.name} in $_searchYear.'
@@ -885,15 +1124,26 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       );
     }
     return SingleChildScrollView(
-      child: _buildTransactionList(txns),
+      child: _buildTransactionList(txns, isMoneyOut),
     );
   }
 
   Widget _buildMonthNav() {
     final label = '${_monthNames[_viewMonth.month]} ${_viewMonth.year}';
+    final monthKey =
+        '${_viewMonth.year}-${_viewMonth.month.toString().padLeft(2, '0')}';
+    final isLocked = _lockedMonths.contains(monthKey);
     return Row(
       children: [
         Text(label, style: Theme.of(context).textTheme.headlineMedium),
+        if (isLocked) ...[
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'This month is locked',
+            child: Icon(Icons.lock_outlined,
+                size: 18, color: Colors.orange.shade700),
+          ),
+        ],
         const SizedBox(width: 8),
         IconButton(
           icon: const Icon(Icons.chevron_left),
@@ -905,6 +1155,14 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           onPressed: _canGoForward ? _nextMonth : null,
           tooltip: 'Next month',
         ),
+        if (_selectedTransactionIds.isNotEmpty) ...[
+          const SizedBox(width: 16),
+          FilledButton.icon(
+            onPressed: _handleBankUpload,
+            icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+            label: Text('Bank Upload (${_selectedTransactionIds.length})'),
+          ),
+        ],
         const Spacer(),
         IconButton(
           icon: const Icon(Icons.refresh),
@@ -915,7 +1173,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     );
   }
 
-  Widget _buildTransactionList(List<TransactionEntry> txns) {
+  Widget _buildTransactionList(List<TransactionEntry> txns, bool isMoneyOut) {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 900),
       child: Column(
@@ -926,6 +1184,25 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
             child: Row(
               children: [
+                if (isMoneyOut)
+                  SizedBox(
+                    width: 40,
+                    child: Checkbox(
+                      value: txns.every((t) => _selectedTransactionIds.contains(t.id)),
+                      tristate: true,
+                      onChanged: (v) {
+                        setState(() {
+                          if (v == true) {
+                            _selectedTransactionIds.addAll(txns.map((t) => t.id));
+                          } else {
+                            for (final t in txns) {
+                              _selectedTransactionIds.remove(t.id);
+                            }
+                          }
+                        });
+                      },
+                    ),
+                  ),
                 SizedBox(width: 90, child: _colHeader('Date', 0)),
                 SizedBox(width: 180, child: _colHeader('Contact', 1)),
                 SizedBox(width: 150, child: _colHeader('Account', 2)),
@@ -940,17 +1217,17 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             ),
           ),
           const Divider(height: 1),
-          ...txns.map((t) => _buildTransactionRow(t)),
+          ...txns.map((t) => _buildTransactionRow(t, isMoneyOut)),
         ],
       ),
     );
   }
 
-  Widget _buildTransactionRow(TransactionEntry t) {
+  Widget _buildTransactionRow(TransactionEntry t, bool isMoneyOut) {
     if (_editingId == t.id) {
       return Column(
         children: [
-          _buildEditingRow(t),
+          _buildEditingRow(t, isMoneyOut),
           const Divider(height: 1),
         ],
       );
@@ -974,6 +1251,22 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (isMoneyOut)
+                SizedBox(
+                  width: 40,
+                  child: Checkbox(
+                    value: _selectedTransactionIds.contains(t.id),
+                    onChanged: (v) {
+                      setState(() {
+                        if (v == true) {
+                          _selectedTransactionIds.add(t.id);
+                        } else {
+                          _selectedTransactionIds.remove(t.id);
+                        }
+                      });
+                    },
+                  ),
+                ),
               SizedBox(
                 width: 90,
                 child: Text(dateLabel, style: const TextStyle(fontSize: 13)),
@@ -1024,6 +1317,17 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                 child: Builder(
                   builder: (context) {
                     final bool canEdit = context.watch<AuthState>().canEdit;
+                    final bool locked = _isTransactionLocked(t);
+                    if (locked) {
+                      return const Align(
+                        alignment: Alignment.centerRight,
+                        child: Tooltip(
+                          message: 'Month is locked',
+                          child: Icon(Icons.lock_outlined,
+                              size: 14, color: Colors.orange),
+                        ),
+                      );
+                    }
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -1056,7 +1360,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     );
   }
 
-  Widget _buildEditingRow(TransactionEntry t) {
+  Widget _buildEditingRow(TransactionEntry t, bool isMoneyOut) {
     const inputDecoration = InputDecoration(
       border: OutlineInputBorder(),
       isDense: true,
@@ -1072,6 +1376,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           // Row 1: Date | Contact | GL Account
           Row(
             children: [
+              if (isMoneyOut) const SizedBox(width: 40),
               // Date
               SizedBox(
                 width: 140,
@@ -1133,7 +1438,12 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                     isExpanded: true,
                     isDense: true,
                     underline: const SizedBox.shrink(),
-                    items: _glEntries.map((g) {
+                    items: _glEntries
+                        .where((g) => g.direction ==
+                            (isMoneyOut
+                                ? GlDirection.moneyOut
+                                : GlDirection.moneyIn))
+                        .map((g) {
                       final isIn = g.direction == GlDirection.moneyIn;
                       return DropdownMenuItem(
                         value: g,
@@ -1178,6 +1488,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           // Row 2: Receipt | Description | Amount | GST | Total
           Row(
             children: [
+              if (isMoneyOut) const SizedBox(width: 40),
               SizedBox(
                 width: 130,
                 child: TextFormField(
@@ -1259,6 +1570,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           // Save / Cancel
           Row(
             children: [
+              if (isMoneyOut) const SizedBox(width: 40),
               OutlinedButton(
                 onPressed: _editSaving ? null : _cancelEdit,
                 child: const Text('Cancel'),

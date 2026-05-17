@@ -17,12 +17,16 @@ class _ContactRow {
   final String? id;
   final TextEditingController nameController;
   final TextEditingController abnController;
+  final TextEditingController bsbController;
+  final TextEditingController accountNumberController;
   ContactType contactType;
   bool gstRegistered;
   _AbnLookupState abnLookupState;
   final bool isNew;
   final String _origName;
   final String? _origAbn;
+  final String? _origBsb;
+  final String? _origAccountNumber;
   final ContactType _origContactType;
   final bool _origGstRegistered;
 
@@ -30,12 +34,16 @@ class _ContactRow {
       : id = e.id,
         nameController = TextEditingController(text: e.name),
         abnController = TextEditingController(text: e.abn ?? ''),
+        bsbController = TextEditingController(text: e.bsb ?? ''),
+        accountNumberController = TextEditingController(text: e.accountNumber ?? ''),
         contactType = e.contactType,
         gstRegistered = e.gstRegistered,
         abnLookupState = _AbnLookupState.idle,
         isNew = false,
         _origName = e.name,
         _origAbn = e.abn,
+        _origBsb = e.bsb,
+        _origAccountNumber = e.accountNumber,
         _origContactType = e.contactType,
         _origGstRegistered = e.gstRegistered;
 
@@ -43,12 +51,16 @@ class _ContactRow {
       : id = null,
         nameController = TextEditingController(),
         abnController = TextEditingController(),
+        bsbController = TextEditingController(),
+        accountNumberController = TextEditingController(),
         contactType = ContactType.person,
         gstRegistered = false,
         abnLookupState = _AbnLookupState.idle,
         isNew = true,
         _origName = '',
         _origAbn = null,
+        _origBsb = null,
+        _origAccountNumber = null,
         _origContactType = ContactType.person,
         _origGstRegistered = false;
 
@@ -56,6 +68,8 @@ class _ContactRow {
     if (isNew) return false;
     return nameController.text != _origName ||
         abnController.text != (_origAbn ?? '') ||
+        bsbController.text != (_origBsb ?? '') ||
+        accountNumberController.text != (_origAccountNumber ?? '') ||
         contactType != _origContactType ||
         gstRegistered != _origGstRegistered;
   }
@@ -63,6 +77,8 @@ class _ContactRow {
   void dispose() {
     nameController.dispose();
     abnController.dispose();
+    bsbController.dispose();
+    accountNumberController.dispose();
   }
 }
 
@@ -179,6 +195,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
           cmp = a.contactType.name.compareTo(b.contactType.name);
         case 3:
           cmp = (a.gstRegistered ? 1 : 0).compareTo(b.gstRegistered ? 1 : 0);
+        case 4:
+          cmp = a.bsbController.text.compareTo(b.bsbController.text);
+        case 5:
+          cmp = a.accountNumberController.text
+              .compareTo(b.accountNumberController.text);
         default:
           return 0;
       }
@@ -322,6 +343,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
           'contactType': row.contactType.name,
           'gstRegistered': row.gstRegistered,
           if (isCompany) 'abn': row.abnController.text.trim(),
+          'bsb': row.bsbController.text.replaceAll('-', '').trim(),
+          'accountNumber': row.accountNumberController.text.trim(),
         });
 
         if (row.isNew) {
@@ -574,6 +597,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SizedBox(width: 8),
           SizedBox(width: 130, child: _colHeader('ABN', 1)),
           const SizedBox(width: 8),
+          SizedBox(width: 90, child: _colHeader('BSB', 4)),
+          const SizedBox(width: 8),
+          SizedBox(width: 120, child: _colHeader('Account No.', 5)),
+          const SizedBox(width: 8),
           SizedBox(width: 160, child: _colHeader('Type', 2)),
           const SizedBox(width: 8),
           SizedBox(
@@ -631,6 +658,47 @@ class _ContactsScreenState extends State<ContactsScreen> {
           ),
           const SizedBox(width: 8),
           _buildAbnField(row, isCompany),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 90,
+            child: TextFormField(
+              controller: row.bsbController,
+              enabled: !_saving && canEdit,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[\d-]')),
+                LengthLimitingTextInputFormatter(7),
+              ],
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                isDense: true,
+                hintText: 'XXX-XXX',
+              ),
+              onChanged: (_) => _markDirty(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 120,
+            child: TextFormField(
+              controller: row.accountNumberController,
+              enabled: !_saving && canEdit,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ],
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                isDense: true,
+              ),
+              onChanged: (_) => _markDirty(),
+            ),
+          ),
           const SizedBox(width: 8),
           SizedBox(
             width: 160,

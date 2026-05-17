@@ -6,12 +6,16 @@ class CreateContactRequest {
   final ContactType contactType;
   final bool gstRegistered;
   final String? abn;
+  final String? bsb;
+  final String? accountNumber;
 
   const CreateContactRequest({
     required this.name,
     required this.contactType,
     required this.gstRegistered,
     this.abn,
+    this.bsb,
+    this.accountNumber,
   });
 
   factory CreateContactRequest.fromJson(Map<String, dynamic> json) {
@@ -19,6 +23,8 @@ class CreateContactRequest {
     final contactTypeRaw = json['contactType'];
     final gstRegistered = json['gstRegistered'];
     final abn = json['abn'];
+    final bsb = json['bsb'];
+    final accountNumber = json['accountNumber'];
 
     if (name is! String) throw const FormatException('name must be a string');
     if (contactTypeRaw is! String) {
@@ -29,6 +35,12 @@ class CreateContactRequest {
     }
     if (abn != null && abn is! String) {
       throw const FormatException('abn must be a string');
+    }
+    if (bsb != null && bsb is! String) {
+      throw const FormatException('bsb must be a string');
+    }
+    if (accountNumber != null && accountNumber is! String) {
+      throw const FormatException('accountNumber must be a string');
     }
 
     final ContactType contactType;
@@ -45,6 +57,8 @@ class CreateContactRequest {
       contactType: contactType,
       gstRegistered: gstRegistered,
       abn: abn as String?,
+      bsb: bsb as String?,
+      accountNumber: accountNumber as String?,
     );
   }
 }

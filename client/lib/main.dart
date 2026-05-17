@@ -35,6 +35,7 @@ Future<void> main() async {
   final apiClient = ApiClient(
     baseUrl: _apiUrl,
     getToken: () => authState.accessToken,
+    onUnauthorized: authState.clearCredentials,
   );
 
   runApp(
