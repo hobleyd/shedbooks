@@ -310,6 +310,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(
                 width: 180,

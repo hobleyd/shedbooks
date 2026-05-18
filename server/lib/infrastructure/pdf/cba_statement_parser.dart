@@ -115,6 +115,7 @@ class CbaStatementParser {
     int? openingBalanceCents;
     int? closingBalanceCents;
     final transactions = <CbaTransaction>[];
+    bool inTransactionTable = false;
 
     String? pendingDate;
     final pendingDescLines = <String>[];
@@ -124,10 +125,13 @@ class CbaStatementParser {
       final rowTexts = row.map((e) => e.text).toList();
       final rowFull = rowTexts.join(' ');
 
-      // Skip column-header rows.
+      // Column-header row marks entry into the transaction table section.
       if (rowFull.contains('Debit') &&
           rowFull.contains('Credit') &&
-          rowFull.contains('Balance')) continue;
+          rowFull.contains('Balance')) {
+        inTransactionTable = true;
+        continue;
+      }
 
       if (_openingBalanceRe.hasMatch(rowFull)) {
         final cents = _parseBalanceFromRow(row);
@@ -137,9 +141,12 @@ class CbaStatementParser {
       if (_closingBalanceRe.hasMatch(rowFull)) {
         final cents = _parseBalanceFromRow(row);
         if (cents != null) closingBalanceCents = cents;
-        // Only stop once transactions have been collected — the closing balance
-        // also appears in a summary box on page 1 before the transaction table.
-        if (transactions.isNotEmpty || pendingDate != null) break;
+        // Stop once we've reached the transaction-table closing balance.
+        // For statements with transactions that condition is met via
+        // transactions.isNotEmpty; for empty-month statements the
+        // inTransactionTable flag is used instead.
+        if (transactions.isNotEmpty || pendingDate != null ||
+            inTransactionTable) break;
         continue;
       }
 
@@ -320,7 +327,9 @@ class CbaStatementParser {
   }
 
   /// Parses cents from a balance element that may have a CR/DR suffix.
+  /// "Nil" (CBA's representation of a zero balance) is treated as 0.
   static int? _parseCentsFromElement(String t) {
+    if (t.toLowerCase() == 'nil') return 0;
     final m = _balanceSuffixRe.firstMatch(t);
     if (m != null) return _parseCents(m.group(1)!);
     if (_amountRe.hasMatch(t)) return _parseCents(t);
@@ -364,6 +373,7 @@ class CbaStatementParser {
     // Search right-to-left for an amount element.
     for (final el in row.reversed) {
       final t = el.text.trim();
+      if (t.toLowerCase() == 'nil') return 0;
       final m = _balanceSuffixRe.firstMatch(t);
       if (m != null) return _parseCents(m.group(1)!);
       if (_amountRe.hasMatch(t)) return _parseCents(t);

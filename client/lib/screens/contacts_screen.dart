@@ -591,6 +591,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const SizedBox(width: 40),
           Expanded(child: _colHeader('Name', 0)),

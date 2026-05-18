@@ -1187,6 +1187,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 if (isMoneyOut)
                   SizedBox(
@@ -1253,7 +1254,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               if (isMoneyOut)
                 SizedBox(
