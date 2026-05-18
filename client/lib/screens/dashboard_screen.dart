@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../models/closing_bank_balance_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
@@ -53,6 +54,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<GeneralLedgerEntry> _glEntries = [];
   List<_MonthSummary> _months = [];
   List<LockedMonthEntry> _lockedMonths = [];
+  List<ClosingBankBalanceEntry> _closingBalances = [];
 
   int _viewYear = DateTime.now().year;
   final List<_GlPair> _selectedPairs = [];
@@ -84,6 +86,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         client.get('/general-ledger'),
         client.get('/dashboard-preferences'),
         client.get('/locked-months'),
+        client.get('/closing-bank-balances'),
       ]);
       if (!mounted) return;
 
@@ -122,10 +125,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
+      final closingBalances = (jsonDecode(results[4].body) as List)
+          .map((e) =>
+              ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+
       setState(() {
         _allTransactions = transactions;
         _glEntries = glEntries;
         _lockedMonths = lockedMonths;
+        _closingBalances = closingBalances;
         _selectedPairs
           ..clear()
           ..addAll(savedPairs);
@@ -226,6 +235,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isMonthLocked(_MonthSummary m) {
     final key = '$_viewYear-${m.month.toString().padLeft(2, '0')}';
     return _lockedMonths.any((l) => l.monthYear == key);
+  }
+
+  /// Returns the summed closing bank balance cents for [month] in [_viewYear],
+  /// or null if no closing balances exist for that month.
+  int? _monthEndCents(int month) {
+    final yearMonth = '$_viewYear-${month.toString().padLeft(2, '0')}';
+    final matches = _closingBalances
+        .where((b) => b.balanceDate.startsWith(yearMonth))
+        .toList();
+    if (matches.isEmpty) return null;
+    return matches.fold<int>(0, (sum, b) => sum + b.balanceCents);
   }
 
   bool get _canGoForwardYear => _viewYear < DateTime.now().year;
@@ -367,6 +387,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               SizedBox(
                   width: colWidth,
                   child: Text('Net', style: headerStyle, textAlign: TextAlign.right)),
+              SizedBox(
+                  width: colWidth,
+                  child: Text('Month End', style: headerStyle, textAlign: TextAlign.right)),
             ],
           ),
         ),
@@ -394,6 +417,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: colWidth,
                   child: _amountText(totalOutgoings, isIncome: false, bold: true)),
               SizedBox(width: colWidth, child: _netText(totalNet, bold: true)),
+              const SizedBox(width: colWidth),
             ],
           ),
         ),
@@ -402,6 +426,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildMonthRow(_MonthSummary m, double colWidth) {
+    final monthEnd = _monthEndCents(m.month);
     return Column(
       children: [
         Padding(
@@ -434,6 +459,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: colWidth,
                   child: _amountText(m.outgoingsCents, isIncome: false)),
               SizedBox(width: colWidth, child: _netText(m.netCents)),
+              SizedBox(
+                width: colWidth,
+                child: monthEnd == null
+                    ? Text('—',
+                        style: TextStyle(color: Colors.black38),
+                        textAlign: TextAlign.right)
+                    : _netText(monthEnd),
+              ),
             ],
           ),
         ),

@@ -62,6 +62,22 @@ class PostgresClosingBankBalanceRepository
     return result.map((r) => _mapRow(r.toColumnMap())).toList();
   }
 
+  @override
+  Future<List<ClosingBankBalance>> findAllForEntity({
+    required String entityId,
+  }) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT $_cols
+        FROM closing_bank_balances
+        WHERE entity_id = @entityId
+        ORDER BY balance_date DESC
+      '''),
+      parameters: {'entityId': entityId},
+    );
+    return result.map((r) => _mapRow(r.toColumnMap())).toList();
+  }
+
   static ClosingBankBalance _mapRow(Map<String, dynamic> cols) =>
       ClosingBankBalance(
         id: cols['id'] as String,

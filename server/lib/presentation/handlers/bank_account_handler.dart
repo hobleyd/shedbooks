@@ -77,7 +77,7 @@ class BankAccountHandler {
         accountType: dto.accountType,
         currency: dto.currency,
       );
-      _auditChanges(request)?.set(_accountSnapshot(account));
+      _auditChanges(request)?.set(_accountSnapshot(account, redact: true));
       return Response(201,
           body: BankAccountResponse.fromEntity(account).toJsonString(),
           headers: _jsonHeaders);
@@ -137,7 +137,9 @@ class BankAccountHandler {
         currency: dto.currency,
       );
       if (before != null) {
-        final diff = diffMaps(_accountSnapshot(before), _accountSnapshot(account));
+        final bSnap = _accountSnapshot(before, redact: true);
+        final aSnap = _accountSnapshot(account, redact: true);
+        final diff = diffMaps(bSnap, aSnap);
         if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
       }
       return Response.ok(
@@ -162,7 +164,9 @@ class BankAccountHandler {
 
     try {
       await _delete.execute(id, entityId: entityId);
-      if (before != null) _auditChanges(request)?.set(_accountSnapshot(before));
+      if (before != null) {
+        _auditChanges(request)?.set(_accountSnapshot(before, redact: true));
+      }
       return Response(204);
     } on BankAccountNotFoundException catch (e) {
       return _notFound(e.message);
@@ -177,11 +181,13 @@ class BankAccountHandler {
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;
 
-  static Map<String, dynamic> _accountSnapshot(BankAccount a) => {
+  static Map<String, dynamic> _accountSnapshot(BankAccount a,
+          {bool redact = false}) =>
+      {
         'bankName': a.bankName,
         'accountName': a.accountName,
-        'bsb': a.bsb,
-        'accountNumber': a.accountNumber,
+        'bsb': redact ? '***' : a.bsb,
+        'accountNumber': redact ? '***' : a.accountNumber,
         'accountType': a.accountType.name,
         'currency': a.currency,
       };

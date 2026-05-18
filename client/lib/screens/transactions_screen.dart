@@ -1,5 +1,7 @@
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:js_interop';
+
+import 'package:web/web.dart' as web;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +17,8 @@ import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import 'import_cba_screen.dart';
 import 'import_transactions_screen.dart';
+import '../widgets/pdf_report_components.dart';
+import '../widgets/transaction_receipt_pdf.dart';
 
 /// Entry screen for creating transactions, with a month-view list above the form.
 class TransactionsScreen extends StatefulWidget {
@@ -274,12 +278,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     try {
       final abaContent = _generateAba(selectedTxns, senderAccount);
       final bytes = utf8.encode(abaContent);
-      final blob = html.Blob([bytes]);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'direct_entry_${DateTime.now().millisecondsSinceEpoch}.aba')
+      final blob = web.Blob(<JSAny>[bytes.toJS].toJS);
+      final url = web.URL.createObjectURL(blob);
+      (web.document.createElement('a') as web.HTMLAnchorElement)
+        ..href = url
+        ..download = 'direct_entry_${DateTime.now().millisecondsSinceEpoch}.aba'
         ..click();
-      html.Url.revokeObjectUrl(url);
+      web.URL.revokeObjectURL(url);
 
       _showSnackbar('ABA file generated.');
       setState(() => _selectedTransactionIds.clear());
@@ -348,15 +353,15 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       final senderBsbFormatted = '${senderBsb.substring(0, 3)}-${senderBsb.substring(3)}';
 
       buffer.write('1'); // 01
-      buffer.write(bsbFormatted); // 02-08
-      buffer.write(accNo.padLeft(9)); // 09-17
+      buffer.write(bsbFormatted.substring(0, 7)); // 02-08
+      buffer.write(accNo.padLeft(9).substring(0, 9)); // 09-17
       buffer.write(' '); // 18
       buffer.write('50'); // 19-20
-      buffer.write(amount.toString().padLeft(10, '0')); // 21-30
-      buffer.write(name); // 31-62
-      buffer.write(ref); // 63-80
-      buffer.write(senderBsbFormatted); // 81-87
-      buffer.write(sender.accountNumber.padLeft(9)); // 88-96
+      buffer.write(amount.toString().padLeft(10, '0').substring(0, 10)); // 21-30
+      buffer.write(name.substring(0, 32)); // 31-62
+      buffer.write(ref.substring(0, 18)); // 63-80
+      buffer.write(senderBsbFormatted.substring(0, 7)); // 81-87
+      buffer.write(sender.accountNumber.padLeft(9).substring(0, 9)); // 88-96
       buffer.write(_entityDetails!.name.padRight(16).substring(0, 16).toUpperCase()); // 97-112
       buffer.write('0' * 8); // 113-120
       buffer.write('\r\n');
@@ -981,13 +986,25 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 16),
-          child: _buildSearchBar(),
+          child: Row(
+            children: [
+              if (_isSearchMode) _buildYearNav() else _buildMonthNav(),
+              const Spacer(),
+              _buildSearchBar(),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _load,
+                tooltip: 'Refresh',
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
-        if (_isSearchMode) _buildYearNav() else _buildMonthNav(),
         const SizedBox(height: 12),
         TabBar(
           controller: _tabController,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
           tabs: const [
             Tab(text: 'Money In'),
             Tab(text: 'Money Out'),
@@ -1008,9 +1025,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   Widget _buildSearchBar() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: SizedBox(
+    return SizedBox(
       width: 320,
       child: Autocomplete<ContactEntry>(
         key: ValueKey(_searchResetKey),
@@ -1080,12 +1095,12 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           );
         },
       ),
-      ),
     );
   }
 
   Widget _buildYearNav() {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '${_searchContact!.name} — $_searchYear',
@@ -1103,12 +1118,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               ? () => setState(() => _searchYear++)
               : null,
           tooltip: 'Next year',
-        ),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: _load,
-          tooltip: 'Refresh',
         ),
       ],
     );
@@ -1134,6 +1143,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         '${_viewMonth.year}-${_viewMonth.month.toString().padLeft(2, '0')}';
     final isLocked = _lockedMonths.contains(monthKey);
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(label, style: Theme.of(context).textTheme.headlineMedium),
         if (isLocked) ...[
@@ -1163,12 +1173,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             label: Text('Bank Upload (${_selectedTransactionIds.length})'),
           ),
         ],
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: _load,
-          tooltip: 'Refresh',
-        ),
       ],
     );
   }
@@ -1212,7 +1216,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                     width: 120,
                     child: _colHeader('Amount', 5,
                         align: MainAxisAlignment.end)),
-                const SizedBox(width: 76),
+                const SizedBox(width: 110),
               ],
             ),
           ),
@@ -1313,40 +1317,71 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                 ),
               ),
               SizedBox(
-                width: 76,
+                width: 110,
                 child: Builder(
                   builder: (context) {
                     final bool canEdit = context.watch<AuthState>().canEdit;
                     final bool locked = _isTransactionLocked(t);
-                    if (locked) {
-                      return const Align(
-                        alignment: Alignment.centerRight,
-                        child: Tooltip(
-                          message: 'Month is locked',
-                          child: Icon(Icons.lock_outlined,
-                              size: 14, color: Colors.orange),
-                        ),
-                      );
-                    }
+                    
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 16),
-                          onPressed: canEdit ? () => _startEdit(t) : null,
-                          tooltip: 'Edit',
+                          icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                          onPressed: () {
+                            final contact = _contacts.firstWhere(
+                              (c) => c.id == t.contactId,
+                              orElse: () => ContactEntry(
+                                  id: t.contactId,
+                                  name: 'Unknown',
+                                  contactType: ContactType.person,
+                                  gstRegistered: false),
+                            );
+                            final gl = _glEntries.firstWhere(
+                              (g) => g.id == t.generalLedgerId,
+                              orElse: () => GeneralLedgerEntry(
+                                  id: t.generalLedgerId,
+                                  label: '',
+                                  description: 'Unknown',
+                                  gstApplicable: false,
+                                  direction: GlDirection.moneyIn),
+                            );
+                            TransactionReceiptPdf.generateAndDownload(
+                              transaction: t,
+                              entity: _entityDetails,
+                              contact: contact,
+                              glAccount: gl,
+                              formatCents: _formatCents,
+                            );
+                          },
+                          tooltip: 'Download PDF Receipt',
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                         ),
-                        IconButton(
-                          icon: Icon(Icons.delete_outline,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.error),
-                          onPressed: canEdit ? () => _deleteTransaction(t) : null,
-                          tooltip: 'Delete',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                        ),
+                        if (locked)
+                          const Tooltip(
+                            message: 'Month is locked',
+                            child: Icon(Icons.lock_outlined,
+                                size: 14, color: Colors.orange),
+                          )
+                        else ...[
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            onPressed: canEdit ? () => _startEdit(t) : null,
+                            tooltip: 'Edit',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.delete_outline,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.error),
+                            onPressed: canEdit ? () => _deleteTransaction(t) : null,
+                            tooltip: 'Delete',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                          ),
+                        ],
                       ],
                     );
                   },

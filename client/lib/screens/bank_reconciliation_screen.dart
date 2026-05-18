@@ -80,7 +80,10 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   // Matching phase.
   List<_RecRow> _rows = [];
   final Set<String> _reservedIds = {};
+  // IDs reserved by partial (amount-mismatched) manual matches — still shown in other rows' dropdowns.
+  final Set<String> _partialMatchIds = {};
 
+  bool _savingMatches = false;
   bool _locking = false;
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -310,6 +313,58 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     }
   }
 
+  Future<void> _saveMatchesAndReview() async {
+    final ids = _rows
+        .where((r) =>
+            r.status == BankMatchStatus.autoMatched ||
+            r.status == BankMatchStatus.manuallyMatched)
+        .expand((r) => r.matched)
+        .map((t) => t.id)
+        .toSet()
+        .toList();
+
+    if (ids.isNotEmpty) {
+      setState(() => _savingMatches = true);
+      try {
+        final client = context.read<ApiClient>();
+        final res = await client.post(
+          '/transactions/bank-match',
+          jsonEncode({'transactionIds': ids}),
+        );
+        if (res.statusCode != 204) {
+          final msg =
+              (jsonDecode(res.body) as Map?)?['error']?.toString() ??
+                  'Save failed (${res.statusCode})';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(msg), behavior: SnackBarBehavior.floating),
+            );
+          }
+          return;
+        }
+        final idSet = ids.toSet();
+        _allTransactions = _allTransactions
+            .map((t) =>
+                idSet.contains(t.id) ? t.copyWith(bankMatched: true) : t)
+            .toList();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Failed to save matches: $e'),
+                behavior: SnackBarBehavior.floating),
+          );
+        }
+        return;
+      } finally {
+        if (mounted) setState(() => _savingMatches = false);
+      }
+    }
+
+    if (mounted) setState(() => _phase = _Phase.results);
+  }
+
   Future<void> _lockMonth() async {
     final my = _statementMonthYear();
     final endDate = _statementEndDate();
@@ -426,6 +481,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     }).toList();
 
     _reservedIds.clear();
+    _partialMatchIds.clear();
     for (final row in _rows) {
       _matchRow(row);
     }
@@ -585,7 +641,10 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         row.matched = [];
         _recomputeFrom(idx);
       } else {
-        for (final t in row.matched) _reservedIds.remove(t.id);
+        for (final t in row.matched) {
+          _reservedIds.remove(t.id);
+          _partialMatchIds.remove(t.id);
+        }
         row.matched = [];
         row.status = BankMatchStatus.skipped;
         _recomputeFrom(idx + 1);
@@ -598,14 +657,17 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     if (rowIndex < 0) return;
 
     // Release this row's current matches so they appear as selectable.
-    for (final t in row.matched) _reservedIds.remove(t.id);
+    for (final t in row.matched) {
+      _reservedIds.remove(t.id);
+      _partialMatchIds.remove(t.id);
+    }
 
     final type = row.source.isDebit ? 'debit' : 'credit';
     final month = _yearMonth(row.processDate);
     final candidates = _allTransactions
         .where((t) =>
             !t.bankMatched &&
-            !_reservedIds.contains(t.id) &&
+            (!_reservedIds.contains(t.id) || _partialMatchIds.contains(t.id)) &&
             t.transactionType == type &&
             _yearMonth(t.transactionDate) == month)
         .toList()
@@ -626,12 +688,25 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
 
     if (result == null) {
       // Cancelled — restore.
-      for (final t in row.matched) _reservedIds.add(t.id);
+      final prevTotal =
+          row.matched.fold(0, (s, t) => s + t.totalAmount);
+      final prevIsPartial =
+          row.matched.isNotEmpty && prevTotal != row.source.amountCents;
+      for (final t in row.matched) {
+        _reservedIds.add(t.id);
+        if (prevIsPartial) _partialMatchIds.add(t.id);
+      }
       return;
     }
 
     setState(() {
-      for (final t in result) _reservedIds.add(t.id);
+      final matchedTotal = result.fold(0, (s, t) => s + t.totalAmount);
+      final isPartial =
+          result.isNotEmpty && matchedTotal != row.source.amountCents;
+      for (final t in result) {
+        _reservedIds.add(t.id);
+        if (isPartial) _partialMatchIds.add(t.id);
+      }
       row.matched = result;
       row.status = result.isEmpty
           ? BankMatchStatus.unmatched
@@ -641,6 +716,21 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   }
 
   bool get _allRowsResolved => _rows.every((r) => !r.needsAction);
+
+  /// Returns true when ALL transactions on [row] are partially shared across
+  /// multiple rows and the combined bank amounts of those rows exactly equal
+  /// each transaction's total — meaning the split is fully accounted for.
+  bool _suppressMismatch(_RecRow row) {
+    if (row.matched.isEmpty) return false;
+    for (final t in row.matched) {
+      if (!_partialMatchIds.contains(t.id)) return false;
+      final sharingTotal = _rows
+          .where((r) => r.matched.any((m) => m.id == t.id))
+          .fold(0, (s, r) => s + r.source.amountCents);
+      if (sharingTotal != t.totalAmount) return false;
+    }
+    return true;
+  }
 
   // ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -1129,8 +1219,15 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             child: Align(
               alignment: Alignment.centerRight,
               child: FilledButton.icon(
-                onPressed: () => setState(() => _phase = _Phase.results),
-                icon: const Icon(Icons.check_outlined, size: 16),
+                onPressed: _savingMatches ? null : _saveMatchesAndReview,
+                icon: _savingMatches
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.check_outlined, size: 16),
                 label: const Text('Review & lock'),
               ),
             ),
@@ -1209,6 +1306,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           matchedTotal: row.matched.fold(0, (int s, t) => s + t.totalAmount),
           bankAmount: row.source.amountCents,
           parsedReceipts: row.parsedReceipts,
+          suppressMismatch: _suppressMismatch(row),
         ),
       )),
       DataCell(_actionCell(row)),

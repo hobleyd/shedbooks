@@ -73,6 +73,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
 
   /// Transaction IDs already matched during this import session.
   final Set<String> _reservedIds = {};
+  // IDs reserved by partial (amount-mismatched) manual matches — still shown in other rows' dropdowns.
+  final Set<String> _partialMatchIds = {};
 
   bool _saving = false;
 
@@ -168,6 +170,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
   void _parseAndMatch(String content, String fileName) {
     final rows = _parseCsvContent(content);
     _reservedIds.clear();
+    _partialMatchIds.clear();
     for (final row in rows) {
       if (!_isUserResolved(row.status)) _matchRow(row);
     }
@@ -425,14 +428,17 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     final rowIndex = _rows.indexOf(row);
 
     // Release this row's current matches so they appear as selectable.
-    for (final t in row.matched) _reservedIds.remove(t.id);
+    for (final t in row.matched) {
+      _reservedIds.remove(t.id);
+      _partialMatchIds.remove(t.id);
+    }
 
     final String type = row.isBankDebit ? 'debit' : 'credit';
     final month = _yearMonth(row.processDate);
     final candidates = _allTransactions
         .where((t) =>
             !t.bankMatched &&
-            !_reservedIds.contains(t.id) &&
+            (!_reservedIds.contains(t.id) || _partialMatchIds.contains(t.id)) &&
             t.transactionType == type &&
             _yearMonth(t.transactionDate) == month)
         .toList()
@@ -452,12 +458,25 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
 
     if (result == null) {
       // Cancelled — restore.
-      for (final t in row.matched) _reservedIds.add(t.id);
+      final prevTotal =
+          row.matched.fold(0, (s, t) => s + t.totalAmount);
+      final prevIsPartial =
+          row.matched.isNotEmpty && prevTotal != row.amountCents;
+      for (final t in row.matched) {
+        _reservedIds.add(t.id);
+        if (prevIsPartial) _partialMatchIds.add(t.id);
+      }
       return;
     }
 
     setState(() {
-      for (final t in result) _reservedIds.add(t.id);
+      final matchedTotal = result.fold(0, (s, t) => s + t.totalAmount);
+      final isPartial =
+          result.isNotEmpty && matchedTotal != row.amountCents;
+      for (final t in result) {
+        _reservedIds.add(t.id);
+        if (isPartial) _partialMatchIds.add(t.id);
+      }
       row.matched = result;
       row.status = result.isEmpty
           ? BankMatchStatus.unmatched
@@ -471,6 +490,11 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
   Future<void> _openCreateTransaction(_CbaRow row) async {
     final rowIndex = _rows.indexOf(row);
 
+    final format = row.isBankDebit ? _moneyOutFormat : _moneyInFormat;
+    final existingReceipts =
+        _allTransactions.map((t) => t.receiptNumber).toList();
+    final nextReceipt = format.nextReceipt(existingReceipts);
+
     final result = await showDialog<TransactionEntry>(
       context: context,
       builder: (ctx) => _CreateTransactionDialog(
@@ -478,6 +502,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         contacts: _contacts,
         glEntries: _glEntries,
         api: context.read<ApiClient>(),
+        nextReceipt: nextReceipt,
       ),
     );
 
@@ -505,7 +530,10 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         row.matched = [];
         _recomputeFrom(rowIndex);
       } else {
-        for (final t in row.matched) _reservedIds.remove(t.id);
+        for (final t in row.matched) {
+          _reservedIds.remove(t.id);
+          _partialMatchIds.remove(t.id);
+        }
         row.matched = [];
         row.status = BankMatchStatus.skipped;
         _recomputeFrom(rowIndex + 1);
@@ -707,6 +735,21 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     );
   }
 
+  /// Returns true when ALL transactions on [row] are partially shared across
+  /// multiple rows and the combined bank amounts of those rows exactly equal
+  /// each transaction's total — meaning the split is fully accounted for.
+  bool _suppressMismatch(_CbaRow row) {
+    if (row.matched.isEmpty) return false;
+    for (final t in row.matched) {
+      if (!_partialMatchIds.contains(t.id)) return false;
+      final sharingTotal = _rows
+          .where((r) => r.matched.any((m) => m.id == t.id))
+          .fold(0, (s, r) => s + r.amountCents);
+      if (sharingTotal != t.totalAmount) return false;
+    }
+    return true;
+  }
+
   Widget _buildSummaryBar() {
     final theme = Theme.of(context);
     return Container(
@@ -772,6 +815,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           matchedTotal: row.matched.fold(0, (int s, t) => s + t.totalAmount),
           bankAmount: row.amountCents,
           parsedReceipts: row.parsedReceipts,
+          suppressMismatch: _suppressMismatch(row),
         ),
       )),
       DataCell(_actionCell(row)),
@@ -821,12 +865,14 @@ class _CreateTransactionDialog extends StatefulWidget {
   final List<ContactEntry> contacts;
   final List<GeneralLedgerEntry> glEntries;
   final ApiClient api;
+  final String nextReceipt;
 
   const _CreateTransactionDialog({
     required this.row,
     required this.contacts,
     required this.glEntries,
     required this.api,
+    required this.nextReceipt,
   });
 
   @override
@@ -854,7 +900,9 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
 
     _descController = TextEditingController(text: row.description);
     _receiptController = TextEditingController(
-      text: row.parsedReceipts.length == 1 ? row.parsedReceipts.first : '',
+      text: row.parsedReceipts.length == 1
+          ? row.parsedReceipts.first
+          : widget.nextReceipt,
     );
     _totalController = TextEditingController(
       text: _centsToField(row.amountCents),

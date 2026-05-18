@@ -200,6 +200,75 @@ void main() {
     });
   });
 
+  group('ReceiptFormat.nextReceipt', () {
+    test('empty list returns first number (001 for ###)', () {
+      expect(
+        ReceiptFormat('###').nextReceipt([], at: date2026),
+        equals('001'),
+      );
+    });
+
+    test('single existing receipt increments by one', () {
+      expect(
+        ReceiptFormat('###').nextReceipt(['005'], at: date2026),
+        equals('006'),
+      );
+    });
+
+    test('finds max across multiple existing receipts', () {
+      expect(
+        ReceiptFormat('###').nextReceipt(['003', '007', '002'], at: date2026),
+        equals('008'),
+      );
+    });
+
+    test('P-?YY### increments with dash variant', () {
+      expect(
+        ReceiptFormat('P-?YY###').nextReceipt(
+          ['P-26001', 'P-26003', 'P26002'],
+          at: date2026,
+        ),
+        equals('P-26004'),
+      );
+    });
+
+    test('ignores receipts from a different year', () {
+      expect(
+        ReceiptFormat('YY##').nextReceipt(['2599', '2601'], at: date2026),
+        equals('2602'),
+      );
+    });
+
+    test('receipts not matching format are ignored', () {
+      expect(
+        ReceiptFormat('P-?YY###').nextReceipt(
+          ['INV-26001', 'RANDOM'],
+          at: date2026,
+        ),
+        equals('P-26001'),
+      );
+    });
+
+    test('format with no # tokens returns example', () {
+      expect(
+        ReceiptFormat('P-YY').nextReceipt(['P-26', 'P-25'], at: date2026),
+        equals('P-26'),
+      );
+    });
+
+    test('empty format returns empty string', () {
+      expect(ReceiptFormat('').nextReceipt(['anything'], at: date2026), equals(''));
+    });
+
+    test('number overflows digit count gracefully', () {
+      // 3 # digits, highest is 999, next is 1000 (4 digits written as-is)
+      expect(
+        ReceiptFormat('###').nextReceipt(['999'], at: date2026),
+        equals('1000'),
+      );
+    });
+  });
+
   group('ReceiptFormat.matches', () {
     test('empty format matches any string', () {
       final fmt = ReceiptFormat('');

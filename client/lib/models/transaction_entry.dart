@@ -41,4 +41,18 @@ class TransactionEntry {
       );
 
   bool get isCredit => transactionType == 'credit';
+
+  TransactionEntry copyWith({bool? bankMatched}) => TransactionEntry(
+        id: id,
+        contactId: contactId,
+        generalLedgerId: generalLedgerId,
+        receiptNumber: receiptNumber,
+        description: description,
+        transactionType: transactionType,
+        amount: amount,
+        gstAmount: gstAmount,
+        totalAmount: totalAmount,
+        transactionDate: transactionDate,
+        bankMatched: bankMatched ?? this.bankMatched,
+      );
 }

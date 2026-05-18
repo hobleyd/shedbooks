@@ -138,6 +138,7 @@ class MatchedToCell extends StatelessWidget {
   final int matchedTotal;
   final int bankAmount;
   final List<String> parsedReceipts;
+  final bool suppressMismatch;
 
   const MatchedToCell({
     super.key,
@@ -145,6 +146,7 @@ class MatchedToCell extends StatelessWidget {
     required this.matchedTotal,
     required this.bankAmount,
     required this.parsedReceipts,
+    this.suppressMismatch = false,
   });
 
   @override
@@ -159,7 +161,7 @@ class MatchedToCell extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final mismatch = matchedTotal != bankAmount;
+    final mismatch = matchedTotal != bankAmount && !suppressMismatch;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

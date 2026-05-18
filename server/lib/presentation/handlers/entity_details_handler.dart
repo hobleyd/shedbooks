@@ -49,6 +49,9 @@ class EntityDetailsHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    final role = _userRole(request);
+    final isAuthorized = role.atLeast(AppRole.administrator);
+
     final Map<String, dynamic> json;
     try {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
@@ -74,18 +77,21 @@ class EntityDetailsHandler {
         name: dto.name,
         abn: dto.abn,
         incorporationIdentifier: dto.incorporationIdentifier,
-        apcaId: dto.apcaId,
+        apcaId: isAuthorized ? dto.apcaId : before?.apcaId,
         moneyInReceiptFormat: dto.moneyInReceiptFormat,
         moneyOutReceiptFormat: dto.moneyOutReceiptFormat,
       );
       if (before == null) {
-        _auditChanges(request)?.set(_detailsSnapshot(details));
+        _auditChanges(request)?.set(_detailsSnapshot(details, redact: true));
       } else {
-        final diff = diffMaps(_detailsSnapshot(before), _detailsSnapshot(details));
+        final bSnap = _detailsSnapshot(before, redact: true);
+        final aSnap = _detailsSnapshot(details, redact: true);
+        final diff = diffMaps(bSnap, aSnap);
         if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
       }
+      final result = isAuthorized ? details : _redact(details);
       return Response.ok(
-        EntityDetailsResponse.fromEntity(details).toJsonString(),
+        EntityDetailsResponse.fromEntity(result).toJsonString(),
         headers: _jsonHeaders,
       );
     } on EntityDetailsValidationException catch (e) {
@@ -119,11 +125,13 @@ class EntityDetailsHandler {
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;
 
-  static Map<String, dynamic> _detailsSnapshot(EntityDetails d) => {
+  static Map<String, dynamic> _detailsSnapshot(EntityDetails d,
+          {bool redact = false}) =>
+      {
         'name': d.name,
         'abn': d.abn,
         'incorporationIdentifier': d.incorporationIdentifier,
-        'apcaId': d.apcaId,
+        'apcaId': redact ? (d.apcaId != null ? '***' : null) : d.apcaId,
         'moneyInReceiptFormat': d.moneyInReceiptFormat,
         'moneyOutReceiptFormat': d.moneyOutReceiptFormat,
       };

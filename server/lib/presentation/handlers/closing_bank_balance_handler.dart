@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:shelf/shelf.dart';
 
+import '../../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
 import '../../application/closing_bank_balance/list_closing_bank_balances_use_case.dart';
 import '../../application/closing_bank_balance/save_closing_bank_balance_use_case.dart';
 import '../audit_changes.dart';
@@ -11,27 +12,30 @@ import '../audit_changes.dart';
 class ClosingBankBalanceHandler {
   final SaveClosingBankBalanceUseCase _save;
   final ListClosingBankBalancesUseCase _list;
+  final ListAllClosingBankBalancesUseCase _listAll;
 
   const ClosingBankBalanceHandler({
     required SaveClosingBankBalanceUseCase save,
     required ListClosingBankBalancesUseCase list,
+    required ListAllClosingBankBalancesUseCase listAll,
   })  : _save = save,
-        _list = list;
+        _list = list,
+        _listAll = listAll;
 
-  /// GET /closing-bank-balances?bankAccountId=<uuid>
+  /// GET /closing-bank-balances
+  ///
+  /// With `?bankAccountId=<uuid>`: returns balances for that account only.
+  /// Without the parameter: returns all balances for the entity.
   Future<Response> handleList(Request request) async {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
     final bankAccountId = request.url.queryParameters['bankAccountId'];
-    if (bankAccountId == null || bankAccountId.isEmpty) {
-      return _badRequest('bankAccountId query parameter is required');
-    }
 
-    final balances = await _list.execute(
-      entityId: entityId,
-      bankAccountId: bankAccountId,
-    );
+    final balances = bankAccountId != null && bankAccountId.isNotEmpty
+        ? await _list.execute(entityId: entityId, bankAccountId: bankAccountId)
+        : await _listAll.execute(entityId: entityId);
+
     return Response.ok(
       jsonEncode(balances.map((b) => b.toJson()).toList()),
       headers: _jsonHeaders,

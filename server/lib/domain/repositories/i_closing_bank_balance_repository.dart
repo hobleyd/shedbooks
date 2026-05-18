@@ -19,4 +19,9 @@ abstract class IClosingBankBalanceRepository {
     required String entityId,
     required String bankAccountId,
   });
+
+  /// Returns all closing balances for the entity, ordered by date descending.
+  Future<List<ClosingBankBalance>> findAllForEntity({
+    required String entityId,
+  });
 }

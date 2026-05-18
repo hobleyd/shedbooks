@@ -118,6 +118,79 @@ class ReceiptFormat {
   bool matches(String receipt, {DateTime? at}) =>
       isEmpty || toRegExp(at: at).hasMatch(receipt);
 
+  /// Returns the next sequential receipt number by scanning [existing] receipts
+  /// that match this format for [at]'s year and incrementing the highest number
+  /// found in the `#` digit positions. Falls back to [example] when the format
+  /// has no `#` tokens or is empty.
+  String nextReceipt(List<String> existing, {DateTime? at}) {
+    final now = at ?? DateTime.now();
+    final tokens = _tokenize();
+    final digitCount = tokens.where((t) => t.token == '#').length;
+    if (digitCount == 0) return example(at: now);
+
+    // Build a regex that captures each # digit individually.
+    final reSb = StringBuffer('^');
+    for (final t in tokens) {
+      switch (t.token) {
+        case 'YYYY':
+          reSb.write(now.year.toString().padLeft(4, '0'));
+        case 'YY':
+          reSb.write((now.year % 100).toString().padLeft(2, '0'));
+        case '#':
+          reSb.write(r'(\d)');
+        case '@':
+          reSb.write('[a-zA-Z]');
+        case '*':
+          reSb.write('[a-zA-Z0-9]');
+        default:
+          final esc = RegExp.escape(t.token);
+          reSb.write(t.optional ? '$esc?' : esc);
+      }
+    }
+    reSb.write(r'$');
+    final re = RegExp(reSb.toString(), caseSensitive: false);
+
+    int maxNum = 0;
+    for (final receipt in existing) {
+      final m = re.firstMatch(receipt);
+      if (m == null) continue;
+      final digits =
+          [for (int i = 1; i <= digitCount; i++) m.group(i) ?? '0'].join();
+      final n = int.tryParse(digits) ?? 0;
+      if (n > maxNum) maxNum = n;
+    }
+
+    final next = maxNum + 1;
+    final nextStr = next.toString().padLeft(digitCount, '0');
+    final overflow = nextStr.length > digitCount;
+    int digitPos = 0;
+
+    final out = StringBuffer();
+    for (final t in tokens) {
+      switch (t.token) {
+        case 'YYYY':
+          out.write(now.year.toString().padLeft(4, '0'));
+        case 'YY':
+          out.write((now.year % 100).toString().padLeft(2, '0'));
+        case '#':
+          if (overflow && digitPos == 0) {
+            // Write all digits at the first # slot when the number overflows.
+            out.write(nextStr);
+            digitPos = nextStr.length;
+          } else if (digitPos < nextStr.length) {
+            out.write(nextStr[digitPos++]);
+          }
+        case '@':
+          out.write('A');
+        case '*':
+          out.write('0');
+        default:
+          out.write(t.token);
+      }
+    }
+    return out.toString();
+  }
+
   List<_Token> _tokenize() {
     final tokens = <_Token>[];
     int i = 0;

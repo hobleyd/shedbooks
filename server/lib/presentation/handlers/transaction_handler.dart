@@ -207,7 +207,11 @@ class TransactionHandler {
       return _badRequest(e.message);
     }
 
-    await _bankMatch.execute(ids: dto.transactionIds, entityId: entityId);
+    try {
+      await _bankMatch.execute(ids: dto.transactionIds, entityId: entityId);
+    } catch (e) {
+      return _serverError('Failed to save bank matches: $e');
+    }
     return Response(204);
   }
 
@@ -252,6 +256,12 @@ class TransactionHandler {
 
   static Response _locked(String message) => Response(
         422,
+        body: jsonEncode({'error': message}),
+        headers: _jsonHeaders,
+      );
+
+  static Response _serverError(String message) => Response(
+        500,
         body: jsonEncode({'error': message}),
         headers: _jsonHeaders,
       );

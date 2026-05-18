@@ -237,20 +237,21 @@ class PostgresTransactionRepository implements ITransactionRepository {
   @override
   Future<void> bankMatch(List<String> ids, {required String entityId}) async {
     if (ids.isEmpty) return;
-    await _pool.execute(
-      Sql.named('''
-        UPDATE transactions
-        SET bank_matched = TRUE,
-            updated_at   = NOW()
-        WHERE id = ANY(string_to_array(@ids, ',')::uuid[])
-          AND entity_id = @entityId
-          AND deleted_at IS NULL
-      '''),
-      parameters: {
-        'ids': ids.join(','),
-        'entityId': entityId,
-      },
-    );
+    await _pool.runTx((tx) async {
+      for (final id in ids) {
+        await tx.execute(
+          Sql.named('''
+            UPDATE transactions
+            SET bank_matched = TRUE,
+                updated_at   = NOW()
+            WHERE id = @id::uuid
+              AND entity_id = @entityId
+              AND deleted_at IS NULL
+          '''),
+          parameters: {'id': id, 'entityId': entityId},
+        );
+      }
+    });
   }
 
   Transaction _mapRow(Map<String, dynamic> row) {

@@ -49,6 +49,7 @@ import '../application/gst_rate/list_gst_rates_use_case.dart';
 import '../application/gst_rate/update_gst_rate_use_case.dart';
 import '../application/bank_import/get_bank_imports_use_case.dart';
 import '../application/bank_import/save_bank_imports_use_case.dart';
+import '../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
 import '../application/closing_bank_balance/list_closing_bank_balances_use_case.dart';
 import '../application/closing_bank_balance/save_closing_bank_balance_use_case.dart';
 import '../application/locked_month/list_locked_months_use_case.dart';
@@ -166,6 +167,7 @@ Handler buildRouter({
   final closingBankBalanceHandler = ClosingBankBalanceHandler(
     save: SaveClosingBankBalanceUseCase(closingBankBalanceRepository),
     list: ListClosingBankBalancesUseCase(closingBankBalanceRepository),
+    listAll: ListAllClosingBankBalancesUseCase(closingBankBalanceRepository),
   );
 
   final bankReconciliationHandler = BankReconciliationHandler(

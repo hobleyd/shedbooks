@@ -87,10 +87,13 @@ class ContactHandler {
         bsb: dto.bsb,
         accountNumber: dto.accountNumber,
       );
-      _auditChanges(request)?.set(_contactSnapshot(contact));
+      _auditChanges(request)?.set(_contactSnapshot(contact, redact: true));
+      final role = _userRole(request);
+      final isAuthorized = role.atLeast(AppRole.administrator);
+      final result = isAuthorized ? contact : _redact(contact);
       return Response(
         201,
-        body: ContactResponse.fromEntity(contact).toJsonString(),
+        body: ContactResponse.fromEntity(result).toJsonString(),
         headers: _jsonHeaders,
       );
     } on ContactValidationException catch (e) {
@@ -123,6 +126,9 @@ class ContactHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
+    final role = _userRole(request);
+    final isAuthorized = role.atLeast(AppRole.administrator);
+
     final Map<String, dynamic> json;
     try {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
@@ -150,15 +156,18 @@ class ContactHandler {
         contactType: dto.contactType,
         gstRegistered: dto.gstRegistered,
         abn: dto.abn,
-        bsb: dto.bsb,
-        accountNumber: dto.accountNumber,
+        bsb: isAuthorized ? dto.bsb : before?.bsb,
+        accountNumber: isAuthorized ? dto.accountNumber : before?.accountNumber,
       );
       if (before != null) {
-        final diff = diffMaps(_contactSnapshot(before), _contactSnapshot(contact));
+        final bSnap = _contactSnapshot(before, redact: true);
+        final aSnap = _contactSnapshot(contact, redact: true);
+        final diff = diffMaps(bSnap, aSnap);
         if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
       }
+      final result = isAuthorized ? contact : _redact(contact);
       return Response.ok(
-        ContactResponse.fromEntity(contact).toJsonString(),
+        ContactResponse.fromEntity(result).toJsonString(),
         headers: _jsonHeaders,
       );
     } on ContactNotFoundException catch (e) {
@@ -262,13 +271,15 @@ class ContactHandler {
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;
 
-  static Map<String, dynamic> _contactSnapshot(Contact c) => {
+  static Map<String, dynamic> _contactSnapshot(Contact c, {bool redact = false}) =>
+      {
         'name': c.name,
         'contactType': c.contactType.name,
         'gstRegistered': c.gstRegistered,
         'abn': c.abn,
-        'bsb': c.bsb,
-        'accountNumber': c.accountNumber,
+        'bsb': redact ? (c.bsb != null ? '***' : null) : c.bsb,
+        'accountNumber':
+            redact ? (c.accountNumber != null ? '***' : null) : c.accountNumber,
       };
 
   static Response _orgRequired() => Response.unauthorized(
