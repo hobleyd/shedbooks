@@ -172,18 +172,27 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           .toList()
         ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
 
-      Set<String> lockedMonths = {};
-      if (results[3].statusCode == 200) {
-        lockedMonths = (jsonDecode(results[3].body) as List)
-            .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>).monthYear)
-            .toSet();
-      }
-
       final bankAccounts = results[4].statusCode == 200
           ? (jsonDecode(results[4].body) as List)
               .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
               .toList()
           : <BankAccountEntry>[];
+
+      // A month is locked only when every bank account has it locked.
+      Set<String> lockedMonths = {};
+      if (results[3].statusCode == 200 && bankAccounts.isNotEmpty) {
+        final allLocked = (jsonDecode(results[3].body) as List)
+            .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+        final Map<String, Set<String>> accountsByMonth = {};
+        for (final entry in allLocked) {
+          accountsByMonth.putIfAbsent(entry.monthYear, () => {}).add(entry.bankAccountId);
+        }
+        lockedMonths = accountsByMonth.entries
+            .where((e) => e.value.length >= bankAccounts.length)
+            .map((e) => e.key)
+            .toSet();
+      }
 
       final entityDetails = results[5].statusCode == 200
           ? EntityDetails.fromJson(jsonDecode(results[5].body) as Map<String, dynamic>)

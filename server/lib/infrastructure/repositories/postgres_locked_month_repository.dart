@@ -25,15 +25,30 @@ class PostgresLockedMonthRepository implements ILockedMonthRepository {
 
   @override
   Future<bool> isLocked(String entityId, String monthYear) async {
+    // Blocked only when every active bank account has the month locked.
     final result = await _pool.execute(
       Sql.named('''
-        SELECT 1 FROM locked_months
-        WHERE entity_id = @entityId AND month_year = @monthYear
-        LIMIT 1
+        SELECT (
+          EXISTS (
+            SELECT 1 FROM bank_accounts
+            WHERE entity_id = @entityId AND deleted_at IS NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM bank_accounts ba
+            WHERE ba.entity_id = @entityId
+              AND ba.deleted_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM locked_months lm
+                WHERE lm.entity_id = @entityId
+                  AND lm.month_year = @monthYear
+                  AND lm.bank_account_id = ba.id
+              )
+          )
+        ) AS is_locked
       '''),
       parameters: {'entityId': entityId, 'monthYear': monthYear},
     );
-    return result.isNotEmpty;
+    return (result.first.toColumnMap()['is_locked'] as bool?) ?? false;
   }
 
   @override
