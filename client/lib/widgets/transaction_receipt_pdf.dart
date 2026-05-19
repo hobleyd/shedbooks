@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -8,7 +7,6 @@ import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
-import '../utils/formatters.dart';
 import 'pdf_report_components.dart';
 
 class TransactionReceiptPdf {
