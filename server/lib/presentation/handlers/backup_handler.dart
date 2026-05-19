@@ -41,7 +41,8 @@ class BackupHandler {
       final contacts = await _queryRows('''
         SELECT id::text, entity_id, name,
                contact_type::text AS contact_type,
-               gst_registered, abn, created_at, updated_at, deleted_at
+               gst_registered, abn, bsb, account_number,
+               created_at, updated_at, deleted_at
         FROM contacts WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -61,6 +62,23 @@ class BackupHandler {
         FROM bank_accounts WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
+      final closingBalances = await _queryRows('''
+        SELECT id::text, entity_id, bank_account_id::text, balance_date,
+               balance_cents, statement_period, created_at
+        FROM closing_bank_balances WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      final lockedMonths = await _queryRows('''
+        SELECT id::text, entity_id, month_year, locked_at, bank_account_id::text
+        FROM locked_months WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      final bankImports = await _queryRows('''
+        SELECT id::text, entity_id, process_date, description,
+               amount_cents, is_debit, imported_at
+        FROM bank_imports WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
       final dashPrefs = await _queryRows(
         'SELECT entity_id, selected_gl_ids, selected_account_pairs '
         'FROM dashboard_preferences WHERE entity_id = @entityId',
@@ -69,6 +87,7 @@ class BackupHandler {
 
       final entityDetails = await _queryRows(
         'SELECT entity_id, name, abn, incorporation_identifier, '
+        'money_in_receipt_format, money_out_receipt_format, apca_id, '
         'created_at, updated_at FROM entity_details WHERE entity_id = @entityId',
         {'entityId': entityId},
       );
@@ -87,6 +106,9 @@ class BackupHandler {
         'contacts': contacts,
         'transactions': transactions,
         'bank_accounts': bankAccounts,
+        'closing_bank_balances': closingBalances,
+        'locked_months': lockedMonths,
+        'bank_imports': bankImports,
         'dashboard_preferences': dashPrefs,
         'entity_details': entityDetails,
       };
@@ -157,6 +179,9 @@ class BackupHandler {
         await _del(tx, 'contacts', entityId);
         await _del(tx, 'general_ledger', entityId);
         await _del(tx, 'gst_rates', entityId);
+        await _del(tx, 'closing_bank_balances', entityId);
+        await _del(tx, 'locked_months', entityId);
+        await _del(tx, 'bank_imports', entityId);
         await _del(tx, 'bank_accounts', entityId);
         await tx.execute(
           Sql.named('DELETE FROM dashboard_preferences WHERE entity_id = @e'),
@@ -173,14 +198,23 @@ class BackupHandler {
           await tx.execute(
             Sql.named('''
               INSERT INTO entity_details
-                (entity_id, name, abn, incorporation_identifier, created_at, updated_at)
-              VALUES (@e, @name, @abn, @inc, @ca::timestamptz, @ua::timestamptz)
+                (entity_id, name, abn, incorporation_identifier,
+                 money_in_receipt_format, money_out_receipt_format, apca_id,
+                 created_at, updated_at)
+              VALUES (
+                @e, @name, @abn, @inc,
+                @mir, @mor, @apca,
+                @ca::timestamptz, @ua::timestamptz
+              )
             '''),
             parameters: {
               'e': entityId,
               'name': r['name'] as String,
               'abn': r['abn'] as String,
               'inc': r['incorporation_identifier'] as String,
+              'mir': (r['money_in_receipt_format'] as String?) ?? '',
+              'mor': (r['money_out_receipt_format'] as String?) ?? '',
+              'apca': r['apca_id'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
             },
@@ -293,9 +327,10 @@ class BackupHandler {
             Sql.named('''
               INSERT INTO contacts
                 (id, entity_id, name, contact_type, gst_registered, abn,
-                 created_at, updated_at, deleted_at)
+                 bsb, account_number, created_at, updated_at, deleted_at)
               VALUES (
                 @id::uuid, @e, @name, @ct::contact_type, @gst, @abn,
+                @bsb, @anum,
                 @ca::timestamptz, @ua::timestamptz, @da::timestamptz
               )
             '''),
@@ -306,6 +341,8 @@ class BackupHandler {
               'ct': r['contact_type'] as String,
               'gst': r['gst_registered'] as bool,
               'abn': r['abn'],
+              'bsb': r['bsb'],
+              'anum': r['account_number'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],
@@ -342,6 +379,71 @@ class BackupHandler {
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],
               'bm': (r['bank_matched'] as bool?) ?? false,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'closing_bank_balances')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO closing_bank_balances
+                (id, entity_id, bank_account_id, balance_date,
+                 balance_cents, statement_period, created_at)
+              VALUES (
+                @id::uuid, @e, @baid::uuid, @bd::date,
+                @bc, @sp, @ca::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'baid': r['bank_account_id'] as String,
+              'bd': _dateString(r['balance_date']),
+              'bc': r['balance_cents'] as int,
+              'sp': r['statement_period'] as String,
+              'ca': r['created_at'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'locked_months')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO locked_months
+                (id, entity_id, month_year, locked_at, bank_account_id)
+              VALUES (
+                @id::uuid, @e, @my, @la::timestamptz, @baid::uuid
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'my': r['month_year'] as String,
+              'la': r['locked_at'] as String,
+              'baid': r['bank_account_id'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'bank_imports')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO bank_imports
+                (id, entity_id, process_date, description,
+                 amount_cents, is_debit, imported_at)
+              VALUES (
+                @id::uuid, @e, @pd::date, @desc,
+                @ac, @dbt, @ia::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'pd': _dateString(r['process_date']),
+              'desc': r['description'] as String,
+              'ac': r['amount_cents'] as int,
+              'dbt': r['is_debit'] as bool,
+              'ia': r['imported_at'] as String,
             },
           );
         }
