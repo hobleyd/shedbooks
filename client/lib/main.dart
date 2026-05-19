@@ -64,6 +64,8 @@ class ShedbooksApp extends StatelessWidget {
         useMaterial3: true,
       ),
       routerConfig: router,
+      builder: (BuildContext context, Widget? child) =>
+          SelectionArea(child: child ?? const SizedBox.shrink()),
     );
   }
 }
