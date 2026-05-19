@@ -253,14 +253,17 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
   bool get _totalsMatch => _selectedTotal == widget.bankAmountCents;
 
   List<TransactionEntry> get _filtered {
-    if (_filter.isEmpty) return widget.candidates;
-    final q = _filter.toLowerCase();
-    return widget.candidates.where((t) {
-      final name = (widget.contactNames[t.contactId] ?? '').toLowerCase();
-      return t.receiptNumber.toLowerCase().contains(q) ||
-          name.contains(q) ||
-          t.transactionDate.contains(q);
-    }).toList();
+    final results = _filter.isEmpty
+        ? List<TransactionEntry>.from(widget.candidates)
+        : widget.candidates.where((t) {
+            final name = (widget.contactNames[t.contactId] ?? '').toLowerCase();
+            final q = _filter.toLowerCase();
+            return t.receiptNumber.toLowerCase().contains(q) ||
+                name.contains(q) ||
+                t.transactionDate.contains(q);
+          }).toList();
+    results.sort((a, b) => b.receiptNumber.compareTo(a.receiptNumber));
+    return results;
   }
 
   @override
