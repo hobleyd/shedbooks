@@ -55,7 +55,7 @@ class LockedMonthHandler {
     }
 
     try {
-      await _lock.execute(entityId, dto.monthYear);
+      await _lock.execute(entityId, dto.monthYear, dto.bankAccountId);
     } on ArgumentError catch (e) {
       return _badRequest(e.message.toString());
     }
@@ -63,12 +63,13 @@ class LockedMonthHandler {
     return Response(204);
   }
 
-  /// DELETE /locked-months/:monthYear
-  Future<Response> handleUnlock(Request request, String monthYear) async {
+  /// DELETE /locked-months/:monthYear/:bankAccountId
+  Future<Response> handleUnlock(
+      Request request, String monthYear, String bankAccountId) async {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
-    await _unlock.execute(entityId, monthYear);
+    await _unlock.execute(entityId, monthYear, bankAccountId);
     return Response(204);
   }
 

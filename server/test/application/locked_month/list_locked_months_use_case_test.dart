@@ -16,12 +16,14 @@ void main() {
     LockedMonth(
       id: 'id-1',
       entityId: tEntityId,
+      bankAccountId: 'ba-1',
       monthYear: '2026-04',
       lockedAt: DateTime.utc(2026, 5, 1),
     ),
     LockedMonth(
       id: 'id-2',
       entityId: tEntityId,
+      bankAccountId: 'ba-2',
       monthYear: '2026-03',
       lockedAt: DateTime.utc(2026, 4, 1),
     ),

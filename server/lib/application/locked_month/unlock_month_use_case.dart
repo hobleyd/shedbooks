@@ -6,7 +6,8 @@ class UnlockMonthUseCase {
 
   const UnlockMonthUseCase(this._repository);
 
-  /// Unlocks [monthYear] (YYYY-MM format) for [entityId]. No-op if not locked.
-  Future<void> execute(String entityId, String monthYear) =>
-      _repository.unlock(entityId, monthYear);
+  /// Unlocks [monthYear] for [bankAccountId] within [entityId]. No-op if not locked.
+  Future<void> execute(
+          String entityId, String monthYear, String bankAccountId) =>
+      _repository.unlock(entityId, monthYear, bankAccountId);
 }

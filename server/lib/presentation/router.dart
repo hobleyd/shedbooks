@@ -335,7 +335,13 @@ Router _lockedMonthsRouter(LockedMonthHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireAdministrator(), h.handleLock))
-    ..delete('/<monthYear>', _roleId(requireAdministrator(), h.handleUnlock));
+    ..delete(
+      '/<monthYear>/<bankAccountId>',
+      (Request req, String monthYear, String bankAccountId) => _role(
+        requireAdministrator(),
+        (r) => h.handleUnlock(r, monthYear, bankAccountId),
+      )(req),
+    );
 }
 
 // All authenticated users can read; contributors and admins can write.

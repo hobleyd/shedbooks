@@ -11,28 +11,33 @@ void main() {
   late UnlockMonthUseCase sut;
 
   const tEntityId = 'entity-1';
+  const tBankAccountId = 'ba-1';
 
   setUp(() {
     repository = MockLockedMonthRepository();
     sut = UnlockMonthUseCase(repository);
-    when(() => repository.unlock(any(), any())).thenAnswer((_) async {});
+    when(() => repository.unlock(any(), any(), any()))
+        .thenAnswer((_) async {});
   });
 
   group('UnlockMonthUseCase', () {
     test('calls repository.unlock with correct arguments', () async {
       // Act
-      await sut.execute(tEntityId, '2026-04');
+      await sut.execute(tEntityId, '2026-04', tBankAccountId);
 
       // Assert
-      verify(() => repository.unlock(tEntityId, '2026-04')).called(1);
+      verify(() => repository.unlock(tEntityId, '2026-04', tBankAccountId))
+          .called(1);
     });
 
-    test('is a no-op when month is not locked (repository handles it)', () async {
+    test('is a no-op when month is not locked (repository handles it)',
+        () async {
       // Act
-      await sut.execute(tEntityId, '2026-01');
+      await sut.execute(tEntityId, '2026-01', tBankAccountId);
 
       // Assert — simply delegates to repository, no exception
-      verify(() => repository.unlock(tEntityId, '2026-01')).called(1);
+      verify(() => repository.unlock(tEntityId, '2026-01', tBankAccountId))
+          .called(1);
     });
   });
 }

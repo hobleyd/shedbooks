@@ -6,6 +6,9 @@ class LockedMonth {
   /// The Auth0 organisation ID that owns this lock.
   final String entityId;
 
+  /// The bank account this lock applies to.
+  final String bankAccountId;
+
   /// The locked period in YYYY-MM format (e.g. `"2026-04"`).
   final String monthYear;
 
@@ -15,6 +18,7 @@ class LockedMonth {
   const LockedMonth({
     required this.id,
     required this.entityId,
+    required this.bankAccountId,
     required this.monthYear,
     required this.lockedAt,
   });

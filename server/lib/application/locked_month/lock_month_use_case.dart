@@ -6,10 +6,11 @@ class LockMonthUseCase {
 
   const LockMonthUseCase(this._repository);
 
-  /// Locks [monthYear] (YYYY-MM format) for [entityId]. Idempotent.
-  Future<void> execute(String entityId, String monthYear) {
+  /// Locks [monthYear] (YYYY-MM format) for [bankAccountId] within [entityId]. Idempotent.
+  Future<void> execute(
+      String entityId, String monthYear, String bankAccountId) {
     _validateFormat(monthYear);
-    return _repository.lock(entityId, monthYear);
+    return _repository.lock(entityId, monthYear, bankAccountId);
   }
 
   static void _validateFormat(String monthYear) {

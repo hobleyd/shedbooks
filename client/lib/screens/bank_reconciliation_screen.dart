@@ -130,8 +130,10 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       if (lmRes.statusCode == 200) {
         final list = jsonDecode(lmRes.body) as List<dynamic>;
         _lockedMonths = list
-            .map((j) => LockedMonthEntry.fromJson(j as Map<String, dynamic>)
-                .monthYear)
+            .map((j) {
+              final e = LockedMonthEntry.fromJson(j as Map<String, dynamic>);
+              return '${e.monthYear}:${e.bankAccountId}';
+            })
             .toSet();
       }
 
@@ -263,7 +265,10 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
 
   bool get _monthAlreadyLocked {
     final my = _statementMonthYear();
-    return my != null && _lockedMonths.contains(my);
+    final accountId = _selectedBankAccountId;
+    return my != null &&
+        accountId != null &&
+        _lockedMonths.contains('$my:$accountId');
   }
 
   int get _openingCents =>
@@ -288,13 +293,16 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   }
 
   int _computedClosingCents() {
-    final txs = _monthTransactions();
+    // Use only transactions matched to this statement's rows — all-month
+    // transactions would include other bank accounts and skew the balance.
     int balance = _openingCents;
-    for (final t in txs) {
-      if (t.transactionType == 'debit') {
-        balance -= t.totalAmount;
-      } else {
-        balance += t.totalAmount;
+    for (final row in _rows) {
+      for (final t in row.matched) {
+        if (t.transactionType == 'debit') {
+          balance -= t.totalAmount;
+        } else {
+          balance += t.totalAmount;
+        }
       }
     }
     return balance;
@@ -416,7 +424,10 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             'statementPeriod': _statement!.statementPeriod,
           }),
         ),
-        client.post('/locked-months', jsonEncode({'monthYear': my})),
+        client.post('/locked-months', jsonEncode({
+          'monthYear': my,
+          'bankAccountId': _selectedBankAccountId,
+        })),
       ]);
 
       final balanceRes = results[0];
@@ -433,7 +444,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         throw Exception('Failed to lock month: $msg');
       }
 
-      _lockedMonths = {..._lockedMonths, my};
+      _lockedMonths = {..._lockedMonths, '$my:$_selectedBankAccountId'};
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1022,110 +1033,68 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       );
     }
 
-    if (txs.isEmpty) {
-      return _statusCard(
-        icon: Icons.info_outline,
-        color: Colors.blue,
-        title: 'No transactions found',
-        message: monthYear != null
-            ? 'No transactions exist in the system for $monthYear.'
-            : 'Could not determine statement month.',
-        trailing: TextButton.icon(
-          onPressed: _enterMatchingPhase,
-          icon: const Icon(Icons.compare_arrows_outlined, size: 16),
-          label: const Text('Match transactions from PDF'),
-        ),
-      );
-    }
-
     final unmatchedCount = txs.where((t) => !t.bankMatched).length;
 
-    if (!allMatched) {
-      return _statusCard(
-        icon: Icons.warning_amber_outlined,
-        color: Colors.orange,
-        title:
-            '$unmatchedCount transaction${unmatchedCount == 1 ? '' : 's'} not bank-matched',
-        message: 'Not all transactions for $monthYear have been bank-matched. '
-            'Match them using the PDF statement data below.',
-        trailing: FilledButton.icon(
-          onPressed: _enterMatchingPhase,
-          icon: const Icon(Icons.compare_arrows_outlined, size: 16),
-          label: const Text('Match transactions'),
-        ),
-      );
-    }
-
-    if (!balanced) {
-      final computed = _computedClosingCents();
-      return _statusCard(
-        icon: Icons.error_outline,
-        color: Colors.red,
-        title: 'Balance mismatch',
-        message: 'All transactions are matched, but the computed closing balance '
-            '(${_centsToDisplay(computed)}) does not match the stated closing '
-            'balance (${_centsToDisplay(_closingCents)}).\n\n'
-            'Check the opening/closing balance figures or match transactions from the PDF.',
-        trailing: TextButton.icon(
-          onPressed: _enterMatchingPhase,
-          icon: const Icon(Icons.compare_arrows_outlined, size: 16),
-          label: const Text('Review PDF transactions'),
-        ),
-      );
-    }
-
-    // Happy path: all matched and balanced.
-    final noBankAccount = _selectedBankAccountId == null;
-    return Card(
-      color: noBankAccount ? Colors.orange.shade50 : Colors.green.shade50,
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-              color: noBankAccount
-                  ? Colors.orange.shade200
-                  : Colors.green.shade200)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Icon(
-                noBankAccount
-                    ? Icons.warning_amber_outlined
-                    : Icons.check_circle_outlined,
+    // Balances agreeing takes priority: any unmatched transactions must belong
+    // to a different bank account, so locking is safe.
+    if (balanced) {
+      final noBankAccount = _selectedBankAccountId == null;
+      final hasUnmatched = unmatchedCount > 0;
+      return Card(
+        color: noBankAccount ? Colors.orange.shade50 : Colors.green.shade50,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
                 color: noBankAccount
-                    ? Colors.orange.shade700
-                    : Colors.green.shade700,
-                size: 32),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
+                    ? Colors.orange.shade200
+                    : Colors.green.shade200)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Icon(
+                  noBankAccount
+                      ? Icons.warning_amber_outlined
+                      : Icons.check_circle_outlined,
+                  color: noBankAccount
+                      ? Colors.orange.shade700
+                      : Colors.green.shade700,
+                  size: 32),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        noBankAccount
+                            ? 'Select a bank account to lock'
+                            : 'Reconciliation complete',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: noBankAccount
+                                ? Colors.orange.shade800
+                                : Colors.green.shade800)),
+                    const SizedBox(height: 4),
+                    Text(
                       noBankAccount
-                          ? 'Select a bank account to lock'
-                          : 'Reconciliation complete',
+                          ? 'Balances agree. Select a bank account above to record the closing balance.'
+                          : hasUnmatched
+                              ? 'Closing balance matches. '
+                                  '$unmatchedCount unmatched transaction${unmatchedCount == 1 ? '' : 's'} '
+                                  'belong to another bank account.'
+                              : _rows.isEmpty
+                                  ? 'No transactions on this statement. Closing balance matches.'
+                                  : 'All ${_rows.length} statement transaction${_rows.length == 1 ? '' : 's'} '
+                                      'are matched and the closing balance matches.',
                       style: TextStyle(
-                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
                           color: noBankAccount
-                              ? Colors.orange.shade800
-                              : Colors.green.shade800)),
-                  const SizedBox(height: 4),
-                  Text(
-                    noBankAccount
-                        ? 'All transactions are matched and balances agree. '
-                            'Select a bank account above to record the closing balance.'
-                        : 'All ${txs.length} transaction${txs.length == 1 ? '' : 's'} are bank-matched '
-                            'and the closing balance matches.',
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: noBankAccount
-                            ? Colors.orange.shade700
-                            : Colors.green.shade700),
-                  ),
-                ],
+                              ? Colors.orange.shade700
+                              : Colors.green.shade700),
+                    ),
+                  ],
+                ),
               ),
-            ),
             const SizedBox(width: 16),
             FilledButton.icon(
               onPressed: (_locking || noBankAccount) ? null : _lockMonth,
@@ -1142,6 +1111,40 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             ),
           ],
         ),
+      ),
+    );
+    }
+
+    // Balances don't match — show the most actionable error first.
+    if (!allMatched) {
+      return _statusCard(
+        icon: Icons.warning_amber_outlined,
+        color: Colors.orange,
+        title:
+            '$unmatchedCount transaction${unmatchedCount == 1 ? '' : 's'} not bank-matched',
+        message: 'Not all transactions for $monthYear have been bank-matched. '
+            'Match them using the PDF statement data below.',
+        trailing: FilledButton.icon(
+          onPressed: _enterMatchingPhase,
+          icon: const Icon(Icons.compare_arrows_outlined, size: 16),
+          label: const Text('Match transactions'),
+        ),
+      );
+    }
+
+    final computed = _computedClosingCents();
+    return _statusCard(
+      icon: Icons.error_outline,
+      color: Colors.red,
+      title: 'Balance mismatch',
+      message: 'All transactions are matched, but the computed closing balance '
+          '(${_centsToDisplay(computed)}) does not match the stated closing '
+          'balance (${_centsToDisplay(_closingCents)}).\n\n'
+          'Check the opening/closing balance figures or match transactions from the PDF.',
+      trailing: TextButton.icon(
+        onPressed: _enterMatchingPhase,
+        icon: const Icon(Icons.compare_arrows_outlined, size: 16),
+        label: const Text('Review PDF transactions'),
       ),
     );
   }

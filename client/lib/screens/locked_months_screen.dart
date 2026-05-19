@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
+import '../models/bank_account_entry.dart';
 import '../models/locked_month_entry.dart';
 import '../services/api_client.dart';
 
-/// Admin screen for locking and unlocking financial months.
+/// Admin screen for locking and unlocking financial months per bank account.
 class LockedMonthsScreen extends StatefulWidget {
   const LockedMonthsScreen({super.key});
 
@@ -18,12 +19,18 @@ class LockedMonthsScreen extends StatefulWidget {
 class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   bool _loading = true;
   String? _loadError;
-  List<LockedMonthEntry> _locked = [];
+
+  List<BankAccountEntry> _bankAccounts = [];
+
+  /// Keyed by monthYear → bankAccountId → entry.
+  Map<String, Map<String, LockedMonthEntry>> _lockedMap = {};
+
   bool _saving = false;
 
   // Month picker state — default to previous month.
   late int _pickerYear;
   late int _pickerMonth;
+  String? _pickerBankAccountId;
 
   static const _monthNames = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -41,21 +48,53 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _loadError = null; });
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
-      final res = await context.read<ApiClient>().get('/locked-months');
-      if (res.statusCode != 200) {
-        throw Exception('Server returned ${res.statusCode}');
+      final client = context.read<ApiClient>();
+      final results = await Future.wait([
+        client.get('/bank-accounts'),
+        client.get('/locked-months'),
+      ]);
+
+      final accountsRes = results[0];
+      final lockedRes = results[1];
+
+      if (accountsRes.statusCode != 200) {
+        throw Exception('Loading bank accounts failed (${accountsRes.statusCode})');
       }
-      final list = jsonDecode(res.body) as List<dynamic>;
+      if (lockedRes.statusCode != 200) {
+        throw Exception('Loading locked months failed (${lockedRes.statusCode})');
+      }
+
+      final accounts = (jsonDecode(accountsRes.body) as List<dynamic>)
+          .map((j) => BankAccountEntry.fromJson(j as Map<String, dynamic>))
+          .toList();
+
+      final locked = (jsonDecode(lockedRes.body) as List<dynamic>)
+          .map((j) => LockedMonthEntry.fromJson(j as Map<String, dynamic>))
+          .toList();
+
+      final map = <String, Map<String, LockedMonthEntry>>{};
+      for (final entry in locked) {
+        map.putIfAbsent(entry.monthYear, () => {})[entry.bankAccountId] = entry;
+      }
+
       setState(() {
-        _locked = list
-            .map((j) => LockedMonthEntry.fromJson(j as Map<String, dynamic>))
-            .toList();
+        _bankAccounts = accounts;
+        _lockedMap = map;
+        _pickerBankAccountId ??= accounts.isNotEmpty ? accounts.first.id : null;
         _loading = false;
       });
     } catch (e) {
-      if (mounted) setState(() { _loadError = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _loadError = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -63,14 +102,20 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
       '$_pickerYear-${_pickerMonth.toString().padLeft(2, '0')}';
 
   bool get _pickerAlreadyLocked =>
-      _locked.any((m) => m.monthYear == _pickerMonthYear);
+      _pickerBankAccountId != null &&
+      (_lockedMap[_pickerMonthYear]?.containsKey(_pickerBankAccountId) ??
+          false);
 
   Future<void> _lockMonth() async {
+    if (_pickerBankAccountId == null) return;
     setState(() => _saving = true);
     try {
       final res = await context.read<ApiClient>().post(
             '/locked-months',
-            jsonEncode({'monthYear': _pickerMonthYear}),
+            jsonEncode({
+              'monthYear': _pickerMonthYear,
+              'bankAccountId': _pickerBankAccountId,
+            }),
           );
       if (res.statusCode != 204) {
         final msg =
@@ -85,14 +130,27 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
     }
   }
 
-  Future<void> _unlockMonth(LockedMonthEntry entry) async {
+  Future<void> _unlockMonth(String monthYear, String bankAccountId) async {
+    final accountName = _bankAccounts
+        .firstWhere((a) => a.id == bankAccountId,
+            orElse: () => BankAccountEntry(
+                  id: bankAccountId,
+                  bankName: '',
+                  accountName: 'account',
+                  bsb: '',
+                  accountNumber: '',
+                  accountType: BankAccountType.transaction,
+                  currency: '',
+                ))
+        .accountName;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Unlock month?'),
         content: Text(
-          'Unlocking ${_formatMonthYear(entry.monthYear)} will allow transactions '
-          'in that period to be edited again.',
+          'Unlocking ${_formatMonthYear(monthYear)} for $accountName will allow '
+          'transactions in that period to be edited again.',
         ),
         actions: [
           TextButton(
@@ -112,7 +170,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
     try {
       final res = await context
           .read<ApiClient>()
-          .delete('/locked-months/${entry.monthYear}');
+          .delete('/locked-months/$monthYear/$bankAccountId');
       if (res.statusCode != 204) {
         throw Exception('Server returned ${res.statusCode}');
       }
@@ -137,9 +195,6 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
     final month = int.tryParse(parts[1]) ?? 0;
     return '${_monthNames[month]} ${parts[0]}';
   }
-
-  static String _formatDate(DateTime dt) =>
-      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
 
   @override
   Widget build(BuildContext context) {
@@ -177,7 +232,8 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
         const SizedBox(height: 8),
         const Text(
           'Locked months prevent any transactions in that period from being '
-          'created, edited, or deleted. Only administrators can lock or unlock months.',
+          'created, edited, or deleted. Each bank account can be locked independently. '
+          'Only administrators can lock or unlock months.',
           style: TextStyle(color: Colors.black54),
         ),
         const SizedBox(height: 24),
@@ -189,7 +245,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
         ],
         Text('Locked Periods', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 12),
-        Expanded(child: _buildLockedList(isAdmin)),
+        Expanded(child: _buildLockedTable(isAdmin)),
       ],
     );
   }
@@ -197,7 +253,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   Widget _buildLockForm() {
     final now = DateTime.now();
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 480),
+      constraints: const BoxConstraints(maxWidth: 600),
       child: Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -207,7 +263,10 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
               Text('Lock a Month',
                   style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   // Month picker
                   SizedBox(
@@ -238,7 +297,6 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
                   // Year picker
                   SizedBox(
                     width: 110,
@@ -268,9 +326,44 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  // Bank account picker
+                  if (_bankAccounts.isNotEmpty)
+                    SizedBox(
+                      width: 200,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Bank Account',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
+                        child: DropdownButton<String>(
+                          value: _pickerBankAccountId,
+                          isExpanded: true,
+                          isDense: true,
+                          underline: const SizedBox.shrink(),
+                          items: _bankAccounts
+                              .map((a) => DropdownMenuItem(
+                                    value: a.id,
+                                    child: Text(a.accountName,
+                                        style: const TextStyle(fontSize: 13),
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: _saving
+                              ? null
+                              : (v) =>
+                                  setState(() => _pickerBankAccountId = v),
+                        ),
+                      ),
+                    ),
                   FilledButton.icon(
-                    onPressed: _saving || _pickerAlreadyLocked ? null : _lockMonth,
+                    onPressed: _saving ||
+                            _pickerAlreadyLocked ||
+                            _pickerBankAccountId == null
+                        ? null
+                        : _lockMonth,
                     icon: _saving
                         ? const SizedBox(
                             width: 14,
@@ -289,39 +382,71 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
     );
   }
 
-  Widget _buildLockedList(bool isAdmin) {
-    if (_locked.isEmpty) {
+  Widget _buildLockedTable(bool isAdmin) {
+    if (_bankAccounts.isEmpty) {
+      return const Center(
+        child: Text('No bank accounts found.',
+            style: TextStyle(color: Colors.black54)),
+      );
+    }
+
+    // Collect all distinct months across all locks, sorted descending.
+    final months = _lockedMap.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    if (months.isEmpty) {
       return const Center(
         child: Text('No months are currently locked.',
             style: TextStyle(color: Colors.black54)),
       );
     }
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 600),
-      child: ListView.separated(
-        itemCount: _locked.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (_, i) {
-          final entry = _locked[i];
-          return ListTile(
-            leading: const Icon(Icons.lock_outlined, color: Colors.orange),
-            title: Text(_formatMonthYear(entry.monthYear),
-                style: const TextStyle(fontWeight: FontWeight.w500)),
-            subtitle: Text('Locked on ${_formatDate(entry.lockedAt)}',
-                style: const TextStyle(fontSize: 12)),
-            trailing: isAdmin
-                ? TextButton.icon(
-                    onPressed: _saving ? null : () => _unlockMonth(entry),
-                    icon: const Icon(Icons.lock_open_outlined, size: 16),
-                    label: const Text('Unlock'),
-                    style: TextButton.styleFrom(
-                        foregroundColor:
-                            Theme.of(context).colorScheme.error),
-                  )
-                : null,
-          );
-        },
+    return SingleChildScrollView(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(
+              Theme.of(context).colorScheme.surfaceContainerHighest),
+          columns: [
+            const DataColumn(label: Text('Month')),
+            ..._bankAccounts.map(
+              (a) => DataColumn(
+                label: Text(a.accountName,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+          rows: months.map((monthYear) {
+            final locksByAccount = _lockedMap[monthYear] ?? {};
+            return DataRow(
+              cells: [
+                DataCell(Text(_formatMonthYear(monthYear),
+                    style: const TextStyle(fontWeight: FontWeight.w500))),
+                ..._bankAccounts.map((account) {
+                  final entry = locksByAccount[account.id];
+                  if (entry == null) {
+                    return const DataCell(SizedBox.shrink());
+                  }
+                  return DataCell(
+                    Center(
+                      child: isAdmin
+                          ? IconButton(
+                              onPressed: _saving
+                                  ? null
+                                  : () => _unlockMonth(monthYear, account.id),
+                              icon: const Icon(Icons.lock_open_outlined,
+                                  size: 16),
+                              color: Theme.of(context).colorScheme.error,
+                              tooltip: 'Unlock',
+                            )
+                          : const Icon(Icons.lock_outlined,
+                              size: 16, color: Colors.orange),
+                    ),
+                  );
+                }),
+              ],
+            );
+          }).toList(),
+        ),
       ),
     );
   }
