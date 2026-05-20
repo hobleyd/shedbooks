@@ -5,6 +5,7 @@ import 'package:shelf/shelf.dart';
 
 import '../../application/bank_import/get_bank_imports_use_case.dart';
 import '../../application/bank_import/save_bank_imports_use_case.dart';
+import '../audit_changes.dart';
 import '../dto/bank_import_response.dart';
 import '../dto/save_bank_imports_request.dart';
 
@@ -52,6 +53,16 @@ class BankImportsHandler {
     }
 
     await _save.execute(entityId: entityId, rows: dto.rows);
+    _auditChanges(request)?.set({
+      'rows': dto.rows
+          .map((r) => {
+                'processDate': r.processDate,
+                'description': r.description,
+                'amountCents': r.amountCents,
+                'isDebit': r.isDebit,
+              })
+          .toList(),
+    });
     return Response(HttpStatus.noContent);
   }
 
@@ -59,6 +70,9 @@ class BankImportsHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

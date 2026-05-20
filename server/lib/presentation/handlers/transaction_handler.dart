@@ -233,6 +233,23 @@ class TransactionHandler {
     } catch (e) {
       return _serverError('Failed to save bank matches: $e');
     }
+
+    final matched = <Map<String, dynamic>>[];
+    for (final id in dto.transactionIds) {
+      try {
+        final tx = await _get.execute(id, entityId: entityId);
+        matched.add({
+          'receiptNumber': tx.receiptNumber,
+          'description': tx.description,
+          'date': tx.transactionDate.toIso8601String().substring(0, 10),
+          'amountCents': tx.totalAmount,
+        });
+      } catch (_) {}
+    }
+    if (matched.isNotEmpty) {
+      _auditChanges(request)?.set({'matched': matched});
+    }
+
     return Response(204);
   }
 
