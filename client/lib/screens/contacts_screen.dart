@@ -96,6 +96,7 @@ class ContactsScreen extends StatefulWidget {
 class _ContactsScreenState extends State<ContactsScreen> {
   List<_ContactRow> _rows = [];
   final Set<String> _pendingDeletions = {};
+  final Set<String> _bankDetailsRevealed = {};
   bool _loading = true;
   bool _saving = false;
   bool _merging = false;
@@ -164,6 +165,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
         _rows = entries.map(_ContactRow.fromEntry).toList();
         _pendingDeletions.clear();
         _selectedIds.clear();
+        _bankDetailsRevealed.clear();
         _contactsWithTransactions = contactsWithTxns;
         _isDirty = false;
         _loading = false;
@@ -602,6 +604,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SizedBox(width: 8),
           SizedBox(width: 120, child: _colHeader('Account No.', 5)),
           const SizedBox(width: 8),
+          const SizedBox(width: 32), // bank reveal toggle
+          const SizedBox(width: 8),
           SizedBox(width: 160, child: _colHeader('Type', 2)),
           const SizedBox(width: 8),
           SizedBox(
@@ -623,6 +627,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final hasTxns = row.id != null && _contactsWithTransactions.contains(row.id);
     final busy = _saving || _merging;
     final bool canEdit = context.watch<AuthState>().canEdit;
+
+    final hasBankDetails = row.bsbController.text.isNotEmpty ||
+        row.accountNumberController.text.isNotEmpty;
+    final rowKey = row.id ?? '';
+    final bankHidden =
+        !row.isNew && hasBankDetails && !_bankDetailsRevealed.contains(rowKey);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -660,45 +670,75 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SizedBox(width: 8),
           _buildAbnField(row, isCompany),
           const SizedBox(width: 8),
-          SizedBox(
-            width: 90,
-            child: TextFormField(
-              controller: row.bsbController,
-              enabled: !_saving && canEdit,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d-]')),
-                LengthLimitingTextInputFormatter(7),
-              ],
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                isDense: true,
-                hintText: 'XXX-XXX',
+          if (bankHidden)
+            _buildBankMask(90, '•••-•••')
+          else
+            SizedBox(
+              width: 90,
+              child: TextFormField(
+                controller: row.bsbController,
+                enabled: !_saving && canEdit,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[\d-]')),
+                  LengthLimitingTextInputFormatter(7),
+                ],
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  isDense: true,
+                  hintText: 'XXX-XXX',
+                ),
+                onChanged: (_) => _markDirty(),
               ),
-              onChanged: (_) => _markDirty(),
             ),
-          ),
+          const SizedBox(width: 8),
+          if (bankHidden)
+            _buildBankMask(120, '••••••••••')
+          else
+            SizedBox(
+              width: 120,
+              child: TextFormField(
+                controller: row.accountNumberController,
+                enabled: !_saving && canEdit,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  isDense: true,
+                ),
+                onChanged: (_) => _markDirty(),
+              ),
+            ),
           const SizedBox(width: 8),
           SizedBox(
-            width: 120,
-            child: TextFormField(
-              controller: row.accountNumberController,
-              enabled: !_saving && canEdit,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(10),
-              ],
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                isDense: true,
-              ),
-              onChanged: (_) => _markDirty(),
-            ),
+            width: 32,
+            child: hasBankDetails && !row.isNew
+                ? AnimatedRotation(
+                    turns: bankHidden ? 0 : 0.5,
+                    duration: const Duration(milliseconds: 300),
+                    child: IconButton(
+                      iconSize: 18,
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.autorenew),
+                      tooltip:
+                          bankHidden ? 'Show bank details' : 'Hide bank details',
+                      onPressed: () => setState(() {
+                        if (bankHidden) {
+                          _bankDetailsRevealed.add(rowKey);
+                        } else {
+                          _bankDetailsRevealed.remove(rowKey);
+                        }
+                      }),
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
           const SizedBox(width: 8),
           SizedBox(
@@ -805,6 +845,26 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBankMask(double width, String placeholder) {
+    return SizedBox(
+      width: width,
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          isDense: true,
+        ),
+        child: Text(
+          placeholder,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+            letterSpacing: 3,
+          ),
+        ),
       ),
     );
   }
