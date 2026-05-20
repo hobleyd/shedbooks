@@ -14,7 +14,7 @@ class MergeContactsUseCase {
 
   const MergeContactsUseCase(this._contacts, this._transactions);
 
-  Future<Contact> execute({
+  Future<({Contact kept, List<String> mergedNames})> execute({
     required String keepId,
     required List<String> mergeIds,
     required String entityId,
@@ -22,10 +22,11 @@ class MergeContactsUseCase {
     final kept = await _contacts.findById(keepId, entityId: entityId);
     if (kept == null) throw ContactNotFoundException(keepId);
 
+    final mergedNames = <String>[];
     for (final id in mergeIds) {
-      if (await _contacts.findById(id, entityId: entityId) == null) {
-        throw ContactNotFoundException(id);
-      }
+      final contact = await _contacts.findById(id, entityId: entityId);
+      if (contact == null) throw ContactNotFoundException(id);
+      mergedNames.add(contact.name);
     }
 
     await _transactions.reassignContact(mergeIds, keepId, entityId: entityId);
@@ -34,6 +35,6 @@ class MergeContactsUseCase {
       await _contacts.delete(id, entityId: entityId);
     }
 
-    return kept;
+    return (kept: kept, mergedNames: mergedNames);
   }
 }

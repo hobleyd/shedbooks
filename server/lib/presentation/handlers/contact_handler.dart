@@ -230,13 +230,17 @@ class ContactHandler {
     }
 
     try {
-      final contact = await _merge.execute(
+      final (:kept, :mergedNames) = await _merge.execute(
         keepId: keepId,
         mergeIds: mergeIds,
         entityId: entityId,
       );
+      _auditChanges(request)?.set({
+        'kept': kept.name,
+        'merged': mergedNames,
+      });
       return Response.ok(
-        ContactResponse.fromEntity(contact).toJsonString(),
+        ContactResponse.fromEntity(kept).toJsonString(),
         headers: _jsonHeaders,
       );
     } on ContactNotFoundException catch (e) {
