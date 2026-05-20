@@ -6,6 +6,7 @@ import 'package:shelf/shelf.dart';
 
 import '../../application/bank_account/list_bank_accounts_use_case.dart';
 import '../../infrastructure/pdf/cba_statement_parser.dart';
+import '../audit_changes.dart';
 
 /// Shelf request handlers for /bank-reconciliation.
 class BankReconciliationHandler {
@@ -53,6 +54,12 @@ class BankReconciliationHandler {
             {'error': 'Unable to parse statement — unsupported format'}),
         headers: _jsonHeaders,
       );
+    }
+
+    final fileName = request.headers['x-file-name'];
+    if (fileName != null) {
+      (request.context['audit.changes'] as AuditChanges?)
+          ?.set({'fileName': fileName});
     }
 
     return Response.ok(jsonEncode(data.toJson()), headers: _jsonHeaders);

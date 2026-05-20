@@ -59,13 +59,15 @@ class ApiClient {
   }
 
   /// Sends a POST request to [path] with raw [bytes] as the body.
-  Future<http.Response> postBytes(String path, List<int> bytes) async {
+  Future<http.Response> postBytes(String path, List<int> bytes,
+      {Map<String, String>? headers}) async {
     final token = _getToken();
     final response = await http.post(
       Uri.parse('$_baseUrl$path'),
       headers: {
         'Content-Type': 'application/octet-stream',
         if (token != null) 'Authorization': 'Bearer $token',
+        ...?headers,
       },
       body: bytes,
     );

@@ -81,8 +81,8 @@ class TransactionReceiptPdf {
                     pw.Row(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Expanded(child: _infoField('Contact', contact?.name ?? '—')),
-                        pw.Expanded(child: _infoField('GL Account', glAccount?.description ?? '—')),
+                        pw.Expanded(child: _infoField('Contact', contact?.name ?? '-')),
+                        pw.Expanded(child: _infoField('GL Account', glAccount?.description ?? '-')),
                       ],
                     ),
                     pw.SizedBox(height: 16),
@@ -90,7 +90,7 @@ class TransactionReceiptPdf {
                     pw.Text('DESCRIPTION',
                         style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
                     pw.SizedBox(height: 2),
-                    pw.Text(transaction.description.isNotEmpty ? transaction.description : '—', 
+                    pw.Text(transaction.description.isNotEmpty ? transaction.description : '-', 
                         style: const pw.TextStyle(fontSize: 10)),
                     
                     pw.Spacer(),

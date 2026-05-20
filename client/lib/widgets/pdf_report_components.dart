@@ -13,7 +13,7 @@ class PdfReportComponents {
             style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 3),
         pw.Text(
-          'ABN: ${Formatters.formatAbn(entity.abn)}  |  ${entity.incorporationIdentifier}',
+          "ABN: ${Formatters.formatAbn(entity.abn)} | ${entity.incorporationIdentifier}",
           style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
         ),
         pw.SizedBox(height: 14),

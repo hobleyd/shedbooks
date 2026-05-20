@@ -229,7 +229,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Text(
-              '${entity?.name ?? ''}  —  Profit & Loss  —  $_periodShortLabel (continued)',
+              "${entity?.name ?? ""} - Profit and Loss - $_periodShortLabel (continued)",
               style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
             ),
             pw.Divider(color: PdfColors.grey400),

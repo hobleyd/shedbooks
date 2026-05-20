@@ -330,8 +330,15 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       row.status = BankMatchStatus.autoMatched;
       row.matched = candidates;
     } else if (candidates.length > 1) {
-      row.status = BankMatchStatus.needsSelection;
-      row.matched = candidates;
+      final disambiguated = disambiguateByContactName(
+          candidates, row.description, _contactNames);
+      if (disambiguated != null) {
+        row.status = BankMatchStatus.autoMatched;
+        row.matched = disambiguated;
+      } else {
+        row.status = BankMatchStatus.needsSelection;
+        row.matched = candidates;
+      }
     } else {
       final alreadyMatched = _allTransactions.any((t) =>
           t.bankMatched &&
@@ -389,8 +396,15 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       row.status = BankMatchStatus.autoMatched;
       row.matched = candidates;
     } else if (candidates.length > 1) {
-      row.status = BankMatchStatus.needsSelection;
-      row.matched = candidates;
+      final disambiguated = disambiguateByContactName(
+          candidates, row.description, _contactNames);
+      if (disambiguated != null) {
+        row.status = BankMatchStatus.autoMatched;
+        row.matched = disambiguated;
+      } else {
+        row.status = BankMatchStatus.needsSelection;
+        row.matched = candidates;
+      }
     } else {
       final alreadyMatched = _allTransactions.any((t) =>
           t.bankMatched &&

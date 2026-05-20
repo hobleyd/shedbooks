@@ -6,6 +6,7 @@ import 'package:shelf/shelf.dart';
 import '../../application/locked_month/list_locked_months_use_case.dart';
 import '../../application/locked_month/lock_month_use_case.dart';
 import '../../application/locked_month/unlock_month_use_case.dart';
+import '../audit_changes.dart';
 import '../dto/lock_month_request.dart';
 import '../dto/locked_month_response.dart';
 
@@ -56,6 +57,10 @@ class LockedMonthHandler {
 
     try {
       await _lock.execute(entityId, dto.monthYear, dto.bankAccountId);
+      (request.context['audit.changes'] as AuditChanges?)?.set({
+        'monthYear': dto.monthYear,
+        'bankAccountId': dto.bankAccountId,
+      });
     } on ArgumentError catch (e) {
       return _badRequest(e.message.toString());
     }
@@ -70,6 +75,10 @@ class LockedMonthHandler {
     if (entityId == null) return _orgRequired();
 
     await _unlock.execute(entityId, monthYear, bankAccountId);
+    (request.context['audit.changes'] as AuditChanges?)?.set({
+      'monthYear': monthYear,
+      'bankAccountId': bankAccountId,
+    });
     return Response(204);
   }
 

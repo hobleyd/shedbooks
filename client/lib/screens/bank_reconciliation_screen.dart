@@ -184,7 +184,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
-    final bytes = result.files.first.bytes;
+    final file = result.files.first;
+    final bytes = file.bytes;
     if (bytes == null) return;
 
     setState(() {
@@ -195,7 +196,10 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     try {
       final client = context.read<ApiClient>();
       final res = await client.postBytes(
-          '/bank-reconciliation/parse-statement', bytes);
+        '/bank-reconciliation/parse-statement',
+        bytes,
+        headers: {'X-File-Name': file.name},
+      );
 
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -293,16 +297,21 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   }
 
   int _computedClosingCents() {
-    // Use only transactions matched to this statement's rows — all-month
-    // transactions would include other bank accounts and skew the balance.
+    // Use bank row amounts (not ledger amounts) to avoid double-counting a
+    // ledger transaction that is split across multiple bank rows (e.g. a
+    // single P-26013 $5.23 matched to both a $0.55 and a $4.68 bank row).
+    // Unresolved rows (unmatched / needsSelection) are excluded so an
+    // incomplete reconciliation surfaces as a balance difference.
     int balance = _openingCents;
     for (final row in _rows) {
-      for (final t in row.matched) {
-        if (t.transactionType == 'debit') {
-          balance -= t.totalAmount;
-        } else {
-          balance += t.totalAmount;
-        }
+      final isResolved = row.matched.isNotEmpty ||
+          row.status == BankMatchStatus.skipped ||
+          row.status == BankMatchStatus.alreadyImported;
+      if (!isResolved) continue;
+      if (row.source.isDebit) {
+        balance -= row.source.amountCents;
+      } else {
+        balance += row.source.amountCents;
       }
     }
     return balance;
@@ -552,8 +561,15 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       row.status = BankMatchStatus.autoMatched;
       row.matched = candidates;
     } else if (candidates.length > 1) {
-      row.status = BankMatchStatus.needsSelection;
-      row.matched = candidates;
+      final disambiguated = disambiguateByContactName(
+          candidates, row.source.description, _contactNames);
+      if (disambiguated != null) {
+        row.status = BankMatchStatus.autoMatched;
+        row.matched = disambiguated;
+      } else {
+        row.status = BankMatchStatus.needsSelection;
+        row.matched = candidates;
+      }
     } else {
       final already = _allTransactions.any((t) =>
           t.bankMatched &&
@@ -610,8 +626,15 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       row.status = BankMatchStatus.autoMatched;
       row.matched = candidates;
     } else if (candidates.length > 1) {
-      row.status = BankMatchStatus.needsSelection;
-      row.matched = candidates;
+      final disambiguated = disambiguateByContactName(
+          candidates, row.source.description, _contactNames);
+      if (disambiguated != null) {
+        row.status = BankMatchStatus.autoMatched;
+        row.matched = disambiguated;
+      } else {
+        row.status = BankMatchStatus.needsSelection;
+        row.matched = candidates;
+      }
     } else {
       final already = _allTransactions.any((t) =>
           t.bankMatched &&
@@ -677,7 +700,6 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     final month = _yearMonth(row.processDate);
     final candidates = _allTransactions
         .where((t) =>
-            !t.bankMatched &&
             (!_reservedIds.contains(t.id) || _partialMatchIds.contains(t.id)) &&
             t.transactionType == type &&
             _yearMonth(t.transactionDate) == month)

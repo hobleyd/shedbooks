@@ -33,10 +33,10 @@ class _BasReportScreenState extends State<BasReportScreen> {
   late int _year;
 
   static const _quarterMonthNames = {
-    1: 'January – March',
-    2: 'April – June',
-    3: 'July – September',
-    4: 'October – December',
+    1: "January - March",
+    2: "April - June",
+    3: "July - September",
+    4: "October - December",
   };
 
   @override
@@ -203,7 +203,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
               style: pw.TextStyle(
                   fontSize: 15, fontWeight: pw.FontWeight.bold)),
           pw.Text(
-            'Q$_quarter $_year  —  ${_quarterMonthNames[_quarter]}',
+            "Q$_quarter $_year - ${_quarterMonthNames[_quarter]}",
             style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
           ),
           pw.Text('Period: $_periodLabel',
@@ -303,7 +303,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(
-                'Period: $_periodLabel  ·  '
+                'Period: $_periodLabel - '
                 '${txns.length} transaction${txns.length == 1 ? '' : 's'}',
                 style:
                     pw.TextStyle(fontSize: 7, color: PdfColors.grey400),
@@ -503,8 +503,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
         _buildPayrollNote(),
         const SizedBox(height: 8),
         Text(
-          'Period: $_periodLabel   ·   '
-          '${txns.length} transaction${txns.length == 1 ? '' : 's'}',
+          'Period: $_periodLabel - ${txns.length} transaction${txns.length == 1 ? "" : "s"}',
           style: Theme.of(context)
               .textTheme
               .bodySmall
@@ -528,7 +527,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Q${_quarter} $_year  —  ${_quarterMonthNames[_quarter]}',
+                  "Q$_quarter $_year - ${_quarterMonthNames[_quarter]}",
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
@@ -536,7 +535,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
                   Text(e.name,
                       style: Theme.of(context).textTheme.bodyMedium),
                   Text(
-                    'ABN ${Formatters.formatAbn(e.abn)}  ·  ${e.incorporationIdentifier}',
+                    "ABN ${Formatters.formatAbn(e.abn)} | ${e.incorporationIdentifier}",
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall
@@ -544,7 +543,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
                   ),
                 ] else
                   Text(
-                    'Entity details not configured — visit Admin › Entity',
+                    "Entity details not configured - visit Admin > Entity",
                     style: Theme.of(context)
                         .textTheme
                         .bodySmall

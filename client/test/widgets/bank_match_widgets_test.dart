@@ -7,10 +7,11 @@ TransactionEntry _tx({
   required String receipt,
   required int total,
   String date = '2026-04-01',
+  String contactId = 'c1',
 }) =>
     TransactionEntry(
       id: id,
-      contactId: 'c1',
+      contactId: contactId,
       generalLedgerId: 'gl1',
       receiptNumber: receipt,
       description: '',
@@ -108,6 +109,50 @@ void main() {
       final records = List.generate(
           21, (i) => _tx(id: '$i', receipt: 'P-$i', total: 100));
       expect(findMatchingSubset(records, 100), isNull);
+    });
+  });
+
+  group('disambiguateByContactName', () {
+    final t1 = _tx(id: '1', receipt: 'R1', total: 1000, contactId: 'ca');
+    final t2 = _tx(id: '2', receipt: 'R2', total: 1000, contactId: 'cb');
+    final t3 = _tx(id: '3', receipt: 'R3', total: 1000, contactId: 'cc');
+
+    const names = {'ca': 'Acme Corp', 'cb': 'Beta Ltd', 'cc': 'Gamma Inc'};
+
+    test('exactly one candidate name found — returns it', () {
+      final result = disambiguateByContactName(
+          [t1, t2, t3], 'Payment from ACME CORP ref 123', names);
+      expect(result, equals([t1]));
+    });
+
+    test('contact name match is case-insensitive', () {
+      final result = disambiguateByContactName(
+          [t1, t2], 'acme corp transfer', names);
+      expect(result, equals([t1]));
+    });
+
+    test('no contact name found — returns null', () {
+      final result = disambiguateByContactName(
+          [t1, t2], 'Transfer 12345', names);
+      expect(result, isNull);
+    });
+
+    test('multiple contact names found — returns null', () {
+      final result = disambiguateByContactName(
+          [t1, t2], 'Acme Corp and Beta Ltd', names);
+      expect(result, isNull);
+    });
+
+    test('empty candidates — returns null', () {
+      final result = disambiguateByContactName([], 'Acme Corp', names);
+      expect(result, isNull);
+    });
+
+    test('contact with empty name is ignored', () {
+      final t4 = _tx(id: '4', receipt: 'R4', total: 1000, contactId: 'cd');
+      final result = disambiguateByContactName(
+          [t1, t4], 'Acme Corp payment', {...names, 'cd': ''});
+      expect(result, equals([t1]));
     });
   });
 }

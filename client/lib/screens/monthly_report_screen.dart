@@ -6,6 +6,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import '../auth/auth_state.dart';
+import '../models/bank_account_entry.dart';
+import '../models/closing_bank_balance_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/pnl_data.dart';
@@ -26,14 +28,18 @@ class _MonthSummary {
   final int month;
   int incomeCents = 0;
   int outgoingsCents = 0;
+  Map<String, int> bankBalances = {}; // bankAccountId -> balanceCents
   _MonthSummary(this.month);
   int get netCents => incomeCents - outgoingsCents;
+  int get totalBalanceCents => bankBalances.values.fold(0, (a, b) => a + b);
 }
 
 class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   final TextEditingController _narrativeController = TextEditingController();
   EntityDetails? _entityDetails;
   List<TransactionEntry> _allTransactions = [];
+  List<BankAccountEntry> _bankAccounts = [];
+  List<ClosingBankBalanceEntry> _closingBalances = [];
   Map<String, GeneralLedgerEntry> _glMap = {};
   bool _loading = true;
   List<PlatformFile> _bankStatements = [];
@@ -51,6 +57,8 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         client.get('/entity-details'),
         client.get('/transactions'),
         client.get('/general-ledger'),
+        client.get('/bank-accounts'),
+        client.get('/closing-bank-balances'),
       ]);
       if (!mounted) return;
 
@@ -70,6 +78,12 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
             .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
             .toList();
         _glMap = {for (final g in glList) g.id: g};
+        _bankAccounts = (jsonDecode(results[3].body) as List)
+            .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _closingBalances = (jsonDecode(results[4].body) as List)
+            .map((e) => ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
         _loading = false;
       });
     } catch (_) {
@@ -121,7 +135,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     final generated = Formatters.formatDateShort(DateTime.now());
 
     // Dashboard Data (Current Year Summary)
-    final dashboardMonths = _buildMonthSummaries(_allTransactions, reportYear);
+    final dashboardMonths = _buildMonthSummaries(_allTransactions, _closingBalances, reportYear);
 
     // P&L Data for the report month
     final pnlData = PnLData.compute(
@@ -139,7 +153,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
 
     doc.addPage(pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(50),
+      margin: const pw.EdgeInsets.all(30), // Smaller margin to fit more columns
       footer: (ctx) => PdfReportComponents.pageFooter(ctx, generated),
       build: (ctx) => [
         // Header
@@ -152,7 +166,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
               ),
               pw.SizedBox(height: 8),
               pw.Text(
-                'Treasurer’s Financial Report – $reportMonthName $reportYear',
+                "Treasurer's Financial Report - $reportMonthName $reportYear",
                 style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
               ),
               pw.SizedBox(height: 4),
@@ -163,36 +177,36 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
             ],
           ),
         ),
-        pw.SizedBox(height: 32),
+        pw.SizedBox(height: 24),
 
         // Narrative
         if (narrative.isNotEmpty) ...[
           pw.Text('Narrative', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 8),
-          pw.Text(narrative, style: const pw.TextStyle(fontSize: 11)),
-          pw.SizedBox(height: 32),
+          pw.Text(narrative, style: const pw.TextStyle(fontSize: 10)),
+          pw.SizedBox(height: 24),
         ],
 
         // Dashboard Summary Table
         pw.Text('Monthly Performance Summary ($reportYear)',
-            style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 8),
         _buildDashboardTable(dashboardMonths, monthNames),
-        pw.SizedBox(height: 32),
+        pw.SizedBox(height: 24),
       ],
     ));
 
     // Append P&L on a separate page
     doc.addPage(pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(50),
+      margin: const pw.EdgeInsets.all(30),
       header: (ctx) {
-        if (ctx.pageNumber == 1) return pw.SizedBox(height: 0); // Not applicable for the second doc.addPage but good practice
+        if (ctx.pageNumber == 1) return pw.SizedBox(height: 0); 
         return pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Text(
-              '${entity?.name ?? ''}  —  Profit & Loss  —  $reportMonthName $reportYear (continued)',
+              '${entity?.name ?? ''}  -  Profit & Loss  -  $reportMonthName $reportYear (continued)',
               style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
             ),
             pw.Divider(color: PdfColors.grey400),
@@ -230,7 +244,8 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     await Printing.layoutPdf(onLayout: (_) async => doc.save());
   }
 
-  List<_MonthSummary> _buildMonthSummaries(List<TransactionEntry> transactions, int year) {
+  List<_MonthSummary> _buildMonthSummaries(
+      List<TransactionEntry> transactions, List<ClosingBankBalanceEntry> balances, int year) {
     final now = DateTime.now();
     final maxMonth = year == now.year ? now.month : 12;
     final summaries = {for (var m = 1; m <= maxMonth; m++) m: _MonthSummary(m)};
@@ -247,10 +262,24 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         summaries[month]!.outgoingsCents += t.totalAmount;
       }
     }
+
+    for (final b in balances) {
+      final parts = b.balanceDate.split('-');
+      if (parts.length < 2) continue;
+      final bYear = int.tryParse(parts[0]);
+      final month = int.tryParse(parts[1]);
+      if (bYear != year || month == null || !summaries.containsKey(month)) continue;
+      summaries[month]!.bankBalances[b.bankAccountId] = b.balanceCents;
+    }
+
     return summaries.values.toList();
   }
 
   pw.Widget _buildDashboardTable(List<_MonthSummary> months, List<String> monthNames) {
+    final totalIncome = months.fold(0, (s, m) => s + m.incomeCents);
+    final totalOutgoings = months.fold(0, (s, m) => s + m.outgoingsCents);
+    final totalNet = totalIncome - totalOutgoings;
+
     return pw.Table(
       border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
       children: [
@@ -258,9 +287,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
           decoration: const pw.BoxDecoration(color: PdfColors.grey100),
           children: [
             _tableHeader('Month'),
-            _tableHeader('Income'),
-            _tableHeader('Outgoings'),
-            _tableHeader('Net'),
+            _tableHeader('Income', align: pw.TextAlign.right),
+            _tableHeader('Outgoings', align: pw.TextAlign.right),
+            _tableHeader('Net', align: pw.TextAlign.right),
+            ..._bankAccounts.map((a) => _tableHeader(a.accountName, align: pw.TextAlign.right)),
+            _tableHeader('Total Balance', align: pw.TextAlign.right),
           ],
         ),
         ...months.map((m) => pw.TableRow(
@@ -271,22 +302,47 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                 _tableCell(Formatters.formatCents(m.netCents),
                     align: pw.TextAlign.right,
                     color: m.netCents < 0 ? PdfColors.red700 : PdfColors.black),
+                ..._bankAccounts.map((a) {
+                  final bal = m.bankBalances[a.id];
+                  return _tableCell(bal == null ? '-' : Formatters.formatCents(bal), align: pw.TextAlign.right);
+                }),
+                _tableCell(m.bankBalances.isEmpty ? '-' : Formatters.formatCents(m.totalBalanceCents),
+                    align: pw.TextAlign.right,
+                    fontWeight: pw.FontWeight.bold),
               ],
             )),
+        // Footer Row
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.grey50),
+          children: [
+            _tableCell('Total', fontWeight: pw.FontWeight.bold),
+            _tableCell(Formatters.formatCents(totalIncome), align: pw.TextAlign.right, fontWeight: pw.FontWeight.bold),
+            _tableCell(Formatters.formatCents(totalOutgoings), align: pw.TextAlign.right, fontWeight: pw.FontWeight.bold),
+            _tableCell(Formatters.formatCents(totalNet),
+                align: pw.TextAlign.right,
+                fontWeight: pw.FontWeight.bold,
+                color: totalNet < 0 ? PdfColors.red700 : PdfColors.black),
+            ..._bankAccounts.map((_) => _tableCell('')),
+            _tableCell(''),
+          ],
+        ),
       ],
     );
   }
 
-  pw.Widget _tableHeader(String text) => pw.Padding(
-        padding: const pw.EdgeInsets.all(5),
-        child: pw.Text(text, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+  pw.Widget _tableHeader(String text, {pw.TextAlign align = pw.TextAlign.left}) => pw.Padding(
+        padding: const pw.EdgeInsets.all(4),
+        child: pw.Text(text, 
+            textAlign: align,
+            style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
       );
 
-  pw.Widget _tableCell(String text, {pw.TextAlign align = pw.TextAlign.left, PdfColor? color}) =>
+  pw.Widget _tableCell(String text, {pw.TextAlign align = pw.TextAlign.left, PdfColor? color, pw.FontWeight? fontWeight}) =>
       pw.Padding(
-        padding: const pw.EdgeInsets.all(5),
+        padding: const pw.EdgeInsets.all(4),
         child: pw.Text(text,
-            textAlign: align, style: pw.TextStyle(fontSize: 9, color: color ?? PdfColors.black)),
+            textAlign: align, 
+            style: pw.TextStyle(fontSize: 7, color: color ?? PdfColors.black, fontWeight: fontWeight)),
       );
 
   @override
@@ -331,7 +387,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Treasurer’s Financial Report – $reportMonth $reportYear',
+                  "Treasurer's Financial Report - $reportMonth $reportYear",
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),

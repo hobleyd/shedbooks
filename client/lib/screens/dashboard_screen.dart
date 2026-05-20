@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../models/bank_account_entry.dart';
 import '../models/closing_bank_balance_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/locked_month_entry.dart';
@@ -52,6 +53,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _loadError;
   List<TransactionEntry> _allTransactions = [];
   List<GeneralLedgerEntry> _glEntries = [];
+  List<BankAccountEntry> _bankAccounts = [];
   List<_MonthSummary> _months = [];
   List<LockedMonthEntry> _lockedMonths = [];
   List<ClosingBankBalanceEntry> _closingBalances = [];
@@ -87,6 +89,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         client.get('/dashboard-preferences'),
         client.get('/locked-months'),
         client.get('/closing-bank-balances'),
+        client.get('/bank-accounts'),
       ]);
       if (!mounted) return;
 
@@ -130,11 +133,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
+      final bankAccounts = (jsonDecode(results[5].body) as List)
+          .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
+          .toList();
+
       setState(() {
         _allTransactions = transactions;
         _glEntries = glEntries;
         _lockedMonths = lockedMonths;
         _closingBalances = closingBalances;
+        _bankAccounts = bankAccounts;
         _selectedPairs
           ..clear()
           ..addAll(savedPairs);
@@ -237,15 +245,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _lockedMonths.any((l) => l.monthYear == key);
   }
 
-  /// Returns the summed closing bank balance cents for [month] in [_viewYear],
-  /// or null if no closing balances exist for that month.
-  int? _monthEndCents(int month) {
+  /// Returns a map of bankAccountId -> balanceCents for [month] in [_viewYear].
+  Map<String, int> _monthEndBalances(int month) {
     final yearMonth = '$_viewYear-${month.toString().padLeft(2, '0')}';
     final matches = _closingBalances
         .where((b) => b.balanceDate.startsWith(yearMonth))
         .toList();
-    if (matches.isEmpty) return null;
-    return matches.fold<int>(0, (sum, b) => sum + b.balanceCents);
+    return {for (final b in matches) b.bankAccountId: b.balanceCents};
   }
 
   bool get _canGoForwardYear => _viewYear < DateTime.now().year;
@@ -367,66 +373,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final totalOutgoings = _months.fold(0, (s, m) => s + m.outgoingsCents);
     final totalNet = totalIncome - totalOutgoings;
 
-    final headerStyle = Theme.of(context).textTheme.labelLarge;
-    const colWidth = 160.0;
+    final headerStyle = Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold);
+    const monthWidth = 140.0;
+    const colWidth = 120.0;
+    const accountWidth = 150.0;
+    const totalColWidth = 140.0;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          child: Row(
-            children: [
-              const SizedBox(width: 140),
-              SizedBox(
-                  width: colWidth,
-                  child: Text('Income', style: headerStyle, textAlign: TextAlign.right)),
-              SizedBox(
-                  width: colWidth,
-                  child: Text('Outgoings', style: headerStyle, textAlign: TextAlign.right)),
-              SizedBox(
-                  width: colWidth,
-                  child: Text('Net', style: headerStyle, textAlign: TextAlign.right)),
-              SizedBox(
-                  width: colWidth,
-                  child: Text('Month End', style: headerStyle, textAlign: TextAlign.right)),
-            ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Row(
+              children: [
+                const SizedBox(width: monthWidth),
+                SizedBox(
+                    width: colWidth,
+                    child: Text('Income',
+                        style: headerStyle, textAlign: TextAlign.right)),
+                SizedBox(
+                    width: colWidth,
+                    child: Text('Outgoings',
+                        style: headerStyle, textAlign: TextAlign.right)),
+                SizedBox(
+                    width: colWidth,
+                    child: Text('Net',
+                        style: headerStyle, textAlign: TextAlign.right)),
+                ..._bankAccounts.map((a) => SizedBox(
+                      width: accountWidth,
+                      child: Text(a.accountName,
+                          style: headerStyle,
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis),
+                    )),
+                SizedBox(
+                    width: totalColWidth,
+                    child: Text('Total Balance',
+                        style: headerStyle, textAlign: TextAlign.right)),
+              ],
+            ),
           ),
-        ),
-        const Divider(height: 1),
-        ..._months.map((m) => _buildMonthRow(m, colWidth)),
-        const Divider(height: 1, thickness: 2),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 140,
-                child: Text(
-                  'Total',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
+          const Divider(height: 1),
+          ..._months.map((m) => _buildMonthRow(m, colWidth, accountWidth, totalColWidth)),
+          const Divider(height: 1, thickness: 2),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: monthWidth,
+                  child: Text(
+                    'Total',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
                 ),
-              ),
-              SizedBox(
-                  width: colWidth,
-                  child: _amountText(totalIncome, isIncome: true, bold: true)),
-              SizedBox(
-                  width: colWidth,
-                  child: _amountText(totalOutgoings, isIncome: false, bold: true)),
-              SizedBox(width: colWidth, child: _netText(totalNet, bold: true)),
-              const SizedBox(width: colWidth),
-            ],
+                SizedBox(
+                    width: colWidth,
+                    child: _amountText(totalIncome, isIncome: true, bold: true)),
+                SizedBox(
+                    width: colWidth,
+                    child: _amountText(totalOutgoings, isIncome: false, bold: true)),
+                SizedBox(width: colWidth, child: _netText(totalNet, bold: true)),
+                ..._bankAccounts.map((_) => const SizedBox(width: accountWidth)),
+                const SizedBox(width: totalColWidth),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildMonthRow(_MonthSummary m, double colWidth) {
-    final monthEnd = _monthEndCents(m.month);
+  Widget _buildMonthRow(_MonthSummary m, double colWidth, double accountWidth, double totalColWidth) {
+    final balances = _monthEndBalances(m.month);
+    final totalBalance = balances.values.fold<int>(0, (sum, val) => sum + val);
+
     return Column(
       children: [
         Padding(
@@ -459,13 +485,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: colWidth,
                   child: _amountText(m.outgoingsCents, isIncome: false)),
               SizedBox(width: colWidth, child: _netText(m.netCents)),
+              ..._bankAccounts.map((account) {
+                final balance = balances[account.id];
+                return SizedBox(
+                  width: accountWidth,
+                  child: balance == null
+                      ? Text('—',
+                          style: const TextStyle(color: Colors.black38),
+                          textAlign: TextAlign.right)
+                      : _netText(balance),
+                );
+              }),
               SizedBox(
-                width: colWidth,
-                child: monthEnd == null
+                width: totalColWidth,
+                child: balances.isEmpty
                     ? Text('—',
-                        style: TextStyle(color: Colors.black38),
+                        style: const TextStyle(color: Colors.black38),
                         textAlign: TextAlign.right)
-                    : _netText(monthEnd),
+                    : _netText(totalBalance, bold: true),
               ),
             ],
           ),
@@ -481,7 +518,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final summaries = _buildGlSummaries();
     const colWidth = 160.0;
     const labelWidth = 280.0;
-    final headerStyle = Theme.of(context).textTheme.labelLarge;
+    final headerStyle = Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -565,23 +602,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             s.incomeGl.description,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        Icon(Icons.arrow_circle_up_outlined,
-                            size: 12, color: Colors.red.shade400),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            s.expenseGl.description,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: Colors.black54),
                           ),
                         ),
                       ],
@@ -708,11 +728,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Text(text, style: style, textAlign: TextAlign.right);
   }
 
-  Widget _netText(int netCents, {bool bold = false}) {
+  Widget _netText(int netCents, {bool bold = false, double? fontSize}) {
     final isNegative = netCents < 0;
     final style = TextStyle(
       color: isNegative ? Colors.red.shade700 : Colors.black87,
       fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+      fontSize: fontSize,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
     final text = netCents == 0

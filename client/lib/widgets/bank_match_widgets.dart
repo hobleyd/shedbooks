@@ -62,6 +62,27 @@ List<TransactionEntry>? findMatchingSubset(
   return null;
 }
 
+/// When [candidates] contains more than one transaction, attempts to narrow
+/// the list to a single entry by looking for a contact name inside
+/// [bankDescription]. Returns that one entry as a single-element list if
+/// exactly one candidate's contact name is found in the description;
+/// returns `null` if zero or more than one match (caller falls back to
+/// `needsSelection`).
+///
+/// [contactNames] is a map from transaction `contactId` to display name.
+List<TransactionEntry>? disambiguateByContactName(
+  List<TransactionEntry> candidates,
+  String bankDescription,
+  Map<String, String> contactNames,
+) {
+  final desc = bankDescription.toLowerCase();
+  final matches = candidates.where((t) {
+    final name = (contactNames[t.contactId] ?? '').toLowerCase().trim();
+    return name.isNotEmpty && desc.contains(name);
+  }).toList();
+  return matches.length == 1 ? matches : null;
+}
+
 // ── Widgets ───────────────────────────────────────────────────────────────────
 
 /// Icon + coloured label for a [BankMatchStatus].

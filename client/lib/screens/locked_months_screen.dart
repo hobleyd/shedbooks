@@ -427,19 +427,28 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                     return const DataCell(SizedBox.shrink());
                   }
                   return DataCell(
-                    Center(
-                      child: isAdmin
-                          ? IconButton(
-                              onPressed: _saving
-                                  ? null
-                                  : () => _unlockMonth(monthYear, account.id),
-                              icon: const Icon(Icons.lock_open_outlined,
-                                  size: 16),
-                              color: Theme.of(context).colorScheme.error,
-                              tooltip: 'Unlock',
-                            )
-                          : const Icon(Icons.lock_outlined,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(account.accountName,
+                            style: const TextStyle(fontSize: 13)),
+                        const SizedBox(width: 4),
+                        if (isAdmin)
+                          IconButton(
+                            onPressed: _saving
+                                ? null
+                                : () => _unlockMonth(monthYear, account.id),
+                            icon: const Icon(Icons.lock_open_outlined,
+                                size: 16),
+                            color: Theme.of(context).colorScheme.error,
+                            tooltip: 'Unlock',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          )
+                        else
+                          const Icon(Icons.lock_outlined,
                               size: 16, color: Colors.orange),
+                      ],
                     ),
                   );
                 }),
