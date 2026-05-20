@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:shelf/shelf.dart';
 
 import '../../application/contact/get_contact_use_case.dart';
+import '../../application/general_ledger/get_general_ledger_use_case.dart';
 import '../../application/transaction/bank_match_transactions_use_case.dart';
 import '../../application/transaction/create_transaction_use_case.dart';
 import '../../application/transaction/delete_transaction_use_case.dart';
@@ -28,6 +29,7 @@ class TransactionHandler {
   final DeleteTransactionUseCase _delete;
   final BankMatchTransactionsUseCase _bankMatch;
   final GetContactUseCase _getContact;
+  final GetGeneralLedgerUseCase _getGeneralLedger;
 
   const TransactionHandler({
     required CreateTransactionUseCase create,
@@ -37,13 +39,15 @@ class TransactionHandler {
     required DeleteTransactionUseCase delete,
     required BankMatchTransactionsUseCase bankMatch,
     required GetContactUseCase getContact,
+    required GetGeneralLedgerUseCase getGeneralLedger,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
         _delete = delete,
         _bankMatch = bankMatch,
-        _getContact = getContact;
+        _getContact = getContact,
+        _getGeneralLedger = getGeneralLedger;
 
   /// GET /transactions
   Future<Response> handleList(Request request) async {
@@ -89,7 +93,8 @@ class TransactionHandler {
         transactionDate: dto.transactionDate,
       );
       final contactLabel = await _contactLabel(transaction.contactId, entityId);
-      _auditChanges(request)?.set(_txSnapshot(transaction, contactLabel));
+      final glLabel = await _glLabel(transaction.generalLedgerId, entityId);
+      _auditChanges(request)?.set(_txSnapshot(transaction, contactLabel, glLabel));
       return Response(
         201,
         body: TransactionResponse.fromEntity(transaction).toJsonString(),
@@ -156,11 +161,13 @@ class TransactionHandler {
         transactionDate: dto.transactionDate,
       );
       if (before != null) {
-        final beforeLabel = await _contactLabel(before.contactId, entityId);
-        final afterLabel = await _contactLabel(transaction.contactId, entityId);
+        final beforeContactLabel = await _contactLabel(before.contactId, entityId);
+        final afterContactLabel = await _contactLabel(transaction.contactId, entityId);
+        final beforeGlLabel = await _glLabel(before.generalLedgerId, entityId);
+        final afterGlLabel = await _glLabel(transaction.generalLedgerId, entityId);
         final diff = diffMaps(
-          _txSnapshot(before, beforeLabel),
-          _txSnapshot(transaction, afterLabel),
+          _txSnapshot(before, beforeContactLabel, beforeGlLabel),
+          _txSnapshot(transaction, afterContactLabel, afterGlLabel),
         );
         if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
       }
@@ -191,7 +198,8 @@ class TransactionHandler {
       await _delete.execute(id, entityId: entityId);
       if (before != null) {
         final contactLabel = await _contactLabel(before.contactId, entityId);
-        _auditChanges(request)?.set(_txSnapshot(before, contactLabel));
+        final glLabel = await _glLabel(before.generalLedgerId, entityId);
+        _auditChanges(request)?.set(_txSnapshot(before, contactLabel, glLabel));
       }
       return Response(204);
     } on MonthIsLockedException catch (e) {
@@ -245,9 +253,22 @@ class TransactionHandler {
     }
   }
 
-  static Map<String, dynamic> _txSnapshot(Transaction t, String contactLabel) => {
+  Future<String> _glLabel(String generalLedgerId, String entityId) async {
+    try {
+      final gl = await _getGeneralLedger.execute(generalLedgerId, entityId: entityId);
+      return '${gl.label} ($generalLedgerId)';
+    } catch (_) {
+      return generalLedgerId;
+    }
+  }
+
+  static Map<String, dynamic> _txSnapshot(
+    Transaction t,
+    String contactLabel,
+    String glLabel,
+  ) => {
         'contact': contactLabel,
-        'generalLedgerId': t.generalLedgerId,
+        'generalLedger': glLabel,
         'amount': t.amount,
         'gstAmount': t.gstAmount,
         'transactionType': t.transactionType.name,

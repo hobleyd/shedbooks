@@ -91,12 +91,13 @@ Handler buildRouter({
   final jwksClient = JwksClient(auth0Domain);
   final pool = DatabaseConnection.pool;
 
+  final generalLedgerRepository = PostgresGeneralLedgerRepository(pool);
   final generalLedgerHandler = GeneralLedgerHandler(
-    create: CreateGeneralLedgerUseCase(PostgresGeneralLedgerRepository(pool)),
-    get: GetGeneralLedgerUseCase(PostgresGeneralLedgerRepository(pool)),
-    list: ListGeneralLedgersUseCase(PostgresGeneralLedgerRepository(pool)),
-    update: UpdateGeneralLedgerUseCase(PostgresGeneralLedgerRepository(pool)),
-    delete: DeleteGeneralLedgerUseCase(PostgresGeneralLedgerRepository(pool)),
+    create: CreateGeneralLedgerUseCase(generalLedgerRepository),
+    get: GetGeneralLedgerUseCase(generalLedgerRepository),
+    list: ListGeneralLedgersUseCase(generalLedgerRepository),
+    update: UpdateGeneralLedgerUseCase(generalLedgerRepository),
+    delete: DeleteGeneralLedgerUseCase(generalLedgerRepository),
   );
 
   final contactRepository = PostgresContactRepository(pool, fieldEncryptor);
@@ -129,6 +130,7 @@ Handler buildRouter({
     delete: DeleteTransactionUseCase(transactionRepository, lockedMonthRepository),
     bankMatch: BankMatchTransactionsUseCase(transactionRepository),
     getContact: GetContactUseCase(contactRepository),
+    getGeneralLedger: GetGeneralLedgerUseCase(generalLedgerRepository),
   );
 
   final gstRateRepository = PostgresGstRateRepository(pool);
