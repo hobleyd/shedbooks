@@ -128,6 +128,7 @@ Handler buildRouter({
     update: UpdateTransactionUseCase(transactionRepository, lockedMonthRepository),
     delete: DeleteTransactionUseCase(transactionRepository, lockedMonthRepository),
     bankMatch: BankMatchTransactionsUseCase(transactionRepository),
+    getContact: GetContactUseCase(contactRepository),
   );
 
   final gstRateRepository = PostgresGstRateRepository(pool);

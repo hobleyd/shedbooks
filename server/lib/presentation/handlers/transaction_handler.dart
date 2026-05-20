@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
 
+import '../../application/contact/get_contact_use_case.dart';
 import '../../application/transaction/bank_match_transactions_use_case.dart';
 import '../../application/transaction/create_transaction_use_case.dart';
 import '../../application/transaction/delete_transaction_use_case.dart';
@@ -26,6 +27,7 @@ class TransactionHandler {
   final UpdateTransactionUseCase _update;
   final DeleteTransactionUseCase _delete;
   final BankMatchTransactionsUseCase _bankMatch;
+  final GetContactUseCase _getContact;
 
   const TransactionHandler({
     required CreateTransactionUseCase create,
@@ -34,12 +36,14 @@ class TransactionHandler {
     required UpdateTransactionUseCase update,
     required DeleteTransactionUseCase delete,
     required BankMatchTransactionsUseCase bankMatch,
+    required GetContactUseCase getContact,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
         _delete = delete,
-        _bankMatch = bankMatch;
+        _bankMatch = bankMatch,
+        _getContact = getContact;
 
   /// GET /transactions
   Future<Response> handleList(Request request) async {
@@ -84,7 +88,8 @@ class TransactionHandler {
         description: dto.description,
         transactionDate: dto.transactionDate,
       );
-      _auditChanges(request)?.set(_txSnapshot(transaction));
+      final contactLabel = await _contactLabel(transaction.contactId, entityId);
+      _auditChanges(request)?.set(_txSnapshot(transaction, contactLabel));
       return Response(
         201,
         body: TransactionResponse.fromEntity(transaction).toJsonString(),
@@ -151,7 +156,12 @@ class TransactionHandler {
         transactionDate: dto.transactionDate,
       );
       if (before != null) {
-        final diff = diffMaps(_txSnapshot(before), _txSnapshot(transaction));
+        final beforeLabel = await _contactLabel(before.contactId, entityId);
+        final afterLabel = await _contactLabel(transaction.contactId, entityId);
+        final diff = diffMaps(
+          _txSnapshot(before, beforeLabel),
+          _txSnapshot(transaction, afterLabel),
+        );
         if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
       }
       return Response.ok(
@@ -179,7 +189,10 @@ class TransactionHandler {
 
     try {
       await _delete.execute(id, entityId: entityId);
-      if (before != null) _auditChanges(request)?.set(_txSnapshot(before));
+      if (before != null) {
+        final contactLabel = await _contactLabel(before.contactId, entityId);
+        _auditChanges(request)?.set(_txSnapshot(before, contactLabel));
+      }
       return Response(204);
     } on MonthIsLockedException catch (e) {
       return _locked(e.message);
@@ -223,8 +236,17 @@ class TransactionHandler {
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;
 
-  static Map<String, dynamic> _txSnapshot(Transaction t) => {
-        'contactId': t.contactId,
+  Future<String> _contactLabel(String contactId, String entityId) async {
+    try {
+      final contact = await _getContact.execute(contactId, entityId: entityId);
+      return '${contact.name} ($contactId)';
+    } catch (_) {
+      return contactId;
+    }
+  }
+
+  static Map<String, dynamic> _txSnapshot(Transaction t, String contactLabel) => {
+        'contact': contactLabel,
         'generalLedgerId': t.generalLedgerId,
         'amount': t.amount,
         'gstAmount': t.gstAmount,
