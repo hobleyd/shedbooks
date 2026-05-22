@@ -1225,6 +1225,18 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                     width: 120,
                     child: _colHeader('Amount', 5,
                         align: MainAxisAlignment.end)),
+                SizedBox(
+                  width: 80,
+                  child: Center(
+                    child: Text(
+                      'Processed',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 110),
               ],
             ),
@@ -1323,6 +1335,24 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                   textAlign: TextAlign.right,
+                ),
+              ),
+              SizedBox(
+                width: 80,
+                child: Center(
+                  child: Text(
+                    t.bankMatched ? 'Y' : 'N',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: t.bankMatched
+                          ? Colors.green.shade700
+                          : Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.4),
+                    ),
+                  ),
                 ),
               ),
               SizedBox(
