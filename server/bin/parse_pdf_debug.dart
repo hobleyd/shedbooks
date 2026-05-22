@@ -1,5 +1,4 @@
 import 'dart:io';
-import '../lib/infrastructure/pdf/pdf_text_extractor.dart';
 import '../lib/infrastructure/pdf/cba_statement_parser.dart';
 
 void main(List<String> args) {
