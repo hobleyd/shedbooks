@@ -15,7 +15,7 @@ A bookkeeping backend built with Dart, served from a Docker container and backed
 - [Database Migrations](#database-migrations)
 - [API Reference](#api-reference)
   - [Authentication](#authentication)
-  - [GeneNral Ledger](#general-ledger)
+  - [General Ledger](#general-ledger)
   - [GST Rates](#gst-rates)
   - [Contacts](#contacts)
   - [Transactions](#transactions)
@@ -550,16 +550,16 @@ Soft-deletes the record. **Response `204`**. `404` if not found.
 
 ## Common Response Codes
 
-| Code | Meaning |
-|---|---|
-| `200` | Success |
-| `201` | Created |
-| `204` | No content (successful delete) |
+| Code | Meaning                                                                           |
+|---|-----------------------------------------------------------------------------------|
+| `200` | Success                                                                           |
+| `201` | Created                                                                           |
+| `204` | No content (successful delete)                                                    |
 | `400` | Bad request — validation failure, malformed JSON, or referential integrity violation |
-| `401` | Unauthorised — missing, expired, or invalid JWT |
-| `404` | Not found — resource does not exist or has been soft-deleted |
+| `401` | Unauthorised — missing, expired, or invalid JWT                                   |
+| `404` | Not found — resource does not exist or has been soft-deleted                      |
 | `409` | Conflict — uniqueness constraint violation (e.g. duplicate GST rate effective date) |
-| `500` | Internal server error — logged server-side |
+| `500` | Internal server error — logged server-side                                        |
 
 ### Error response body
 
