@@ -7,6 +7,7 @@ import '../infrastructure/auth/auth0_middleware.dart';
 import '../infrastructure/auth/jwks_client.dart';
 import '../infrastructure/database/database_connection.dart';
 import '../infrastructure/encryption/field_encryptor.dart';
+import '../infrastructure/repositories/postgres_aba_sequence_repository.dart';
 import '../infrastructure/repositories/postgres_audit_repository.dart';
 import '../infrastructure/repositories/postgres_bank_import_repository.dart';
 import '../infrastructure/repositories/postgres_locked_month_repository.dart';
@@ -19,6 +20,7 @@ import '../infrastructure/repositories/postgres_closing_bank_balance_repository.
 import '../infrastructure/repositories/postgres_entity_details_repository.dart';
 import '../infrastructure/repositories/postgres_gst_rate_repository.dart';
 import '../infrastructure/repositories/postgres_transaction_repository.dart';
+import '../application/aba_sequence/get_next_aba_sequence_use_case.dart';
 import '../application/audit/list_audit_entries_use_case.dart';
 import '../application/contact/create_contact_use_case.dart';
 import '../application/contact/delete_contact_use_case.dart';
@@ -61,6 +63,7 @@ import '../application/transaction/delete_transaction_use_case.dart';
 import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
+import 'handlers/aba_sequence_handler.dart';
 import 'handlers/abn_lookup_handler.dart';
 import 'handlers/bank_reconciliation_handler.dart';
 import 'handlers/bank_imports_handler.dart';
@@ -177,6 +180,11 @@ Handler buildRouter({
     listBankAccounts: ListBankAccountsUseCase(bankAccountRepository),
   );
 
+  final abaSequenceHandler = AbaSequenceHandler(
+    nextSequence:
+        GetNextAbaSequenceUseCase(PostgresAbaSequenceRepository(pool)),
+  );
+
   final backupHandler = BackupHandler(pool: pool);
 
   final auditHandler = AuditHandler(
@@ -204,6 +212,8 @@ Handler buildRouter({
 
   final router = Router()
     ..get('/health', (Request _) => Response.ok('ok'))
+    ..post('/aba-sequences/next',
+        _authed(_role(requireContributor(), abaSequenceHandler.handleNext)))
     ..mount('/abn-lookup',
         _authed((req) => abnLookupHandler.handle(req)))
     ..mount('/general-ledger',

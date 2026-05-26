@@ -109,6 +109,7 @@ String _action(String method, String path) {
   if (path.endsWith('/backup')) return 'BACKUP';
   if (path.endsWith('/restore')) return 'RESTORE';
   if (path.endsWith('/merge')) return 'MERGE';
+  if (path.endsWith('/aba-sequences/next')) return 'ABA_EXPORT';
   return switch (method) {
     'POST' => 'CREATE',
     'PUT' => 'UPDATE',
@@ -127,6 +128,7 @@ const _tableMap = {
   'entity-details': 'entity_details',
   'dashboard-preferences': 'dashboard_preferences',
   'abn-lookup': 'contacts',
+  'aba-sequences': 'aba_sequences',
 };
 
 String _tableName(String path) {
@@ -142,7 +144,7 @@ String? _recordId(String path) {
   final parts = path.split('/').where((p) => p.isNotEmpty).toList();
   if (parts.length < 2) return null;
   const nonIdSegments = {
-    'merge', 'effective', 'backup', 'restore', 'audit-log',
+    'merge', 'effective', 'backup', 'restore', 'audit-log', 'next',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

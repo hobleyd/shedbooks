@@ -284,13 +284,28 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
     // Generate ABA
     try {
-      final abaContent = _generateAba(selectedTxns, senderAccount);
+      final apiClient = context.read<ApiClient>();
+      final references = selectedTxns.map((t) => t.receiptNumber).toList();
+      final seqResponse = await apiClient.post(
+        '/aba-sequences/next',
+        jsonEncode({'references': references}),
+      );
+      if (seqResponse.statusCode != 200) {
+        _showSnackbar('Failed to get ABA sequence number.');
+        return;
+      }
+      final seqJson = jsonDecode(seqResponse.body) as Map<String, dynamic>;
+      final sequence = seqJson['sequence'] as int;
+
+      final now = DateTime.now();
+      final abaContent = _generateAba(selectedTxns, senderAccount, sequence);
       final bytes = utf8.encode(abaContent);
       final blob = web.Blob(<JSAny>[bytes.toJS].toJS);
       final url = web.URL.createObjectURL(blob);
+      final seq = sequence.toString().padLeft(3, '0');
       (web.document.createElement('a') as web.HTMLAnchorElement)
         ..href = url
-        ..download = 'direct_entry_${DateTime.now().millisecondsSinceEpoch}.aba'
+        ..download = 'WMS${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}$seq.aba'
         ..click();
       web.URL.revokeObjectURL(url);
 
@@ -301,7 +316,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     }
   }
 
-  String _generateAba(List<TransactionEntry> txns, BankAccountEntry sender) {
+  String _generateAba(
+      List<TransactionEntry> txns, BankAccountEntry sender, int sequence) {
     final buffer = StringBuffer();
 
     // Record 0: Descriptive Record
@@ -318,6 +334,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
     final now = DateTime.now();
     final dateStr = '${now.day.toString().padLeft(2, '0')}${now.month.toString().padLeft(2, '0')}${now.year.toString().substring(2)}';
+    final wmsName = 'WMS${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${sequence.toString().padLeft(3, '0')}';
 
     buffer.write('0'); // 01
     buffer.write(' ' * 17); // 02-18
@@ -326,7 +343,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     buffer.write(' ' * 7); // 24-30
     buffer.write(_entityDetails!.name.padRight(26).substring(0, 26).toUpperCase()); // 31-56
     buffer.write(_entityDetails!.apcaId!.padLeft(6, '0')); // 57-62
-    buffer.write('PAYMENTS'.padRight(12)); // 63-74
+    buffer.write(wmsName.padRight(12)); // 63-74
     buffer.write(dateStr); // 75-80
     buffer.write(' ' * 40); // 81-120
     buffer.write('\r\n');
