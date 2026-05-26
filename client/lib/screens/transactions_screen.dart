@@ -395,25 +395,43 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       recordCount++;
     }
 
+    // Record 1: Contra (balancing) debit record — debits sender's account for the total.
+    // Transaction code 13 = Other Debit.
+    final senderBsb = sender.bsb.replaceAll('-', '');
+    final senderBsbFormatted = '${senderBsb.substring(0, 3)}-${senderBsb.substring(3)}';
+    buffer.write('1'); // 01
+    buffer.write(senderBsbFormatted.substring(0, 7)); // 02-08
+    buffer.write(sender.accountNumber.padLeft(9).substring(0, 9)); // 09-17
+    buffer.write(' '); // 18
+    buffer.write('13'); // 19-20
+    buffer.write(totalCents.toString().padLeft(10, '0').substring(0, 10)); // 21-30
+    buffer.write(sender.accountName.padRight(32).substring(0, 32).toUpperCase()); // 31-62
+    buffer.write(wmsName.padRight(18).substring(0, 18)); // 63-80
+    buffer.write(senderBsbFormatted.substring(0, 7)); // 81-87
+    buffer.write(sender.accountNumber.padLeft(9).substring(0, 9)); // 88-96
+    buffer.write(_entityDetails!.name.padRight(16).substring(0, 16).toUpperCase()); // 97-112
+    buffer.write('0' * 8); // 113-120
+    buffer.write('\r\n');
+
     // Record 7: File Total Record
     // 01: Record Type (1) - '7'
     // 02-08: BSB Format Filler (7) - '999-999'
     // 09-20: Blank (12)
-    // 21-30: Net Total Amount (10) - Cents
+    // 21-30: Net Total Amount (10) - Zero when file is balanced (credits == debits)
     // 31-40: Credit Total Amount (10) - Cents
-    // 41-50: Debit Total Amount (10) - Cents
+    // 41-50: Debit Total Amount (10) - Cents (contra record)
     // 51-74: Blank (24)
-    // 75-80: Count of Detail Records (6)
+    // 75-80: Count of Detail Records (6) - includes the contra record
     // 81-120: Blank (40)
 
     buffer.write('7'); // 01
     buffer.write('999-999'); // 02-08
     buffer.write(' ' * 12); // 09-20
-    buffer.write(totalCents.toString().padLeft(10, '0')); // 21-30
-    buffer.write(totalCents.toString().padLeft(10, '0')); // 31-40
-    buffer.write('0' * 10); // 41-50
+    buffer.write('0'.padLeft(10, '0')); // 21-30 net = 0 (balanced)
+    buffer.write(totalCents.toString().padLeft(10, '0')); // 31-40 credit total
+    buffer.write(totalCents.toString().padLeft(10, '0')); // 41-50 debit total (contra)
     buffer.write(' ' * 24); // 51-74
-    buffer.write(recordCount.toString().padLeft(6, '0')); // 75-80
+    buffer.write((recordCount + 1).toString().padLeft(6, '0')); // 75-80 includes contra
     buffer.write(' ' * 40); // 81-120
     buffer.write('\r\n');
 
