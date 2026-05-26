@@ -374,8 +374,9 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       // 113-120: Amount of Withholding Tax (8) - Zero filled
 
       final bsbFormatted = '${bsb.substring(0, 3)}-${bsb.substring(3)}';
-      final senderBsb = sender.bsb.replaceAll('-', '');
+      final senderBsb = sender.bsb.replaceAll(RegExp(r'[^0-9]'), '');
       final senderBsbFormatted = '${senderBsb.substring(0, 3)}-${senderBsb.substring(3)}';
+      final senderAccNo = sender.accountNumber.replaceAll(RegExp(r'[^0-9]'), '');
 
       buffer.write('1'); // 01
       buffer.write(bsbFormatted.substring(0, 7)); // 02-08
@@ -386,7 +387,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       buffer.write(name.substring(0, 32)); // 31-62
       buffer.write(ref.substring(0, 18)); // 63-80
       buffer.write(senderBsbFormatted.substring(0, 7)); // 81-87
-      buffer.write(sender.accountNumber.padLeft(9).substring(0, 9)); // 88-96
+      buffer.write(senderAccNo.padLeft(9).substring(0, 9)); // 88-96
       buffer.write(_entityDetails!.name.padRight(16).substring(0, 16).toUpperCase()); // 97-112
       buffer.write('0' * 8); // 113-120
       buffer.write('\r\n');
@@ -397,18 +398,21 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
     // Record 1: Contra (balancing) debit record — debits sender's account for the total.
     // Transaction code 13 = Other Debit.
-    final senderBsb = sender.bsb.replaceAll('-', '');
+    // The bank validates the contra BSB/account against their customer database, so
+    // non-numeric characters must be stripped before padding to avoid lookup failures.
+    final senderBsb = sender.bsb.replaceAll(RegExp(r'[^0-9]'), '');
     final senderBsbFormatted = '${senderBsb.substring(0, 3)}-${senderBsb.substring(3)}';
+    final senderAccNo = sender.accountNumber.replaceAll(RegExp(r'[^0-9]'), '');
     buffer.write('1'); // 01
     buffer.write(senderBsbFormatted.substring(0, 7)); // 02-08
-    buffer.write(sender.accountNumber.padLeft(9).substring(0, 9)); // 09-17
+    buffer.write(senderAccNo.padLeft(9).substring(0, 9)); // 09-17
     buffer.write(' '); // 18
     buffer.write('13'); // 19-20
     buffer.write(totalCents.toString().padLeft(10, '0').substring(0, 10)); // 21-30
     buffer.write(sender.accountName.padRight(32).substring(0, 32).toUpperCase()); // 31-62
     buffer.write(wmsName.padRight(18).substring(0, 18)); // 63-80
     buffer.write(senderBsbFormatted.substring(0, 7)); // 81-87
-    buffer.write(sender.accountNumber.padLeft(9).substring(0, 9)); // 88-96
+    buffer.write(senderAccNo.padLeft(9).substring(0, 9)); // 88-96
     buffer.write(_entityDetails!.name.padRight(16).substring(0, 16).toUpperCase()); // 97-112
     buffer.write('0' * 8); // 113-120
     buffer.write('\r\n');
