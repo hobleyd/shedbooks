@@ -353,8 +353,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
     for (final t in txns) {
       final contact = _contacts.firstWhere((c) => c.id == t.contactId);
-      final bsb = contact.bsb!.replaceAll('-', '');
-      final accNo = contact.accountNumber!;
+      final bsb = contact.bsb!.replaceAll(RegExp(r'[^0-9]'), '');
+      final accNo = contact.accountNumber!.replaceAll(RegExp(r'[^0-9]'), '');
       final amount = t.totalAmount;
       final name = contact.name.padRight(32).substring(0, 32).toUpperCase();
       final ref = t.receiptNumber.padRight(18).substring(0, 18);
