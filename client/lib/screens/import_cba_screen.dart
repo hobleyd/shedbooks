@@ -588,7 +588,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
               r.status != BankMatchStatus.alreadyImported &&
               r.status != BankMatchStatus.unmatched &&
               r.status != BankMatchStatus.needsSelection &&
-              r.status != BankMatchStatus.amountMismatch)
+              r.status != BankMatchStatus.amountMismatch &&
+              r.status != BankMatchStatus.skipped)
           .map((r) => {
                 'processDate': r.processDate,
                 'description': r.description,
