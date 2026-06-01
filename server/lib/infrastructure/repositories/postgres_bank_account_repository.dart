@@ -18,7 +18,7 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
 
   static const _cols =
       'id, entity_id, bank_name, account_name, bsb, account_number, '
-      'account_type, currency, created_at, updated_at';
+      'account_type, currency, is_system, created_at, updated_at';
 
   @override
   Future<BankAccount> create({
@@ -131,15 +131,38 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
     if (result.affectedRows == 0) throw BankAccountNotFoundException(id);
   }
 
+  @override
+  Future<void> ensureCashAccount({required String entityId}) async {
+    await _pool.execute(
+      Sql.named('''
+        INSERT INTO bank_accounts
+          (id, entity_id, bank_name, account_name, bsb, account_number, account_type, is_system, currency)
+        VALUES
+          (gen_random_uuid(), @entityId, @bankName, @accountName, @bsb, @accountNumber, 'cash', TRUE, 'AUD')
+        ON CONFLICT (entity_id) WHERE is_system = TRUE AND account_type = 'cash' AND deleted_at IS NULL
+        DO NOTHING
+      '''),
+      parameters: {
+        'entityId': entityId,
+        'bankName': _enc.encrypt('Cash'),
+        'accountName': _enc.encrypt('Cash'),
+        'bsb': _enc.encrypt('000000'),
+        'accountNumber': _enc.encrypt('000000000'),
+      },
+    );
+  }
+
   static String _typeToDb(BankAccountType t) => switch (t) {
         BankAccountType.transaction => 'transaction',
         BankAccountType.savings => 'savings',
         BankAccountType.termDeposit => 'term_deposit',
+        BankAccountType.cash => 'cash',
       };
 
   static BankAccountType _typeFromDb(String v) => switch (v) {
         'savings' => BankAccountType.savings,
         'term_deposit' => BankAccountType.termDeposit,
+        'cash' => BankAccountType.cash,
         _ => BankAccountType.transaction,
       };
 
@@ -152,6 +175,7 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
         accountNumber: _enc.decrypt(row['account_number'] as String),
         accountType: _typeFromDb(row['account_type'] as String),
         currency: (row['currency'] as String).trim(),
+        isSystem: row['is_system'] as bool? ?? false,
         createdAt: row['created_at'] as DateTime,
         updatedAt: row['updated_at'] as DateTime,
       );

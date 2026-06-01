@@ -1,5 +1,5 @@
 /// The type of bank account.
-enum BankAccountType { transaction, savings, termDeposit }
+enum BankAccountType { transaction, savings, termDeposit, cash }
 
 /// A bank account returned from the API.
 class BankAccountEntry {
@@ -10,6 +10,7 @@ class BankAccountEntry {
   final String accountNumber;
   final BankAccountType accountType;
   final String currency;
+  final bool isSystem;
 
   const BankAccountEntry({
     required this.id,
@@ -19,6 +20,7 @@ class BankAccountEntry {
     required this.accountNumber,
     required this.accountType,
     required this.currency,
+    required this.isSystem,
   });
 
   factory BankAccountEntry.fromJson(Map<String, dynamic> json) =>
@@ -31,9 +33,11 @@ class BankAccountEntry {
         accountType: switch (json['accountType'] as String) {
           'savings' => BankAccountType.savings,
           'termDeposit' => BankAccountType.termDeposit,
+          'cash' => BankAccountType.cash,
           _ => BankAccountType.transaction,
         },
         currency: json['currency'] as String,
+        isSystem: json['isSystem'] as bool? ?? false,
       );
 
   /// BSB formatted as XXX-XXX for display.
@@ -44,5 +48,6 @@ class BankAccountEntry {
         BankAccountType.transaction => 'Transaction',
         BankAccountType.savings => 'Savings',
         BankAccountType.termDeposit => 'Term Deposit',
+        BankAccountType.cash => 'Cash',
       };
 }

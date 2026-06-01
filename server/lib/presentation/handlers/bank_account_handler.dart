@@ -125,6 +125,10 @@ class BankAccountHandler {
       before = await _get.execute(id, entityId: entityId);
     } catch (_) {}
 
+    if (before?.isSystem == true) {
+      return _badRequest('System accounts cannot be modified.');
+    }
+
     try {
       final account = await _update.execute(
         id: id,
@@ -161,6 +165,10 @@ class BankAccountHandler {
     try {
       before = await _get.execute(id, entityId: entityId);
     } catch (_) {}
+
+    if (before?.isSystem == true) {
+      return _badRequest('System accounts cannot be deleted.');
+    }
 
     try {
       await _delete.execute(id, entityId: entityId);

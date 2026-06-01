@@ -141,6 +141,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                   accountNumber: '',
                   accountType: BankAccountType.transaction,
                   currency: '',
+                  isSystem: false,
                 ))
         .accountName;
 

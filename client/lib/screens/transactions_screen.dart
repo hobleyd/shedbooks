@@ -257,10 +257,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       return;
     }
 
-    // Select sender bank account if multiple
+    // Select sender bank account if multiple (system accounts excluded — no real banking details).
+    final eligibleAccounts = _bankAccounts.where((a) => !a.isSystem).toList();
     BankAccountEntry? senderAccount;
-    if (_bankAccounts.length == 1) {
-      senderAccount = _bankAccounts.first;
+    if (eligibleAccounts.length == 1) {
+      senderAccount = eligibleAccounts.first;
     } else {
       senderAccount = await showDialog<BankAccountEntry>(
         context: context,
@@ -268,7 +269,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           title: const Text('Select Sender Bank Account'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
-            children: _bankAccounts
+            children: eligibleAccounts
                 .map((a) => ListTile(
                       title: Text(a.accountName),
                       subtitle: Text('${a.bsbFormatted} ${a.accountNumber}'),

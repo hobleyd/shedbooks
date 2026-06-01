@@ -326,12 +326,14 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
               ),
               SizedBox(
                 width: 90,
-                child: Text(account.bsbFormatted,
+                child: Text(
+                    account.isSystem ? '–' : account.bsbFormatted,
                     style: const TextStyle(fontFamily: 'monospace')),
               ),
               SizedBox(
                 width: 120,
-                child: Text(account.accountNumber,
+                child: Text(
+                    account.isSystem ? '–' : account.accountNumber,
                     style: const TextStyle(fontFamily: 'monospace')),
               ),
               SizedBox(
@@ -351,14 +353,18 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
                     IconButton(
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       tooltip: 'Edit',
-                      onPressed: isAdmin ? () => _openDialog(existing: account) : null,
+                      onPressed: (isAdmin && !account.isSystem)
+                          ? () => _openDialog(existing: account)
+                          : null,
                     ),
                     IconButton(
                       icon: Icon(Icons.delete_outline,
                           size: 18,
                           color: Theme.of(context).colorScheme.error),
                       tooltip: 'Delete',
-                      onPressed: isAdmin ? () => _delete(account) : null,
+                      onPressed: (isAdmin && !account.isSystem)
+                          ? () => _delete(account)
+                          : null,
                     ),
                   ],
                 ),
@@ -432,6 +438,7 @@ class _BankAccountDialogState extends State<_BankAccountDialog> {
           BankAccountType.transaction => 'transaction',
           BankAccountType.savings => 'savings',
           BankAccountType.termDeposit => 'termDeposit',
+          BankAccountType.cash => 'cash',
         },
         'currency': _currencyCtrl.text.trim().toUpperCase(),
       });

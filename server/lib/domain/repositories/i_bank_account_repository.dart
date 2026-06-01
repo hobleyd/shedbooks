@@ -28,4 +28,7 @@ abstract class IBankAccountRepository {
   });
 
   Future<void> delete(String id, {required String entityId});
+
+  /// Ensures the system Cash account exists for [entityId], creating it if absent.
+  Future<void> ensureCashAccount({required String entityId});
 }

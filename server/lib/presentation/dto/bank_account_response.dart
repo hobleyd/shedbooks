@@ -11,6 +11,7 @@ class BankAccountResponse {
   final String accountNumber;
   final String accountType;
   final String currency;
+  final bool isSystem;
 
   const BankAccountResponse({
     required this.id,
@@ -20,6 +21,7 @@ class BankAccountResponse {
     required this.accountNumber,
     required this.accountType,
     required this.currency,
+    required this.isSystem,
   });
 
   factory BankAccountResponse.fromEntity(BankAccount e) =>
@@ -33,8 +35,10 @@ class BankAccountResponse {
           BankAccountType.transaction => 'transaction',
           BankAccountType.savings => 'savings',
           BankAccountType.termDeposit => 'termDeposit',
+          BankAccountType.cash => 'cash',
         },
         currency: e.currency,
+        isSystem: e.isSystem,
       );
 
   Map<String, dynamic> toJson() => {
@@ -45,6 +49,7 @@ class BankAccountResponse {
         'accountNumber': accountNumber,
         'accountType': accountType,
         'currency': currency,
+        'isSystem': isSystem,
       };
 
   String toJsonString() => jsonEncode(toJson());

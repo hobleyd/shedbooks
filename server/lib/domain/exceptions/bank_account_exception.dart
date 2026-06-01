@@ -18,3 +18,9 @@ final class BankAccountNotFoundException extends BankAccountException {
 final class BankAccountValidationException extends BankAccountException {
   const BankAccountValidationException(super.message);
 }
+
+/// Thrown when an operation is attempted on a system-managed account.
+final class BankAccountSystemException extends BankAccountException {
+  const BankAccountSystemException()
+      : super('System accounts cannot be modified or deleted');
+}

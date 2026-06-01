@@ -1,5 +1,5 @@
 /// The type of bank account.
-enum BankAccountType { transaction, savings, termDeposit }
+enum BankAccountType { transaction, savings, termDeposit, cash }
 
 /// A bank account held by the entity.
 class BankAccount {
@@ -11,6 +11,7 @@ class BankAccount {
   final String accountNumber;
   final BankAccountType accountType;
   final String currency;
+  final bool isSystem;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -23,6 +24,7 @@ class BankAccount {
     required this.accountNumber,
     required this.accountType,
     required this.currency,
+    required this.isSystem,
     required this.createdAt,
     required this.updatedAt,
   });

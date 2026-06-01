@@ -7,6 +7,8 @@ class ListBankAccountsUseCase {
 
   const ListBankAccountsUseCase(this._repository);
 
-  Future<List<BankAccount>> execute({required String entityId}) =>
-      _repository.findAll(entityId: entityId);
+  Future<List<BankAccount>> execute({required String entityId}) async {
+    await _repository.ensureCashAccount(entityId: entityId);
+    return _repository.findAll(entityId: entityId);
+  }
 }
