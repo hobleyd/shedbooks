@@ -14,7 +14,7 @@ class BackupHandler {
 
   const BackupHandler({required Pool pool}) : _pool = pool;
 
-  static const _jsonbColumns = {'selected_account_pairs'};
+  static const _jsonbColumns = {'selected_account_pairs', 'changes'};
 
   /// GET /admin/backup
   ///
@@ -92,6 +92,14 @@ class BackupHandler {
         {'entityId': entityId},
       );
 
+      final auditLog = await _queryRows('''
+        SELECT id::text, entity_id, user_id, user_email, ip_address,
+               method, path, action, table_name, record_id,
+               status_code, changes, created_at
+        FROM audit_log WHERE entity_id = @entityId
+        ORDER BY created_at
+      ''', {'entityId': entityId});
+
       final now = DateTime.now();
       final stamp =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
@@ -111,6 +119,7 @@ class BackupHandler {
         'bank_imports': bankImports,
         'dashboard_preferences': dashPrefs,
         'entity_details': entityDetails,
+        'audit_log': auditLog,
       };
 
       final bytes = utf8.encode(jsonEncode(backup));
@@ -175,6 +184,7 @@ class BackupHandler {
     try {
       await _pool.runTx((tx) async {
         // ── Delete existing entity data in reverse FK order ────────────────
+        await _del(tx, 'audit_log', entityId);
         await _del(tx, 'transactions', entityId);
         await _del(tx, 'contacts', entityId);
         await _del(tx, 'general_ledger', entityId);
@@ -444,6 +454,40 @@ class BackupHandler {
               'ac': r['amount_cents'] as int,
               'dbt': r['is_debit'] as bool,
               'ia': r['imported_at'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'audit_log')) {
+          final changes = r['changes'];
+          final changesJson =
+              changes == null ? null : (changes is String ? changes : jsonEncode(changes));
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO audit_log
+                (id, entity_id, user_id, user_email, ip_address,
+                 method, path, action, table_name, record_id,
+                 status_code, changes, created_at)
+              VALUES (
+                @id::uuid, @e, @uid, @ue, @ip,
+                @meth, @path, @act, @tbl, @rid,
+                @sc, @chg::jsonb, @ca::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'uid': r['user_id'] as String,
+              'ue': r['user_email'] as String,
+              'ip': r['ip_address'] as String,
+              'meth': r['method'] as String,
+              'path': r['path'] as String,
+              'act': r['action'] as String,
+              'tbl': r['table_name'] as String,
+              'rid': r['record_id'],
+              'sc': r['status_code'] as int,
+              'chg': changesJson,
+              'ca': r['created_at'] as String,
             },
           );
         }
