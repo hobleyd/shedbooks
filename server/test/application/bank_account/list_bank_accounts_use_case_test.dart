@@ -23,6 +23,7 @@ void main() {
       accountNumber: '12345678',
       accountType: BankAccountType.transaction,
       currency: 'AUD',
+      isSystem: false,
       createdAt: DateTime.utc(2026, 1, 1),
       updatedAt: DateTime.utc(2026, 1, 1),
     ),
@@ -35,6 +36,7 @@ void main() {
       accountNumber: '87654321',
       accountType: BankAccountType.savings,
       currency: 'AUD',
+      isSystem: false,
       createdAt: DateTime.utc(2026, 1, 1),
       updatedAt: DateTime.utc(2026, 1, 1),
     ),
@@ -48,6 +50,8 @@ void main() {
   group('ListBankAccountsUseCase', () {
     test('returns all bank accounts for the entity', () async {
       // Arrange
+      when(() => repository.ensureCashAccount(entityId: tEntityId))
+          .thenAnswer((_) async {});
       when(() => repository.findAll(entityId: tEntityId))
           .thenAnswer((_) async => tAccounts);
 
@@ -61,6 +65,8 @@ void main() {
 
     test('returns empty list when no accounts exist', () async {
       // Arrange
+      when(() => repository.ensureCashAccount(entityId: tEntityId))
+          .thenAnswer((_) async {});
       when(() => repository.findAll(entityId: tEntityId))
           .thenAnswer((_) async => []);
 

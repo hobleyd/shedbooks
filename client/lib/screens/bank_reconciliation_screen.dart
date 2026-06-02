@@ -704,7 +704,13 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             t.transactionType == type &&
             _yearMonth(t.transactionDate) == month)
         .toList()
-      ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
+      ..sort((a, b) {
+        // Unmatched transactions first, then by date descending.
+        if (a.bankMatched != b.bankMatched) {
+          return a.bankMatched ? 1 : -1;
+        }
+        return b.transactionDate.compareTo(a.transactionDate);
+      });
 
     if (!mounted) return;
     final result = await showDialog<List<TransactionEntry>>(
@@ -1062,95 +1068,115 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     if (balanced) {
       final noBankAccount = _selectedBankAccountId == null;
       final hasUnmatched = unmatchedCount > 0;
-      return Card(
-        color: noBankAccount ? Colors.orange.shade50 : Colors.green.shade50,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(
-                color: noBankAccount
-                    ? Colors.orange.shade200
-                    : Colors.green.shade200)),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Icon(
-                  noBankAccount
-                      ? Icons.warning_amber_outlined
-                      : Icons.check_circle_outlined,
-                  color: noBankAccount
-                      ? Colors.orange.shade700
-                      : Colors.green.shade700,
-                  size: 32),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                        noBankAccount
-                            ? 'Select a bank account to lock'
-                            : 'Reconciliation complete',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: noBankAccount
-                                ? Colors.orange.shade800
-                                : Colors.green.shade800)),
-                    const SizedBox(height: 4),
-                    Text(
+      final unmatchedTxs = txs.where((t) => !t.bankMatched).toList()
+        ..sort((a, b) => a.transactionDate.compareTo(b.transactionDate));
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            color: noBankAccount ? Colors.orange.shade50 : Colors.green.shade50,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                    color: noBankAccount
+                        ? Colors.orange.shade200
+                        : Colors.green.shade200)),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Icon(
                       noBankAccount
-                          ? 'Balances agree. Select a bank account above to record the closing balance.'
-                          : hasUnmatched
-                              ? 'Closing balance matches. '
-                                  '$unmatchedCount unmatched transaction${unmatchedCount == 1 ? '' : 's'} '
-                                  'belong to another bank account.'
-                              : _rows.isEmpty
-                                  ? 'No transactions on this statement. Closing balance matches.'
-                                  : 'All ${_rows.length} statement transaction${_rows.length == 1 ? '' : 's'} '
-                                      'are matched and the closing balance matches.',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: noBankAccount
-                              ? Colors.orange.shade700
-                              : Colors.green.shade700),
+                          ? Icons.warning_amber_outlined
+                          : Icons.check_circle_outlined,
+                      color: noBankAccount
+                          ? Colors.orange.shade700
+                          : Colors.green.shade700,
+                      size: 32),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            noBankAccount
+                                ? 'Select a bank account to lock'
+                                : 'Reconciliation complete',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: noBankAccount
+                                    ? Colors.orange.shade800
+                                    : Colors.green.shade800)),
+                        const SizedBox(height: 4),
+                        Text(
+                          noBankAccount
+                              ? 'Balances agree. Select a bank account above to record the closing balance.'
+                              : hasUnmatched
+                                  ? 'Closing balance matches. '
+                                      '$unmatchedCount unmatched transaction${unmatchedCount == 1 ? '' : 's'} '
+                                      'belong to another bank account.'
+                                  : _rows.isEmpty
+                                      ? 'No transactions on this statement. Closing balance matches.'
+                                      : 'All ${_rows.length} statement transaction${_rows.length == 1 ? '' : 's'} '
+                                          'are matched and the closing balance matches.',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: noBankAccount
+                                  ? Colors.orange.shade700
+                                  : Colors.green.shade700),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 16),
+                  FilledButton.icon(
+                    onPressed: (_locking || noBankAccount) ? null : _lockMonth,
+                    style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green.shade700),
+                    icon: _locking
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.lock_outlined, size: 16),
+                    label: const Text('Lock month'),
+                  ),
+                ],
               ),
-            const SizedBox(width: 16),
-            FilledButton.icon(
-              onPressed: (_locking || noBankAccount) ? null : _lockMonth,
-              style: FilledButton.styleFrom(
-                  backgroundColor: Colors.green.shade700),
-              icon: _locking
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.lock_outlined, size: 16),
-              label: const Text('Lock month'),
             ),
+          ),
+          if (hasUnmatched) ...[
+            const SizedBox(height: 12),
+            _buildUnmatchedTable(unmatchedTxs),
           ],
-        ),
-      ),
-    );
+        ],
+      );
     }
 
     // Balances don't match — show the most actionable error first.
     if (!allMatched) {
-      return _statusCard(
-        icon: Icons.warning_amber_outlined,
-        color: Colors.orange,
-        title:
-            '$unmatchedCount transaction${unmatchedCount == 1 ? '' : 's'} not bank-matched',
-        message: 'Not all transactions for $monthYear have been bank-matched. '
-            'Match them using the PDF statement data below.',
-        trailing: FilledButton.icon(
-          onPressed: _enterMatchingPhase,
-          icon: const Icon(Icons.compare_arrows_outlined, size: 16),
-          label: const Text('Match transactions'),
-        ),
+      final unmatchedTxs = txs.where((t) => !t.bankMatched).toList()
+        ..sort((a, b) => a.transactionDate.compareTo(b.transactionDate));
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _statusCard(
+            icon: Icons.warning_amber_outlined,
+            color: Colors.orange,
+            title:
+                '$unmatchedCount transaction${unmatchedCount == 1 ? '' : 's'} not bank-matched',
+            message: 'Not all transactions for $monthYear have been bank-matched. '
+                'Match them using the PDF statement data below.',
+            trailing: FilledButton.icon(
+              onPressed: _enterMatchingPhase,
+              icon: const Icon(Icons.compare_arrows_outlined, size: 16),
+              label: const Text('Match transactions'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          _buildUnmatchedTable(unmatchedTxs),
+        ],
       );
     }
 
@@ -1168,6 +1194,95 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         icon: const Icon(Icons.compare_arrows_outlined, size: 16),
         label: const Text('Review PDF transactions'),
       ),
+    );
+  }
+
+  Widget _buildUnmatchedTable(List<TransactionEntry> txs) {
+    return Table(
+      columnWidths: const {
+        0: IntrinsicColumnWidth(),
+        1: IntrinsicColumnWidth(),
+        2: FlexColumnWidth(),
+        3: IntrinsicColumnWidth(),
+        4: IntrinsicColumnWidth(),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        TableRow(
+          decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
+          children: const [
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Date',
+                  style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Receipt',
+                  style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Description',
+                  style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Type',
+                  style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 0, 8),
+              child: Text('Amount',
+                  textAlign: TextAlign.right,
+                  style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+        for (final t in txs)
+          TableRow(
+            decoration: BoxDecoration(
+                border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade200))),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(t.transactionDate,
+                    style: const TextStyle(
+                        fontSize: 12, fontFamily: 'monospace')),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(t.receiptNumber,
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(t.description,
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(
+                    t.transactionType == 'debit' ? 'Debit' : 'Credit',
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 0, 6),
+                child: Text(formatAmount(t.totalAmount),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                        fontSize: 12, fontFamily: 'monospace')),
+              ),
+            ],
+          ),
+      ],
     );
   }
 
@@ -1210,35 +1325,78 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   // ── Matching phase UI ─────────────────────────────────────────────────────────
 
   Widget _buildMatching() {
+    final unmatchedRows = _rows
+        .where((r) => r.needsAction)
+        .toList()
+      ..sort((a, b) => b.processDate.compareTo(a.processDate));
+    final matchedRows = _rows
+        .where((r) =>
+            r.isResolved || r.status == BankMatchStatus.skipped)
+        .toList()
+      ..sort((a, b) => b.processDate.compareTo(a.processDate));
+
+    const tableColumns = [
+      DataColumn(label: Text('Date')),
+      DataColumn(label: Text('Description')),
+      DataColumn(label: Text('Amount'), numeric: true),
+      DataColumn(label: Text('Status')),
+      DataColumn(label: Text('Matched To')),
+      DataColumn(label: Text('')),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSummaryBar(),
         Expanded(
           child: SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columnSpacing: 16,
-                headingRowHeight: 40,
-                dataRowMinHeight: 48,
-                dataRowMaxHeight: 72,
-                columns: const [
-                  DataColumn(label: Text('Date')),
-                  DataColumn(label: Text('Description')),
-                  DataColumn(label: Text('Amount'), numeric: true),
-                  DataColumn(label: Text('Status')),
-                  DataColumn(label: Text('Matched To')),
-                  DataColumn(label: Text('')),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (unmatchedRows.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(24, 16, 24, 4),
+                    child: Text('Unmatched',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 13)),
+                  ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columnSpacing: 16,
+                      headingRowHeight: 40,
+                      dataRowMinHeight: 48,
+                      dataRowMaxHeight: 72,
+                      columns: tableColumns,
+                      rows: unmatchedRows.map(_buildDataRow).toList(),
+                    ),
+                  ),
                 ],
-                rows: _rows.map(_buildDataRow).toList(),
-              ),
+                if (matchedRows.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(24, 16, 24, 4),
+                    child: Text('Matched',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 13)),
+                  ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columnSpacing: 16,
+                      headingRowHeight: 40,
+                      dataRowMinHeight: 48,
+                      dataRowMaxHeight: 72,
+                      columns: tableColumns,
+                      rows: matchedRows.map(_buildDataRow).toList(),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+              ],
             ),
           ),
         ),
         if (_allRowsResolved) ...[
-          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
             child: Align(

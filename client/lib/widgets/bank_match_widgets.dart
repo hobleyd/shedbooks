@@ -358,11 +358,32 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
                               _selected.remove(t.id);
                             }
                           }),
-                          title: Text(
-                            '${t.receiptNumber}  '
-                            '${formatAmount(t.totalAmount)}  '
-                            '${t.transactionDate}',
-                            style: const TextStyle(fontSize: 13),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${t.receiptNumber}  '
+                                  '${formatAmount(t.totalAmount)}  '
+                                  '${t.transactionDate}',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              if (t.bankMatched)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                        color: Colors.blue.shade200),
+                                  ),
+                                  child: Text('matched',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.blue.shade700)),
+                                ),
+                            ],
                           ),
                           subtitle: Text(name,
                               style: const TextStyle(fontSize: 12)),
