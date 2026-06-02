@@ -18,6 +18,7 @@
 migrate_working_dir/
 certs/
 scripts/*.bak
+tools
 
 # IntelliJ related
 *.iml

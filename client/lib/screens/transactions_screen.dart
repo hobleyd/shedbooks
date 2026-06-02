@@ -17,6 +17,7 @@ import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import 'import_cba_screen.dart';
 import 'import_transactions_screen.dart';
+import '../widgets/transaction_form.dart';
 import '../widgets/transaction_receipt_pdf.dart';
 
 /// Entry screen for creating transactions, with a month-view list above the form.
@@ -54,42 +55,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   int _searchYear = DateTime.now().year;
   int _searchResetKey = 0;
 
-  ContactEntry? _selectedContact;
-  String _contactTypedText = '';
-  bool _saveNewContact = false;
-  int _contactResetKey = 0;
-  GeneralLedgerEntry? _selectedGl;
-  GlDirection? _selectedDirection;
-  DateTime _date = DateTime.now();
-
-  final _amountController = TextEditingController();
-  final _gstController = TextEditingController();
-  final _totalController = TextEditingController();
-  final _descriptionController = TextEditingController();
-
-  String _receiptType = 'bankTransfer';
-  final _receiptOtherController = TextEditingController();
-  final _receiptOutController = TextEditingController();
+  // ── Inline add state ───────────────────────────────────────────────────────
+  bool _addingMoneyIn = false;
+  bool _addingMoneyOut = false;
 
   // ── Inline edit state ───────────────────────────────────────────────────────
   String? _editingId;
   bool _editSaving = false;
-  DateTime _editDate = DateTime.now();
-  String? _editContactId;
-  GeneralLedgerEntry? _editGl;
-  final _editReceiptController = TextEditingController();
-  final _editDescriptionController = TextEditingController();
-  final _editAmountController = TextEditingController();
-  final _editGstController = TextEditingController();
-  final _editTotalController = TextEditingController();
-
-  bool get _editGstApplicable => _editGl?.gstApplicable ?? false;
-
-  bool get _isMoneyOut => _selectedGl?.direction == GlDirection.moneyOut;
-
-  bool get _hasUnmatchedContact =>
-      _selectedContact == null && _contactTypedText.trim().isNotEmpty;
-  bool get _gstApplicable => _selectedGl?.gstApplicable ?? false;
 
   static const _monthNames = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -117,17 +89,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   @override
   void dispose() {
     _tabController.dispose();
-    _amountController.dispose();
-    _gstController.dispose();
-    _totalController.dispose();
-    _descriptionController.dispose();
-    _receiptOtherController.dispose();
-    _receiptOutController.dispose();
-    _editReceiptController.dispose();
-    _editDescriptionController.dispose();
-    _editAmountController.dispose();
-    _editGstController.dispose();
-    _editTotalController.dispose();
     super.dispose();
   }
 
@@ -583,91 +544,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             id: id, label: '—', description: '—', gstApplicable: false,
             direction: GlDirection.moneyIn)).description;
 
-  // ── GL changed ─────────────────────────────────────────────────────────────
-
-  void _onGlChanged(GeneralLedgerEntry? gl) {
-    setState(() {
-      _selectedGl = gl;
-      _selectedDirection = gl?.direction;
-      _amountController.clear();
-      _gstController.text = (gl?.gstApplicable ?? false) ? '' : '0.00';
-      _totalController.clear();
-      _receiptType = 'bankTransfer';
-      _receiptOtherController.clear();
-      _receiptOutController.text =
-          gl?.direction == GlDirection.moneyOut ? _formatMoneyOutReceipt() : '';
-    });
-  }
-
-  void _onDirectionChanged(GlDirection? dir) {
-    setState(() {
-      _selectedDirection = dir;
-      if (_selectedGl != null && _selectedGl!.direction != dir) {
-        _selectedGl = null;
-        _amountController.clear();
-        _gstController.clear();
-        _totalController.clear();
-        _receiptType = 'bankTransfer';
-        _receiptOtherController.clear();
-        _receiptOutController.clear();
-      }
-    });
-  }
-
-  // ── Amount calculation ─────────────────────────────────────────────────────
-
-  void _handleAmountChanged(String value) {
-    final amount = _parseAmount(value);
-    if (amount == null) {
-      _gstController.text = _gstApplicable ? '' : '0.00';
-      _totalController.clear();
-      return;
-    }
-    final amountCents = _dollarsToCents(amount);
-    if (_gstApplicable) {
-      final gstCents = (amountCents / 10).round();
-      _gstController.text = _centsToString(gstCents);
-      _totalController.text = _centsToString(amountCents + gstCents);
-    } else {
-      _gstController.text = '0.00';
-      _totalController.text = value;
-    }
-  }
-
-  void _handleTotalChanged(String value) {
-    final total = _parseAmount(value);
-    if (total == null) {
-      _amountController.clear();
-      _gstController.text = _gstApplicable ? '' : '0.00';
-      return;
-    }
-    final totalCents = _dollarsToCents(total);
-    if (_gstApplicable) {
-      final gstCents = (totalCents / 11).round();
-      _amountController.text = _centsToString(totalCents - gstCents);
-      _gstController.text = _centsToString(gstCents);
-    } else {
-      _amountController.text = value;
-      _gstController.text = '0.00';
-    }
-  }
-
-  void _handleGstChanged(String value) {
-    final amount = _parseAmount(_amountController.text);
-    final gst = _parseAmount(value);
-    if (amount == null || gst == null) return;
-    _totalController.text =
-        _centsToString(_dollarsToCents(amount) + _dollarsToCents(gst));
-  }
-
-  double? _parseAmount(String text) {
-    final cleaned = text.trim().replaceAll(',', '');
-    if (cleaned.isEmpty) return null;
-    return double.tryParse(cleaned);
-  }
-
-  int _dollarsToCents(double d) => (d * 100).round();
-  String _centsToString(int cents) => (cents / 100).toStringAsFixed(2);
 
   String _formatCents(int cents) {
     final dollars = cents / 100;
@@ -684,55 +560,21 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   // ── Validation & save ──────────────────────────────────────────────────────
 
-  String? _validate() {
-    if (_selectedContact == null) {
-      if (_contactTypedText.trim().isEmpty) return 'Please enter a contact';
-      if (!_saveNewContact) {
-        return 'Contact not found — tick "Save to contacts" or select an existing contact';
-      }
-    }
-    if (_selectedGl == null) return 'Please select a general ledger account';
-    final amount = _parseAmount(_amountController.text);
-    if (amount == null || amount <= 0) return 'Amount must be greater than zero';
-    final gst = _parseAmount(_gstController.text);
-    if (gst == null || gst < 0) return 'GST amount must be zero or more';
-    if (_isMoneyOut) {
-      if (_receiptOutController.text.trim().isEmpty) return 'Receipt number is required';
-    } else if (_receiptType == 'other') {
-      if (!RegExp(r'^\d{7}$').hasMatch(_receiptOtherController.text.trim())) {
-        return 'Receipt number must be exactly 7 digits';
-      }
-    }
-    return null;
-  }
-
-  String _buildReceiptNumber() {
-    if (_isMoneyOut) return _receiptOutController.text.trim();
-    switch (_receiptType) {
-      case 'square': return 'Square';
-      case 'other': return _receiptOtherController.text.trim();
-      default: return 'Bank Transfer';
-    }
-  }
-
-  Future<void> _save() async {
-    final error = _validate();
-    if (error != null) { _showSnackbar(error); return; }
-
-    if (_isDateLocked(_date)) {
+  Future<void> _save(TransactionFormData data) async {
+    if (_isDateLocked(data.date)) {
       _showSnackbar(
-          'Cannot create transaction: ${_date.year}-${_date.month.toString().padLeft(2, '0')} is locked.');
+          'Cannot create transaction: ${data.date.year}-${data.date.month.toString().padLeft(2, '0')} is locked.');
       return;
     }
 
     setState(() => _saving = true);
     try {
-      // Create contact on-the-fly if checkbox was ticked.
-      if (_selectedContact == null && _saveNewContact) {
+      String? contactId = data.existingContactId;
+      if (contactId == null && data.saveNewContact && data.newContactName != null) {
         final contactRes = await context.read<ApiClient>().post(
               '/contacts',
               jsonEncode({
-                'name': _contactTypedText.trim(),
+                'name': data.newContactName,
                 'contactType': 'person',
                 'gstRegistered': false,
               }),
@@ -747,21 +589,21 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           setState(() => _saving = false);
           return;
         }
-        final created = ContactEntry.fromJson(
-            jsonDecode(contactRes.body) as Map<String, dynamic>);
-        setState(() => _selectedContact = created);
+        contactId = ContactEntry.fromJson(
+            jsonDecode(contactRes.body) as Map<String, dynamic>).id;
       }
 
       final body = jsonEncode({
-        'contactId': _selectedContact!.id,
-        'generalLedgerId': _selectedGl!.id,
-        'amount': _dollarsToCents(_parseAmount(_amountController.text)!),
-        'gstAmount': _dollarsToCents(_parseAmount(_gstController.text)!),
-        'transactionType': _isMoneyOut ? 'debit' : 'credit',
-        'receiptNumber': _buildReceiptNumber(),
-        'description': _descriptionController.text.trim(),
+        'contactId': contactId,
+        'generalLedgerId': data.gl.id,
+        'amount': data.amountCents,
+        'gstAmount': data.gstCents,
+        'transactionType':
+            data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
+        'receiptNumber': data.receiptNumber,
+        'description': data.description,
         'transactionDate':
-            '${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
+            '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
       });
 
       final res = await context.read<ApiClient>().post('/transactions', body);
@@ -769,9 +611,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
       if (res.statusCode == 201) {
         _showSnackbar('Transaction saved');
-        _resetForm();
-        // Jump view to the month of the saved transaction so it's visible
-        setState(() => _viewMonth = DateTime(_date.year, _date.month));
+        setState(() {
+          _addingMoneyIn = false;
+          _addingMoneyOut = false;
+          _viewMonth = DateTime(data.date.year, data.date.month);
+        });
         await _load();
       } else {
         String msg = 'Save failed (${res.statusCode})';
@@ -782,26 +626,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     } catch (e) {
       if (mounted) { setState(() => _saving = false); _showSnackbar('Save failed: $e'); }
     }
-  }
-
-  void _resetForm() {
-    setState(() {
-      _selectedContact = null;
-      _contactTypedText = '';
-      _saveNewContact = false;
-      _contactResetKey++;
-      _selectedGl = null;
-      _selectedDirection = null;
-      _date = DateTime.now();
-      _amountController.clear();
-      _gstController.clear();
-      _totalController.clear();
-      _descriptionController.clear();
-      _receiptType = 'bankTransfer';
-      _receiptOtherController.clear();
-      _receiptOutController.clear();
-      _saving = false;
-    });
   }
 
   Future<void> _openImport() async {
@@ -826,50 +650,31 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   // ── Inline edit ─────────────────────────────────────────────────────────────
 
-  void _startEdit(TransactionEntry t) {
-    final glMatch = _glEntries.where((g) => g.id == t.generalLedgerId);
-    setState(() {
-      _editingId = t.id;
-      _editSaving = false;
-      _editDate = DateTime.parse(t.transactionDate);
-      _editContactId = t.contactId;
-      _editGl = glMatch.isEmpty ? null : glMatch.first;
-      _editReceiptController.text = t.receiptNumber;
-      _editDescriptionController.text = t.description;
-      _editAmountController.text = _centsToString(t.amount);
-      _editGstController.text = _centsToString(t.gstAmount);
-      _editTotalController.text = _centsToString(t.totalAmount);
-    });
-  }
+  void _startEdit(TransactionEntry t) =>
+      setState(() { _editingId = t.id; _editSaving = false; });
 
   void _cancelEdit() => setState(() { _editingId = null; _editSaving = false; });
 
-  Future<void> _saveEdit() async {
-    if (_editContactId == null) { _showSnackbar('Please select a contact'); return; }
-    if (_editGl == null) { _showSnackbar('Please select a GL account'); return; }
-    final amount = _parseAmount(_editAmountController.text);
-    if (amount == null || amount <= 0) { _showSnackbar('Amount must be greater than zero'); return; }
-    final gst = _parseAmount(_editGstController.text);
-    if (gst == null || gst < 0) { _showSnackbar('GST must be zero or more'); return; }
-
-    if (_isDateLocked(_editDate)) {
+  Future<void> _saveEdit(TransactionFormData data) async {
+    if (_isDateLocked(data.date)) {
       _showSnackbar(
-          'Cannot update transaction: ${_editDate.year}-${_editDate.month.toString().padLeft(2, '0')} is locked.');
+          'Cannot update transaction: ${data.date.year}-${data.date.month.toString().padLeft(2, '0')} is locked.');
       return;
     }
 
     setState(() => _editSaving = true);
 
     final body = jsonEncode({
-      'contactId': _editContactId,
-      'generalLedgerId': _editGl!.id,
-      'amount': _dollarsToCents(amount),
-      'gstAmount': _dollarsToCents(gst),
-      'transactionType': _editGl!.direction == GlDirection.moneyOut ? 'debit' : 'credit',
-      'receiptNumber': _editReceiptController.text.trim(),
-      'description': _editDescriptionController.text.trim(),
+      'contactId': data.existingContactId,
+      'generalLedgerId': data.gl.id,
+      'amount': data.amountCents,
+      'gstAmount': data.gstCents,
+      'transactionType':
+          data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
+      'receiptNumber': data.receiptNumber,
+      'description': data.description,
       'transactionDate':
-          '${_editDate.year}-${_editDate.month.toString().padLeft(2, '0')}-${_editDate.day.toString().padLeft(2, '0')}',
+          '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
     });
 
     final res = await context.read<ApiClient>().put('/transactions/$_editingId', body);
@@ -927,52 +732,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     }
   }
 
-  // Amount auto-calc for edit form
-
-  void _handleEditAmountChanged(String value) {
-    final amount = _parseAmount(value);
-    if (amount == null) {
-      _editGstController.text = _editGstApplicable ? '' : '0.00';
-      _editTotalController.clear();
-      return;
-    }
-    final amountCents = _dollarsToCents(amount);
-    if (_editGstApplicable) {
-      final gstCents = (amountCents / 10).round();
-      _editGstController.text = _centsToString(gstCents);
-      _editTotalController.text = _centsToString(amountCents + gstCents);
-    } else {
-      _editGstController.text = '0.00';
-      _editTotalController.text = value;
-    }
-  }
-
-  void _handleEditTotalChanged(String value) {
-    final total = _parseAmount(value);
-    if (total == null) {
-      _editAmountController.clear();
-      _editGstController.text = _editGstApplicable ? '' : '0.00';
-      return;
-    }
-    final totalCents = _dollarsToCents(total);
-    if (_editGstApplicable) {
-      final gstCents = (totalCents / 11).round();
-      _editAmountController.text = _centsToString(totalCents - gstCents);
-      _editGstController.text = _centsToString(gstCents);
-    } else {
-      _editAmountController.text = value;
-      _editGstController.text = '0.00';
-    }
-  }
-
-  void _handleEditGstChanged(String value) {
-    final amount = _parseAmount(_editAmountController.text);
-    final gst = _parseAmount(value);
-    if (amount == null || gst == null) return;
-    _editTotalController.text =
-        _centsToString(_dollarsToCents(amount) + _dollarsToCents(gst));
-  }
-
   void _showSnackbar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -1008,18 +767,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   Widget _buildContent() {
-    final bool canEdit = context.watch<AuthState>().canEdit;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (canEdit) ...[
-          _buildFormSection(),
-          const SizedBox(height: 16),
-          const Divider(),
-        ],
-        Expanded(child: _buildMonthSection()),
-      ],
-    );
+    return _buildMonthSection();
   }
 
   // ── Month transaction list ─────────────────────────────────────────────────
@@ -1040,6 +788,33 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               const Spacer(),
               _buildSearchBar(),
               const SizedBox(width: 8),
+              Builder(builder: (context) {
+                final canEdit = context.watch<AuthState>().canEdit;
+                if (!canEdit) return const SizedBox.shrink();
+                return MenuAnchor(
+                  builder: (context, controller, _) => IconButton(
+                    icon: const Icon(Icons.upload_file_outlined),
+                    tooltip: 'Import',
+                    onPressed: () => controller.isOpen
+                        ? controller.close()
+                        : controller.open(),
+                  ),
+                  menuChildren: [
+                    MenuItemButton(
+                      leadingIcon:
+                          const Icon(Icons.table_chart_outlined, size: 18),
+                      onPressed: _openImport,
+                      child: const Text("Woodgate Men's Shed Spreadsheet"),
+                    ),
+                    MenuItemButton(
+                      leadingIcon:
+                          const Icon(Icons.account_balance_outlined, size: 18),
+                      onPressed: _openCbaImport,
+                      child: const Text('CBA Transactions'),
+                    ),
+                  ],
+                );
+              }),
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: _load,
@@ -1172,14 +947,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   Widget _buildTransactionTab(List<TransactionEntry> txns, bool isMoneyOut) {
-    if (txns.isEmpty) {
-      final message = _isSearchMode
-          ? 'No transactions for ${_searchContact!.name} in $_searchYear.'
-          : 'No transactions for this month.';
-      return Center(
-        child: Text(message, style: const TextStyle(color: Colors.black54)),
-      );
-    }
     return SingleChildScrollView(
       child: _buildTransactionList(txns, isMoneyOut),
     );
@@ -1282,9 +1049,81 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             ),
           ),
           const Divider(height: 1),
+          if (txns.isEmpty && !(_isSearchMode))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+              child: Text('No transactions for this month.',
+                  style: const TextStyle(color: Colors.black54)),
+            ),
+          if (txns.isEmpty && _isSearchMode)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+              child: Text(
+                  'No transactions for ${_searchContact!.name} in $_searchYear.',
+                  style: const TextStyle(color: Colors.black54)),
+            ),
           ...txns.map((t) => _buildTransactionRow(t, isMoneyOut)),
+          _buildAddSection(isMoneyOut),
         ],
       ),
+    );
+  }
+
+  Widget _buildAddSection(bool isMoneyOut) {
+    final bool canEdit = context.read<AuthState>().canEdit;
+    if (!canEdit || _isSearchMode) return const SizedBox.shrink();
+
+    final isAdding = isMoneyOut ? _addingMoneyOut : _addingMoneyIn;
+
+    if (isAdding) {
+      return Column(
+        children: [
+          TransactionForm(
+            key: ValueKey(isMoneyOut ? 'add-out' : 'add-in'),
+            contacts: _contacts,
+            glEntries: _glEntries,
+            nextMoneyOutReceipt: _formatMoneyOutReceipt(),
+            initialDirection:
+                isMoneyOut ? GlDirection.moneyOut : GlDirection.moneyIn,
+            compact: true,
+            isSaving: _saving,
+            onSave: _save,
+            onCancel: () => setState(() {
+              if (isMoneyOut) _addingMoneyOut = false;
+              else _addingMoneyIn = false;
+            }),
+          ),
+          const Divider(height: 1),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        InkWell(
+          onTap: () => setState(() {
+            if (isMoneyOut) _addingMoneyOut = true;
+            else _addingMoneyIn = true;
+          }),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            child: Row(
+              children: [
+                if (isMoneyOut) const SizedBox(width: 40),
+                Icon(Icons.add,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 4),
+                Text('Add transaction',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.primary)),
+              ],
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+      ],
     );
   }
 
@@ -1292,7 +1131,17 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     if (_editingId == t.id) {
       return Column(
         children: [
-          _buildEditingRow(t, isMoneyOut),
+          TransactionForm(
+            key: ValueKey('edit-${t.id}'),
+            contacts: _contacts,
+            glEntries: _glEntries,
+            nextMoneyOutReceipt: _formatMoneyOutReceipt(),
+            initial: t,
+            compact: true,
+            isSaving: _editSaving,
+            onSave: _saveEdit,
+            onCancel: _cancelEdit,
+          ),
           const Divider(height: 1),
         ],
       );
@@ -1474,711 +1323,4 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     );
   }
 
-  Widget _buildEditingRow(TransactionEntry t, bool isMoneyOut) {
-    const inputDecoration = InputDecoration(
-      border: OutlineInputBorder(),
-      isDense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    );
-
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerLowest,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Row 1: Date | Contact | GL Account
-          Row(
-            children: [
-              if (isMoneyOut) const SizedBox(width: 40),
-              // Date
-              SizedBox(
-                width: 140,
-                child: InkWell(
-                  onTap: _editSaving
-                      ? null
-                      : () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: _editDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2035),
-                          );
-                          if (picked != null) setState(() => _editDate = picked);
-                        },
-                  child: InputDecorator(
-                    decoration:
-                        inputDecoration.copyWith(labelText: 'Date'),
-                    child: Text(
-                      '${_editDate.day.toString().padLeft(2, '0')}/${_editDate.month.toString().padLeft(2, '0')}/${_editDate.year}',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Contact
-              Expanded(
-                child: InputDecorator(
-                  decoration:
-                      inputDecoration.copyWith(labelText: 'Contact'),
-                  child: DropdownButton<String>(
-                    value: _editContactId,
-                    isExpanded: true,
-                    isDense: true,
-                    underline: const SizedBox.shrink(),
-                    items: _contacts
-                        .map((c) => DropdownMenuItem(
-                              value: c.id,
-                              child: Text(c.name,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13)),
-                            ))
-                        .toList(),
-                    onChanged: _editSaving
-                        ? null
-                        : (v) => setState(() => _editContactId = v),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // GL Account
-              Expanded(
-                child: InputDecorator(
-                  decoration:
-                      inputDecoration.copyWith(labelText: 'GL Account'),
-                  child: DropdownButton<GeneralLedgerEntry>(
-                    value: _editGl,
-                    isExpanded: true,
-                    isDense: true,
-                    underline: const SizedBox.shrink(),
-                    items: _glEntries
-                        .where((g) => g.direction ==
-                            (isMoneyOut
-                                ? GlDirection.moneyOut
-                                : GlDirection.moneyIn))
-                        .map((g) {
-                      final isIn = g.direction == GlDirection.moneyIn;
-                      return DropdownMenuItem(
-                        value: g,
-                        child: Row(children: [
-                          Icon(
-                            isIn
-                                ? Icons.arrow_circle_down_outlined
-                                : Icons.arrow_circle_up_outlined,
-                            size: 14,
-                            color: isIn
-                                ? Colors.green.shade700
-                                : Colors.red.shade700,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                              child: Text(g.description,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13))),
-                        ]),
-                      );
-                    }).toList(),
-                    onChanged: _editSaving
-                        ? null
-                        : (gl) => setState(() {
-                              _editGl = gl;
-                              if (gl != null && !gl.gstApplicable) {
-                                _editGstController.text = '0.00';
-                                final total = _parseAmount(
-                                    _editTotalController.text);
-                                if (total != null) {
-                                  _editAmountController.text =
-                                      _editTotalController.text;
-                                }
-                              }
-                            }),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Row 2: Receipt | Description | Amount | GST | Total
-          Row(
-            children: [
-              if (isMoneyOut) const SizedBox(width: 40),
-              SizedBox(
-                width: 130,
-                child: TextFormField(
-                  controller: _editReceiptController,
-                  enabled: !_editSaving,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: inputDecoration.copyWith(labelText: 'Receipt'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextFormField(
-                  controller: _editDescriptionController,
-                  enabled: !_editSaving,
-                  style: const TextStyle(fontSize: 13),
-                  decoration:
-                      inputDecoration.copyWith(labelText: 'Description'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 110,
-                child: TextFormField(
-                  controller: _editAmountController,
-                  enabled: !_editSaving,
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  onChanged: _handleEditAmountChanged,
-                  decoration: inputDecoration.copyWith(
-                      labelText: 'Amt ex GST', prefixText: '\$ '),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 90,
-                child: TextFormField(
-                  controller: _editGstController,
-                  enabled: !_editSaving && _editGstApplicable,
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  onChanged: _handleEditGstChanged,
-                  decoration: inputDecoration.copyWith(
-                    labelText: 'GST',
-                    prefixText: '\$ ',
-                    fillColor:
-                        _editGstApplicable ? null : Colors.grey.shade100,
-                    filled: !_editGstApplicable,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 110,
-                child: TextFormField(
-                  controller: _editTotalController,
-                  enabled: !_editSaving,
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  onChanged: _handleEditTotalChanged,
-                  decoration: inputDecoration.copyWith(
-                      labelText: 'Total', prefixText: '\$ '),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Save / Cancel
-          Row(
-            children: [
-              if (isMoneyOut) const SizedBox(width: 40),
-              OutlinedButton(
-                onPressed: _editSaving ? null : _cancelEdit,
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _editSaving ? null : _saveEdit,
-                child: _editSaving
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Save'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── New transaction form ───────────────────────────────────────────────────
-
-  Widget _buildFormSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text('New Transaction',
-                style: Theme.of(context).textTheme.headlineMedium),
-            const Spacer(),
-            MenuAnchor(
-              builder: (context, controller, _) => OutlinedButton.icon(
-                onPressed: _saving
-                    ? null
-                    : () => controller.isOpen
-                        ? controller.close()
-                        : controller.open(),
-                icon: const Icon(Icons.upload_file_outlined, size: 18),
-                label: const Text('Import'),
-              ),
-              menuChildren: [
-                MenuItemButton(
-                  leadingIcon: const Icon(Icons.table_chart_outlined, size: 18),
-                  onPressed: _saving ? null : _openImport,
-                  child: const Text("Woodgate Men's Shed Spreadsheet"),
-                ),
-                MenuItemButton(
-                  leadingIcon: const Icon(Icons.account_balance_outlined, size: 18),
-                  onPressed: _saving ? null : _openCbaImport,
-                  child: const Text('CBA Transactions'),
-                ),
-              ],
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: _saving ? null : _resetForm,
-              child: const Text('Clear'),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Text('Save'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: _buildForm(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(width: 180, child: _buildDateField()),
-            const SizedBox(width: 16),
-            Expanded(child: _buildContactField()),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildGlField(),
-        const SizedBox(height: 16),
-        _buildDescriptionField(),
-        const SizedBox(height: 16),
-        _buildAmountsRow(),
-        const SizedBox(height: 16),
-        if (_selectedGl != null) _buildReceiptSection(),
-      ],
-    );
-  }
-
-  Widget _buildDateField() {
-    final d = _date;
-    final label =
-        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-    return InkWell(
-      onTap: _saving
-          ? null
-          : () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _date,
-                firstDate: DateTime(2020),
-                lastDate: DateTime(2035),
-              );
-              if (picked != null) setState(() => _date = picked);
-            },
-      child: InputDecorator(
-        decoration: const InputDecoration(
-          labelText: 'Date',
-          border: OutlineInputBorder(),
-          suffixIcon: Icon(Icons.calendar_today, size: 18),
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-        ),
-        child: Text(label),
-      ),
-    );
-  }
-
-  Widget _buildContactField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Autocomplete<ContactEntry>(
-          key: ValueKey(_contactResetKey),
-          displayStringForOption: (c) => c.name,
-          optionsBuilder: (textEditingValue) {
-            if (textEditingValue.text.isEmpty) return _contacts;
-            final q = textEditingValue.text.toLowerCase();
-            return _contacts.where((c) => c.name.toLowerCase().contains(q));
-          },
-          onSelected: (contact) => setState(() {
-            _selectedContact = contact;
-            _contactTypedText = contact.name;
-            _saveNewContact = false;
-          }),
-          fieldViewBuilder: (context, textController, focusNode, _) {
-            return TextFormField(
-              controller: textController,
-              focusNode: focusNode,
-              enabled: !_saving,
-              onChanged: (value) {
-                setState(() {
-                  _contactTypedText = value;
-                  if (_selectedContact != null &&
-                      value != _selectedContact!.name) {
-                    _selectedContact = null;
-                  }
-                  if (value.trim().isEmpty) _saveNewContact = false;
-                });
-              },
-              decoration: InputDecoration(
-                labelText: 'Contact',
-                border: const OutlineInputBorder(),
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                suffixIcon: _selectedContact != null
-                    ? const Icon(Icons.check_circle_outline,
-                        color: Colors.green, size: 18)
-                    : null,
-              ),
-            );
-          },
-          optionsViewBuilder: (context, onSelected, options) {
-            return Align(
-              alignment: Alignment.topLeft,
-              child: Material(
-                elevation: 4,
-                borderRadius: BorderRadius.circular(4),
-                child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxHeight: 220, maxWidth: 400),
-                  child: ListView.builder(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    itemCount: options.length,
-                    itemBuilder: (_, i) {
-                      final c = options.elementAt(i);
-                      return ListTile(
-                        dense: true,
-                        title: Text(c.name),
-                        subtitle: Text(
-                            c.contactType == ContactType.company
-                                ? 'Company'
-                                : 'Person',
-                            style: const TextStyle(fontSize: 11)),
-                        onTap: () => onSelected(c),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-        if (_hasUnmatchedContact)
-          CheckboxListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            value: _saveNewContact,
-            onChanged: _saving
-                ? null
-                : (v) => setState(() => _saveNewContact = v ?? false),
-            title: Text(
-              'Save "${_contactTypedText.trim()}" to contacts',
-              style: const TextStyle(fontSize: 13),
-            ),
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-      ],
-    );
-  }
-
-  Widget _buildGlField() {
-    const decoration = InputDecoration(
-      border: OutlineInputBorder(),
-      isDense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    );
-
-    final filteredGls = _selectedDirection == null
-        ? _glEntries
-        : _glEntries.where((g) => g.direction == _selectedDirection).toList();
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 150,
-          child: InputDecorator(
-            decoration: decoration.copyWith(labelText: 'Direction'),
-            child: DropdownButton<GlDirection>(
-              value: _selectedDirection,
-              isExpanded: true,
-              isDense: true,
-              underline: const SizedBox.shrink(),
-              hint: const Text('All', style: TextStyle(fontSize: 13)),
-              items: [
-                DropdownMenuItem(
-                  value: GlDirection.moneyIn,
-                  child: Row(children: [
-                    Icon(Icons.arrow_circle_down_outlined,
-                        size: 15, color: Colors.green.shade700),
-                    const SizedBox(width: 6),
-                    const Text('Money-In', style: TextStyle(fontSize: 13)),
-                  ]),
-                ),
-                DropdownMenuItem(
-                  value: GlDirection.moneyOut,
-                  child: Row(children: [
-                    Icon(Icons.arrow_circle_up_outlined,
-                        size: 15, color: Colors.red.shade700),
-                    const SizedBox(width: 6),
-                    const Text('Money-Out', style: TextStyle(fontSize: 13)),
-                  ]),
-                ),
-              ],
-              onChanged: _saving ? null : _onDirectionChanged,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: InputDecorator(
-            decoration: decoration.copyWith(labelText: 'General Ledger Account'),
-            child: DropdownButton<GeneralLedgerEntry>(
-              value: _selectedGl,
-              isExpanded: true,
-              isDense: true,
-              underline: const SizedBox.shrink(),
-              items: filteredGls.map((gl) {
-                final glIsIn = gl.direction == GlDirection.moneyIn;
-                return DropdownMenuItem(
-                  value: gl,
-                  child: Row(
-                    children: [
-                      Icon(
-                        glIsIn
-                            ? Icons.arrow_circle_down_outlined
-                            : Icons.arrow_circle_up_outlined,
-                        size: 16,
-                        color: glIsIn
-                            ? Colors.green.shade700
-                            : Colors.red.shade700,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: Text(gl.description,
-                              overflow: TextOverflow.ellipsis)),
-                      if (gl.gstApplicable) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(3),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: Text('GST',
-                              style: TextStyle(
-                                  fontSize: 10, color: Colors.blue.shade700)),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: _saving ? null : _onGlChanged,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDescriptionField() {
-    return TextFormField(
-      controller: _descriptionController,
-      enabled: !_saving,
-      decoration: const InputDecoration(
-        labelText: 'Description (optional)',
-        border: OutlineInputBorder(),
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-      ),
-    );
-  }
-
-  Widget _buildAmountsRow() {
-    const decoration = InputDecoration(
-      border: OutlineInputBorder(),
-      isDense: true,
-      prefixText: '\$ ',
-      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-    );
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: TextFormField(
-            controller: _totalController,
-            enabled: !_saving && _selectedGl != null,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-            ],
-            onChanged: _handleTotalChanged,
-            decoration: decoration.copyWith(labelText: 'Total Amount'),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: TextFormField(
-            controller: _amountController,
-            enabled: !_saving && _selectedGl != null,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-            ],
-            onChanged: _handleAmountChanged,
-            decoration: decoration.copyWith(labelText: 'Amount (ex GST)'),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: TextFormField(
-            controller: _gstController,
-            enabled: !_saving && _selectedGl != null && _gstApplicable,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-            ],
-            onChanged: _handleGstChanged,
-            decoration: decoration.copyWith(
-              labelText: 'GST',
-              fillColor: _gstApplicable ? null : Colors.grey.shade100,
-              filled: !_gstApplicable,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReceiptSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Receipt Number', style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 8),
-        if (_isMoneyOut) _buildMoneyOutReceipt() else _buildMoneyInReceipt(),
-      ],
-    );
-  }
-
-  Widget _buildMoneyOutReceipt() {
-    return SizedBox(
-      width: 200,
-      child: TextFormField(
-        controller: _receiptOutController,
-        enabled: !_saving,
-        decoration: const InputDecoration(
-          border: OutlineInputBorder(),
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-          helperText: 'Auto-generated — edit if needed',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMoneyInReceipt() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('Bank Transfer'),
-              selected: _receiptType == 'bankTransfer',
-              onSelected: _saving
-                  ? null
-                  : (_) => setState(() {
-                        _receiptType = 'bankTransfer';
-                        _receiptOtherController.clear();
-                      }),
-            ),
-            ChoiceChip(
-              label: const Text('Square'),
-              selected: _receiptType == 'square',
-              onSelected: _saving
-                  ? null
-                  : (_) => setState(() {
-                        _receiptType = 'square';
-                        _receiptOtherController.clear();
-                      }),
-            ),
-            ChoiceChip(
-              label: const Text('Other'),
-              selected: _receiptType == 'other',
-              onSelected: _saving
-                  ? null
-                  : (_) => setState(() => _receiptType = 'other'),
-            ),
-          ],
-        ),
-        if (_receiptType == 'other') ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 160,
-            child: TextFormField(
-              controller: _receiptOtherController,
-              enabled: !_saving,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(7),
-              ],
-              decoration: const InputDecoration(
-                labelText: '7-digit number',
-                border: OutlineInputBorder(),
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                counterText: '',
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 }
