@@ -11,6 +11,9 @@ class UpdateTransactionRequest {
   final String description;
   final DateTime transactionDate;
 
+  /// When non-null, explicitly sets is_cash. Null means preserve the existing value.
+  final bool? isCash;
+
   const UpdateTransactionRequest({
     required this.contactId,
     required this.generalLedgerId,
@@ -20,6 +23,7 @@ class UpdateTransactionRequest {
     required this.receiptNumber,
     required this.description,
     required this.transactionDate,
+    this.isCash,
   });
 
   factory UpdateTransactionRequest.fromJson(Map<String, dynamic> json) {
@@ -57,6 +61,11 @@ class UpdateTransactionRequest {
       throw const FormatException('transactionDate must be a valid ISO 8601 date');
     }
 
+    final isCashRaw = json['isCash'];
+    if (isCashRaw != null && isCashRaw is! bool) {
+      throw const FormatException('isCash must be a boolean');
+    }
+
     return UpdateTransactionRequest(
       contactId: contactId,
       generalLedgerId: generalLedgerId,
@@ -66,6 +75,7 @@ class UpdateTransactionRequest {
       receiptNumber: receiptNumber,
       description: description,
       transactionDate: transactionDate,
+      isCash: isCashRaw as bool?,
     );
   }
 }

@@ -14,6 +14,7 @@ abstract interface class ITransactionRepository {
     required String receiptNumber,
     required String description,
     required DateTime transactionDate,
+    bool isCash = false,
   });
 
   /// Returns a transaction by [id] within [entityId], or null if not found / deleted.
@@ -36,6 +37,8 @@ abstract interface class ITransactionRepository {
     required String receiptNumber,
     required String description,
     required DateTime transactionDate,
+    bool isCash = false,
+    bool bankMatched = false,
   });
 
   /// Soft-deletes the transaction with [id] within [entityId].

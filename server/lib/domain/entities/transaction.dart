@@ -42,6 +42,9 @@ class Transaction {
   /// Whether this transaction has been matched to a bank statement entry.
   final bool bankMatched;
 
+  /// Whether this transaction was recorded as a cash payment (bypasses bank rec).
+  final bool isCash;
+
   const Transaction({
     required this.id,
     required this.contactId,
@@ -56,6 +59,7 @@ class Transaction {
     required this.updatedAt,
     this.deletedAt,
     this.bankMatched = false,
+    this.isCash = false,
   });
 
   bool get isDeleted => deletedAt != null;

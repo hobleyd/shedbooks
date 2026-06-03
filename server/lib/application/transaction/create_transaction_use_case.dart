@@ -21,6 +21,7 @@ class CreateTransactionUseCase {
     required String receiptNumber,
     required String description,
     required DateTime transactionDate,
+    bool isCash = false,
   }) async {
     TransactionValidator.validate(
       amount: amount,
@@ -43,6 +44,7 @@ class CreateTransactionUseCase {
       receiptNumber: receiptNumber.trim(),
       description: description.trim(),
       transactionDate: transactionDate,
+      isCash: isCash,
     );
   }
 

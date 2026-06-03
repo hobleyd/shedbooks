@@ -57,6 +57,7 @@ void main() {
           receiptNumber: 'REC-001',
           description: '',
           transactionDate: tDate,
+          isCash: false,
         ),
       ).thenAnswer((_) async => tTransaction);
 
@@ -105,6 +106,7 @@ void main() {
           receiptNumber: 'Bank Transfer',
           description: '',
           transactionDate: tDate,
+          isCash: false,
         ),
       ).thenAnswer((_) async => tCreditTransaction);
 
@@ -139,6 +141,7 @@ void main() {
           receiptNumber: any(named: 'receiptNumber'),
           description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
         ),
       ).thenAnswer((_) async => tTransaction);
 
@@ -172,6 +175,7 @@ void main() {
           receiptNumber: 'REC-001',
           description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
         ),
       ).thenAnswer((_) async => tTransaction);
 
@@ -200,6 +204,7 @@ void main() {
           receiptNumber: 'REC-001',
           description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
         ),
       ).called(1);
     });
@@ -335,6 +340,7 @@ void main() {
           receiptNumber: any(named: 'receiptNumber'),
           description: any(named: 'description'),
           transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
         ),
       ).thenAnswer((_) async => tTransaction);
 
@@ -353,6 +359,71 @@ void main() {
         ),
         completes,
       );
+    });
+
+    test('passes isCash: true to repository and marks transaction as cash and bank-matched', () async {
+      // Arrange
+      final tCashTransaction = Transaction(
+        id: '00000000-0000-0000-0000-000000000001',
+        contactId: '00000000-0000-0000-0000-000000000002',
+        generalLedgerId: '00000000-0000-0000-0000-000000000003',
+        amount: 5000,
+        gstAmount: 0,
+        transactionType: TransactionType.credit,
+        receiptNumber: 'CASH-001',
+        description: '',
+        transactionDate: tDate,
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 1),
+        bankMatched: true,
+        isCash: true,
+      );
+      when(
+        () => repository.create(
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: 5000,
+          gstAmount: 0,
+          transactionType: TransactionType.credit,
+          receiptNumber: 'CASH-001',
+          description: '',
+          transactionDate: tDate,
+          isCash: true,
+        ),
+      ).thenAnswer((_) async => tCashTransaction);
+
+      // Act
+      final result = await sut.execute(
+        entityId: tEntityId,
+        contactId: '00000000-0000-0000-0000-000000000002',
+        generalLedgerId: '00000000-0000-0000-0000-000000000003',
+        amount: 5000,
+        gstAmount: 0,
+        transactionType: TransactionType.credit,
+        receiptNumber: 'CASH-001',
+        description: '',
+        transactionDate: tDate,
+        isCash: true,
+      );
+
+      // Assert — cash transactions must be flagged isCash and auto bank-matched
+      expect(result.isCash, isTrue);
+      expect(result.bankMatched, isTrue);
+      verify(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: true,
+        ),
+      ).called(1);
     });
   });
 }

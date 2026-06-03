@@ -133,14 +133,18 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
 
   @override
   Future<void> ensureCashAccount({required String entityId}) async {
+    // Only insert when no cash account (system or manual) exists for this entity.
     await _pool.execute(
       Sql.named('''
         INSERT INTO bank_accounts
           (id, entity_id, bank_name, account_name, bsb, account_number, account_type, is_system, currency)
-        VALUES
-          (gen_random_uuid(), @entityId, @bankName, @accountName, @bsb, @accountNumber, 'cash', TRUE, 'AUD')
-        ON CONFLICT (entity_id) WHERE is_system = TRUE AND account_type = 'cash' AND deleted_at IS NULL
-        DO NOTHING
+        SELECT gen_random_uuid(), @entityId, @bankName, @accountName, @bsb, @accountNumber, 'cash', TRUE, 'AUD'
+        WHERE NOT EXISTS (
+          SELECT 1 FROM bank_accounts
+          WHERE entity_id   = @entityId
+            AND account_type = 'cash'
+            AND deleted_at  IS NULL
+        )
       '''),
       parameters: {
         'entityId': entityId,

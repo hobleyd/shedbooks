@@ -24,6 +24,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required String receiptNumber,
     required String description,
     required DateTime transactionDate,
+    bool isCash = false,
   }) async {
     try {
       final id = _uuid.v4();
@@ -31,17 +32,19 @@ class PostgresTransactionRepository implements ITransactionRepository {
         Sql.named('''
           INSERT INTO transactions (
             id, entity_id, contact_id, general_ledger_id, amount, gst_amount,
-            transaction_type, receipt_number, description, transaction_date
+            transaction_type, receipt_number, description, transaction_date,
+            is_cash, bank_matched
           )
           VALUES (
             @id::uuid, @entityId, @contactId::uuid, @generalLedgerId::uuid,
             @amount, @gstAmount, @transactionType::transaction_type,
-            @receiptNumber, @description, @transactionDate::date
+            @receiptNumber, @description, @transactionDate::date,
+            @isCash, @isCash
           )
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at, bank_matched
+            created_at, updated_at, deleted_at, bank_matched, is_cash
         '''),
         parameters: {
           'id': id,
@@ -54,6 +57,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           'receiptNumber': receiptNumber,
           'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
+          'isCash': isCash,
         },
       );
       return _mapRow(result.first.toColumnMap());
@@ -70,7 +74,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched
+          created_at, updated_at, deleted_at, bank_matched, is_cash
         FROM transactions
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -90,7 +94,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched
+          created_at, updated_at, deleted_at, bank_matched, is_cash
         FROM transactions
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -114,6 +118,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required String receiptNumber,
     required String description,
     required DateTime transactionDate,
+    bool isCash = false,
+    bool bankMatched = false,
   }) async {
     try {
       final result = await _pool.execute(
@@ -127,6 +133,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
               receipt_number    = @receiptNumber,
               description       = @description,
               transaction_date  = @transactionDate::date,
+              is_cash           = @isCash,
+              bank_matched      = @bankMatched,
               updated_at        = NOW()
           WHERE id = @id::uuid
             AND entity_id = @entityId
@@ -134,7 +142,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at, bank_matched
+            created_at, updated_at, deleted_at, bank_matched, is_cash
         '''),
         parameters: {
           'id': id,
@@ -147,6 +155,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
           'receiptNumber': receiptNumber,
           'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
+          'isCash': isCash,
+          'bankMatched': bankMatched,
         },
       );
 
@@ -277,6 +287,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,
       bankMatched: row['bank_matched'] as bool? ?? false,
+      isCash: row['is_cash'] as bool? ?? false,
     );
   }
 }

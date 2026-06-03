@@ -604,6 +604,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         'description': data.description,
         'transactionDate':
             '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
+        if (data.isCash) 'isCash': true,
       });
 
       final res = await context.read<ApiClient>().post('/transactions', body);
@@ -675,6 +676,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       'description': data.description,
       'transactionDate':
           '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
+      if (data.isCash) 'isCash': true,
     });
 
     final res = await context.read<ApiClient>().put('/transactions/$_editingId', body);
@@ -1036,7 +1038,19 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                   width: 80,
                   child: Center(
                     child: Text(
-                      'Processed',
+                      'Matched',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 60,
+                  child: Center(
+                    child: Text(
+                      'Cash',
                       style: Theme.of(context)
                           .textTheme
                           .labelLarge
@@ -1236,6 +1250,24 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                       fontWeight: FontWeight.bold,
                       color: t.bankMatched
                           ? Colors.green.shade700
+                          : Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 60,
+                child: Center(
+                  child: Text(
+                    t.isCash ? 'Y' : 'N',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: t.isCash
+                          ? Colors.blue.shade700
                           : Theme.of(context)
                               .colorScheme
                               .onSurface

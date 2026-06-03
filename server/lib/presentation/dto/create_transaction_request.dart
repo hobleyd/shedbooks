@@ -10,6 +10,7 @@ class CreateTransactionRequest {
   final String receiptNumber;
   final String description;
   final DateTime transactionDate;
+  final bool isCash;
 
   const CreateTransactionRequest({
     required this.contactId,
@@ -20,6 +21,7 @@ class CreateTransactionRequest {
     required this.receiptNumber,
     required this.description,
     required this.transactionDate,
+    this.isCash = false,
   });
 
   factory CreateTransactionRequest.fromJson(Map<String, dynamic> json) {
@@ -57,6 +59,8 @@ class CreateTransactionRequest {
       throw const FormatException('transactionDate must be a valid ISO 8601 date');
     }
 
+    final isCash = json['isCash'] as bool? ?? false;
+
     return CreateTransactionRequest(
       contactId: contactId,
       generalLedgerId: generalLedgerId,
@@ -66,6 +70,7 @@ class CreateTransactionRequest {
       receiptNumber: receiptNumber,
       description: description,
       transactionDate: transactionDate,
+      isCash: isCash,
     );
   }
 }

@@ -91,6 +91,7 @@ class TransactionHandler {
         receiptNumber: dto.receiptNumber,
         description: dto.description,
         transactionDate: dto.transactionDate,
+        isCash: dto.isCash,
       );
       final contactLabel = await _contactLabel(transaction.contactId, entityId);
       final glLabel = await _glLabel(transaction.generalLedgerId, entityId);
@@ -159,6 +160,7 @@ class TransactionHandler {
         receiptNumber: dto.receiptNumber,
         description: dto.description,
         transactionDate: dto.transactionDate,
+        isCash: dto.isCash,
       );
       if (before != null) {
         final beforeContactLabel = await _contactLabel(before.contactId, entityId);

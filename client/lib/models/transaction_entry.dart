@@ -11,6 +11,7 @@ class TransactionEntry {
   final int totalAmount; // in cents
   final String transactionDate; // 'YYYY-MM-DD'
   final bool bankMatched;
+  final bool isCash;
 
   const TransactionEntry({
     required this.id,
@@ -24,6 +25,7 @@ class TransactionEntry {
     required this.totalAmount,
     required this.transactionDate,
     this.bankMatched = false,
+    this.isCash = false,
   });
 
   factory TransactionEntry.fromJson(Map<String, dynamic> json) => TransactionEntry(
@@ -38,6 +40,7 @@ class TransactionEntry {
         totalAmount: json['totalAmount'] as int,
         transactionDate: json['transactionDate'] as String,
         bankMatched: (json['bankMatched'] as bool?) ?? false,
+        isCash: (json['isCash'] as bool?) ?? false,
       );
 
   bool get isCredit => transactionType == 'credit';
@@ -54,5 +57,6 @@ class TransactionEntry {
         totalAmount: totalAmount,
         transactionDate: transactionDate,
         bankMatched: bankMatched ?? this.bankMatched,
+        isCash: isCash,
       );
 }

@@ -23,6 +23,7 @@ class UpdateTransactionUseCase {
     required String receiptNumber,
     required String description,
     required DateTime transactionDate,
+    bool? isCash,
   }) async {
     TransactionValidator.validate(
       amount: amount,
@@ -56,6 +57,9 @@ class UpdateTransactionUseCase {
       receiptNumber: receiptNumber.trim(),
       description: description.trim(),
       transactionDate: transactionDate,
+      isCash: isCash ?? existing.isCash,
+      // Cash transactions are pre-matched; otherwise preserve existing bank_matched state.
+      bankMatched: (isCash ?? existing.isCash) || existing.bankMatched,
     );
   }
 

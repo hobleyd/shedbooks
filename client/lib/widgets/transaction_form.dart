@@ -16,6 +16,7 @@ class TransactionFormData {
   final int gstCents;
   final String receiptNumber;
   final String description;
+  final bool isCash;
 
   const TransactionFormData({
     required this.date,
@@ -27,6 +28,7 @@ class TransactionFormData {
     required this.gstCents,
     required this.receiptNumber,
     required this.description,
+    this.isCash = false,
   });
 }
 
@@ -114,7 +116,7 @@ class TransactionFormState extends State<TransactionForm> {
             _isCash = false;
             _paymentType = 'square';
           default:
-            _isCash = true;
+            _isCash = t.isCash;
             _cashReceiptController.text = t.receiptNumber;
         }
       }
@@ -192,6 +194,7 @@ class TransactionFormState extends State<TransactionForm> {
       gstCents: _dollarsToCents(gst),
       receiptNumber: _buildReceiptNumber(),
       description: _descriptionController.text.trim(),
+      isCash: !_isMoneyOut && _isCash,
     ));
   }
 
@@ -602,6 +605,7 @@ class TransactionFormState extends State<TransactionForm> {
         border: OutlineInputBorder(),
         isDense: true,
         contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+        floatingLabelBehavior: FloatingLabelBehavior.always,
       ),
     );
   }
@@ -612,6 +616,7 @@ class TransactionFormState extends State<TransactionForm> {
       isDense: true,
       prefixText: '\$ ',
       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+      floatingLabelBehavior: FloatingLabelBehavior.always,
     );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -719,6 +724,7 @@ class TransactionFormState extends State<TransactionForm> {
                 isDense: true,
                 contentPadding:
                     EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
               ),
             ),
           )
@@ -764,6 +770,7 @@ class TransactionFormState extends State<TransactionForm> {
       border: OutlineInputBorder(),
       isDense: true,
       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      floatingLabelBehavior: FloatingLabelBehavior.always,
     );
 
     return Container(
@@ -843,12 +850,66 @@ class TransactionFormState extends State<TransactionForm> {
             ],
           ),
           const SizedBox(height: 8),
-          // Row 2: Receipt | Description | Amount | GST | Total
+          // Row 2: Receipt | Description | Total | Amt ex GST | GST
+          //        (Money-In: Cash checkbox | Payment/Receipt | Description | ...)
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              if (isMoneyOut) const SizedBox(width: 40),
-              _buildCompactReceiptField(dec),
+              if (isMoneyOut) ...[
+                const SizedBox(width: 40),
+                _buildCompactReceiptField(dec),
+              ] else ...[
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Checkbox(
+                    value: _isCash,
+                    onChanged: widget.isSaving
+                        ? null
+                        : (v) => setState(() {
+                              _isCash = v ?? false;
+                              _cashReceiptController.clear();
+                            }),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text('Cash', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 160,
+                  child: _isCash
+                      ? TextFormField(
+                          controller: _cashReceiptController,
+                          enabled: !widget.isSaving,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: dec.copyWith(labelText: 'Receipt No.'),
+                        )
+                      : InputDecorator(
+                          decoration: dec.copyWith(labelText: 'Payment'),
+                          child: DropdownButton<String>(
+                            value: _paymentType,
+                            isExpanded: true,
+                            isDense: true,
+                            underline: const SizedBox.shrink(),
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'bankTransfer',
+                                  child: Text('Bank Transfer',
+                                      style: TextStyle(fontSize: 12))),
+                              DropdownMenuItem(
+                                  value: 'square',
+                                  child: Text('Square Payment',
+                                      style: TextStyle(fontSize: 12))),
+                            ],
+                            onChanged: widget.isSaving
+                                ? null
+                                : (v) => setState(
+                                    () => _paymentType = v ?? 'bankTransfer'),
+                          ),
+                        ),
+                ),
+              ],
               const SizedBox(width: 8),
               Expanded(
                 child: TextFormField(
@@ -856,6 +917,23 @@ class TransactionFormState extends State<TransactionForm> {
                   enabled: !widget.isSaving,
                   style: const TextStyle(fontSize: 13),
                   decoration: dec.copyWith(labelText: 'Description'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 110,
+                child: TextFormField(
+                  controller: _totalController,
+                  enabled: !widget.isSaving,
+                  style: const TextStyle(fontSize: 13),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                  ],
+                  onChanged: _handleTotalChanged,
+                  decoration:
+                      dec.copyWith(labelText: 'Total', prefixText: '\$ '),
                 ),
               ),
               const SizedBox(width: 8),
@@ -894,23 +972,6 @@ class TransactionFormState extends State<TransactionForm> {
                     fillColor: _gstApplicable ? null : Colors.grey.shade100,
                     filled: !_gstApplicable,
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 110,
-                child: TextFormField(
-                  controller: _totalController,
-                  enabled: !widget.isSaving,
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  onChanged: _handleTotalChanged,
-                  decoration:
-                      dec.copyWith(labelText: 'Total', prefixText: '\$ '),
                 ),
               ),
             ],
@@ -972,77 +1033,13 @@ class TransactionFormState extends State<TransactionForm> {
   }
 
   Widget _buildCompactReceiptField(InputDecoration dec) {
-    if (_isMoneyOut) {
-      return SizedBox(
-        width: 130,
-        child: TextFormField(
-          controller: _receiptOutController,
-          enabled: !widget.isSaving,
-          style: const TextStyle(fontSize: 13),
-          decoration: dec.copyWith(labelText: 'Receipt'),
-        ),
-      );
-    }
     return SizedBox(
-      width: 190,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: Checkbox(
-                  value: _isCash,
-                  onChanged: widget.isSaving
-                      ? null
-                      : (v) => setState(() {
-                            _isCash = v ?? false;
-                            _cashReceiptController.clear();
-                          }),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Text('Cash', style: TextStyle(fontSize: 12)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          if (_isCash)
-            TextFormField(
-              controller: _cashReceiptController,
-              enabled: !widget.isSaving,
-              style: const TextStyle(fontSize: 13),
-              decoration: dec.copyWith(labelText: 'Receipt No.'),
-            )
-          else
-            InputDecorator(
-              decoration: dec.copyWith(labelText: 'Payment'),
-              child: DropdownButton<String>(
-                value: _paymentType,
-                isExpanded: true,
-                isDense: true,
-                underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(
-                      value: 'bankTransfer',
-                      child:
-                          Text('Bank Transfer', style: TextStyle(fontSize: 12))),
-                  DropdownMenuItem(
-                      value: 'square',
-                      child: Text('Square Payment',
-                          style: TextStyle(fontSize: 12))),
-                ],
-                onChanged: widget.isSaving
-                    ? null
-                    : (v) =>
-                        setState(() => _paymentType = v ?? 'bankTransfer'),
-              ),
-            ),
-        ],
+      width: 130,
+      child: TextFormField(
+        controller: _receiptOutController,
+        enabled: !widget.isSaving,
+        style: const TextStyle(fontSize: 13),
+        decoration: dec.copyWith(labelText: 'Receipt'),
       ),
     );
   }
