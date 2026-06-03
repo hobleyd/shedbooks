@@ -23,6 +23,7 @@ void main() {
     accountType: BankAccountType.transaction,
     currency: 'AUD',
     isSystem: false,
+    sortOrder: 0,
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );
