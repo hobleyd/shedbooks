@@ -52,7 +52,7 @@ Authentication is handled through **Auth0**.
 ## Database Migrations
 - Migration files live in `server/lib/infrastructure/database/migrations/` named `NNN_description.sql`.
 - Applied automatically at server startup by `DatabaseMigrator` — tracked in the `schema_migrations` table.
-- Legacy versions (001–012) bootstrapped via `docker-entrypoint-initdb.d` are seeded automatically on first run.
+- Legacy databases (pre-migrator) that have 001–012 already applied via initdb.d are detected by the presence of `general_ledger` with an empty `schema_migrations`; those versions are seeded automatically so they are never re-executed.
 - **SQL gotcha**: strip single-line comments (`--…`) from migration SQL *before* splitting on `;`. Comments containing semicolons (e.g. `-- null; otherwise`) will break statement splitting if you split first.
 
 ## Shelf Middleware Pipeline
