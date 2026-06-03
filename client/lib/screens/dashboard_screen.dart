@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -393,37 +392,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final totalNet = totalIncome - totalOutgoings;
 
     final headerStyle = Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold);
-    const monthWidth = 140.0;
+    const monthWidth = 80.0;
     const colWidth = 120.0;
-    const accountWidth = 150.0;
     const totalColWidth = 140.0;
+
+    double accountColWidth(BankAccountEntry a) =>
+        a.accountType == BankAccountType.cash ? 90.0 : 150.0;
+    final accountWidths = {
+      for (final a in _bankAccounts) a.id: accountColWidth(a),
+    };
 
     // Pre-compute balances for every displayed month once.
     final allMonthBalances = <int, Map<String, int>>{
       for (final m in _months) m.month: _monthEndBalances(m.month),
     };
-
-    // For each non-cash account, measure the widest formatted balance text so
-    // we can place the lock icon exactly 30 px to its left, aligned across rows.
-    const amountStyle = TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
-    final iconRightOffsets = <String, double>{};
-    for (final account in _bankAccounts) {
-      if (account.accountType == BankAccountType.cash) continue;
-      double maxWidth = 0;
-      for (final balances in allMonthBalances.values) {
-        final balance = balances[account.id];
-        if (balance == null) continue;
-        final text = balance < 0
-            ? '(${_formatAmount(balance.abs())})'
-            : _formatAmount(balance);
-        final tp = TextPainter(
-          text: TextSpan(text: text, style: amountStyle),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        maxWidth = math.max(maxWidth, tp.width);
-      }
-      iconRightOffsets[account.id] = maxWidth + 30;
-    }
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -448,7 +430,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Text('Net',
                         style: headerStyle, textAlign: TextAlign.right)),
                 ..._bankAccounts.map((a) => SizedBox(
-                      width: accountWidth,
+                      width: accountColWidth(a),
                       child: Text(a.accountName,
                           style: headerStyle,
                           textAlign: TextAlign.right,
@@ -463,8 +445,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const Divider(height: 1),
           ..._months.map((m) => _buildMonthRow(
-              m, colWidth, accountWidth, totalColWidth,
-              allMonthBalances[m.month]!, iconRightOffsets)),
+              m, colWidth, accountWidths, totalColWidth,
+              allMonthBalances[m.month]!)),
           const Divider(height: 1, thickness: 2),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -487,7 +469,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: colWidth,
                     child: _amountText(totalOutgoings, isIncome: false, bold: true)),
                 SizedBox(width: colWidth, child: _netText(totalNet, bold: true)),
-                ..._bankAccounts.map((_) => const SizedBox(width: accountWidth)),
+                ..._bankAccounts.map((a) => SizedBox(width: accountColWidth(a))),
                 const SizedBox(width: totalColWidth),
               ],
             ),
@@ -500,10 +482,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildMonthRow(
     _MonthSummary m,
     double colWidth,
-    double accountWidth,
+    Map<String, double> accountWidths,
     double totalColWidth,
     Map<String, int> balances,
-    Map<String, double> iconRightOffsets,
   ) {
     final totalBalance = balances.values.fold<int>(0, (sum, val) => sum + val);
     final isLocked = _isMonthLocked(m);
@@ -515,7 +496,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Row(
             children: [
               SizedBox(
-                width: 140,
+                width: 100,
                 child: Text(_monthNames[m.month],
                     style: Theme.of(context).textTheme.bodyMedium),
               ),
@@ -529,42 +510,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ..._bankAccounts.map((account) {
                 final balance = balances[account.id];
                 final isCash = account.accountType == BankAccountType.cash;
-                final iconRight = iconRightOffsets[account.id];
-                final showLock = isLocked && !isCash && balance != null && iconRight != null;
+                final showLock = isLocked && !isCash && balance != null;
+                final width = accountWidths[account.id] ?? 150.0;
 
-                final amountWidget = balance == null
-                    ? Text('—',
+                if (balance == null) {
+                  return SizedBox(
+                    width: width,
+                    child: Text('—',
                         style: const TextStyle(color: Colors.black38),
-                        textAlign: TextAlign.right)
-                    : _netText(balance);
+                        textAlign: TextAlign.right),
+                  );
+                }
 
                 if (showLock) {
                   return SizedBox(
-                    width: accountWidth,
-                    child: Stack(
+                    width: width,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Align(
-                            alignment: Alignment.centerRight,
-                            child: amountWidget),
-                        Positioned(
-                          right: iconRight,
-                          top: 0,
-                          bottom: 0,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Tooltip(
-                              message: 'Month is locked',
-                              child: Icon(Icons.lock_outlined,
-                                  size: 14, color: Colors.orange.shade700),
-                            ),
-                          ),
+                        _netText(balance),
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: 'Month is locked',
+                          child: Icon(Icons.lock_outlined,
+                              size: 14, color: Colors.orange.shade700),
                         ),
                       ],
                     ),
                   );
                 }
 
-                return SizedBox(width: accountWidth, child: amountWidget);
+                return SizedBox(width: width, child: _netText(balance));
               }),
               SizedBox(
                 width: totalColWidth,
