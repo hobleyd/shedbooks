@@ -496,7 +496,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Row(
             children: [
               SizedBox(
-                width: 100,
+                width: 80,
                 child: Text(_monthNames[m.month],
                     style: Theme.of(context).textTheme.bodyMedium),
               ),
