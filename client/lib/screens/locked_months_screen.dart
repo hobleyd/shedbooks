@@ -32,6 +32,9 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   late int _pickerMonth;
   String? _pickerBankAccountId;
 
+  // Carry-over checkbox: shown and defaults to true for term-deposit accounts.
+  bool _carryOverBalance = true;
+
   static const _monthNames = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
@@ -101,6 +104,12 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   String get _pickerMonthYear =>
       '$_pickerYear-${_pickerMonth.toString().padLeft(2, '0')}';
 
+  bool get _pickerIsTermDeposit =>
+      _pickerBankAccountId != null &&
+      _bankAccounts
+          .where((a) => a.id == _pickerBankAccountId)
+          .any((a) => a.accountType == BankAccountType.termDeposit);
+
   bool get _pickerAlreadyLocked =>
       _pickerBankAccountId != null &&
       (_lockedMap[_pickerMonthYear]?.containsKey(_pickerBankAccountId) ??
@@ -115,6 +124,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
             jsonEncode({
               'monthYear': _pickerMonthYear,
               'bankAccountId': _pickerBankAccountId,
+              if (_pickerIsTermDeposit) 'carryOverBalance': _carryOverBalance,
             }),
           );
       if (res.statusCode != 204) {
@@ -354,8 +364,17 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                               .toList(),
                           onChanged: _saving
                               ? null
-                              : (v) =>
-                                  setState(() => _pickerBankAccountId = v),
+                              : (v) => setState(() {
+                                    _pickerBankAccountId = v;
+                                    // Default carry-over on when switching to a term deposit.
+                                    if (_bankAccounts
+                                        .where((a) => a.id == v)
+                                        .any((a) =>
+                                            a.accountType ==
+                                            BankAccountType.termDeposit)) {
+                                      _carryOverBalance = true;
+                                    }
+                                  }),
                         ),
                       ),
                     ),
@@ -376,6 +395,21 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                   ),
                 ],
               ),
+              if (_pickerIsTermDeposit) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: _carryOverBalance,
+                      onChanged: _saving
+                          ? null
+                          : (v) => setState(() => _carryOverBalance = v!),
+                    ),
+                    const Text('Carry over last month\'s balance'),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

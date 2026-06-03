@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:shelf/shelf.dart';
 
+import '../../application/closing_bank_balance/list_closing_bank_balances_use_case.dart';
+import '../../application/closing_bank_balance/save_closing_bank_balance_use_case.dart';
 import '../../application/locked_month/list_locked_months_use_case.dart';
 import '../../application/locked_month/lock_month_use_case.dart';
 import '../../application/locked_month/unlock_month_use_case.dart';
@@ -15,14 +17,20 @@ class LockedMonthHandler {
   final ListLockedMonthsUseCase _list;
   final LockMonthUseCase _lock;
   final UnlockMonthUseCase _unlock;
+  final ListClosingBankBalancesUseCase _listBalances;
+  final SaveClosingBankBalanceUseCase _saveBalance;
 
   const LockedMonthHandler({
     required ListLockedMonthsUseCase list,
     required LockMonthUseCase lock,
     required UnlockMonthUseCase unlock,
+    required ListClosingBankBalancesUseCase listBalances,
+    required SaveClosingBankBalanceUseCase saveBalance,
   })  : _list = list,
         _lock = lock,
-        _unlock = unlock;
+        _unlock = unlock,
+        _listBalances = listBalances,
+        _saveBalance = saveBalance;
 
   /// GET /locked-months
   Future<Response> handleList(Request request) async {
@@ -57,9 +65,13 @@ class LockedMonthHandler {
 
     try {
       await _lock.execute(entityId, dto.monthYear, dto.bankAccountId);
+      if (dto.carryOverBalance) {
+        await _carryOverBalance(entityId, dto.bankAccountId, dto.monthYear);
+      }
       (request.context['audit.changes'] as AuditChanges?)?.set({
         'monthYear': dto.monthYear,
         'bankAccountId': dto.bankAccountId,
+        if (dto.carryOverBalance) 'carryOverBalance': true,
       });
     } on ArgumentError catch (e) {
       return _badRequest(e.message.toString());
@@ -80,6 +92,44 @@ class LockedMonthHandler {
       'bankAccountId': bankAccountId,
     });
     return Response(204);
+  }
+
+  /// Copies the most recent prior closing balance for [bankAccountId] to the
+  /// last day of [monthYear]. No-ops if no prior balance exists.
+  Future<void> _carryOverBalance(
+      String entityId, String bankAccountId, String monthYear) async {
+    final parts = monthYear.split('-');
+    final year = int.parse(parts[0]);
+    final month = int.parse(parts[1]);
+
+    // Last calendar day of the locked month.
+    final lastDay = DateTime(year, month + 1, 0);
+    final lastDayStr =
+        '${lastDay.year}-${lastDay.month.toString().padLeft(2, '0')}-${lastDay.day.toString().padLeft(2, '0')}';
+
+    final balances = await _listBalances.execute(
+      entityId: entityId,
+      bankAccountId: bankAccountId,
+    );
+
+    // Find the most recent balance that predates the end of this month.
+    final prior = balances.where((b) => b.balanceDate.compareTo(lastDayStr) < 0);
+    if (prior.isEmpty) return;
+
+    final source = prior.first; // ordered desc, so first = most recent
+
+    const monthNames = [
+      '', 'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+
+    await _saveBalance.execute(
+      entityId: entityId,
+      bankAccountId: bankAccountId,
+      balanceDate: lastDayStr,
+      balanceCents: source.balanceCents,
+      statementPeriod: '${monthNames[month]} $year',
+    );
   }
 
   static String? _entityId(Request request) {

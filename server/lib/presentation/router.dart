@@ -118,10 +118,16 @@ Handler buildRouter({
   );
 
   final lockedMonthRepository = PostgresLockedMonthRepository(pool);
+  final lockedMonthClosingBalanceRepository =
+      PostgresClosingBankBalanceRepository(pool);
   final lockedMonthHandler = LockedMonthHandler(
     list: ListLockedMonthsUseCase(lockedMonthRepository),
     lock: LockMonthUseCase(lockedMonthRepository),
     unlock: UnlockMonthUseCase(lockedMonthRepository),
+    listBalances:
+        ListClosingBankBalancesUseCase(lockedMonthClosingBalanceRepository),
+    saveBalance:
+        SaveClosingBankBalanceUseCase(lockedMonthClosingBalanceRepository),
   );
 
   final transactionRepository = PostgresTransactionRepository(pool);
