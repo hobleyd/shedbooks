@@ -18,7 +18,7 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
 
   static const _cols =
       'id, entity_id, bank_name, account_name, bsb, account_number, '
-      'account_type, currency, is_system, created_at, updated_at';
+      'account_type, currency, is_system, sort_order, created_at, updated_at';
 
   @override
   Future<BankAccount> create({
@@ -34,9 +34,13 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
     final result = await _pool.execute(
       Sql.named('''
         INSERT INTO bank_accounts
-          (id, entity_id, bank_name, account_name, bsb, account_number, account_type, currency)
-        VALUES
-          (@id::uuid, @entityId, @bankName, @accountName, @bsb, @accountNumber, @accountType, @currency)
+          (id, entity_id, bank_name, account_name, bsb, account_number, account_type, currency, sort_order)
+        VALUES (
+          @id::uuid, @entityId, @bankName, @accountName, @bsb, @accountNumber, @accountType, @currency,
+          (SELECT COALESCE(MAX(sort_order), -1) + 1
+             FROM bank_accounts
+            WHERE entity_id = @entityId AND deleted_at IS NULL)
+        )
         RETURNING $_cols
       '''),
       parameters: {
@@ -72,7 +76,7 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
       Sql.named('''
         SELECT $_cols FROM bank_accounts
         WHERE entity_id = @entityId AND deleted_at IS NULL
-        ORDER BY bank_name ASC, account_name ASC
+        ORDER BY sort_order ASC, bank_name ASC, account_name ASC
       '''),
       parameters: {'entityId': entityId},
     );
@@ -132,6 +136,30 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
   }
 
   @override
+  Future<void> reorder(
+      {required String entityId, required List<String> ids}) async {
+    await _pool.runTx((tx) async {
+      for (int i = 0; i < ids.length; i++) {
+        await tx.execute(
+          Sql.named('''
+            UPDATE bank_accounts
+               SET sort_order = @sortOrder,
+                   updated_at = NOW()
+             WHERE id = @id::uuid
+               AND entity_id = @entityId
+               AND deleted_at IS NULL
+          '''),
+          parameters: {
+            'sortOrder': i,
+            'id': ids[i],
+            'entityId': entityId,
+          },
+        );
+      }
+    });
+  }
+
+  @override
   Future<void> ensureCashAccount({required String entityId}) async {
     // Only insert when no cash account (system or manual) exists for this entity.
     await _pool.execute(
@@ -180,6 +208,7 @@ class PostgresBankAccountRepository implements IBankAccountRepository {
         accountType: _typeFromDb(row['account_type'] as String),
         currency: (row['currency'] as String).trim(),
         isSystem: row['is_system'] as bool? ?? false,
+        sortOrder: row['sort_order'] as int? ?? 0,
         createdAt: row['created_at'] as DateTime,
         updatedAt: row['updated_at'] as DateTime,
       );

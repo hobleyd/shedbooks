@@ -12,6 +12,7 @@ class BankAccountResponse {
   final String accountType;
   final String currency;
   final bool isSystem;
+  final int sortOrder;
 
   const BankAccountResponse({
     required this.id,
@@ -22,6 +23,7 @@ class BankAccountResponse {
     required this.accountType,
     required this.currency,
     required this.isSystem,
+    required this.sortOrder,
   });
 
   factory BankAccountResponse.fromEntity(BankAccount e) =>
@@ -39,6 +41,7 @@ class BankAccountResponse {
         },
         currency: e.currency,
         isSystem: e.isSystem,
+        sortOrder: e.sortOrder,
       );
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +53,7 @@ class BankAccountResponse {
         'accountType': accountType,
         'currency': currency,
         'isSystem': isSystem,
+        'sortOrder': sortOrder,
       };
 
   String toJsonString() => jsonEncode(toJson());

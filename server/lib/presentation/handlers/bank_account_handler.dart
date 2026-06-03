@@ -7,6 +7,7 @@ import '../../application/bank_account/create_bank_account_use_case.dart';
 import '../../application/bank_account/delete_bank_account_use_case.dart';
 import '../../application/bank_account/get_bank_account_use_case.dart';
 import '../../application/bank_account/list_bank_accounts_use_case.dart';
+import '../../application/bank_account/reorder_bank_accounts_use_case.dart';
 import '../../application/bank_account/update_bank_account_use_case.dart';
 import '../../domain/entities/bank_account.dart';
 import '../../domain/exceptions/bank_account_exception.dart';
@@ -23,6 +24,7 @@ class BankAccountHandler {
   final ListBankAccountsUseCase _list;
   final UpdateBankAccountUseCase _update;
   final DeleteBankAccountUseCase _delete;
+  final ReorderBankAccountsUseCase _reorder;
 
   const BankAccountHandler({
     required CreateBankAccountUseCase create,
@@ -30,11 +32,13 @@ class BankAccountHandler {
     required ListBankAccountsUseCase list,
     required UpdateBankAccountUseCase update,
     required DeleteBankAccountUseCase delete,
+    required ReorderBankAccountsUseCase reorder,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
-        _delete = delete;
+        _delete = delete,
+        _reorder = reorder;
 
   /// GET /bank-accounts
   Future<Response> handleList(Request request) async {
@@ -154,6 +158,26 @@ class BankAccountHandler {
     } on BankAccountValidationException catch (e) {
       return _badRequest(e.message);
     }
+  }
+
+  /// PUT /bank-accounts/order — body: {"ids": ["uuid", ...]}
+  Future<Response> handleReorder(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final Map<String, dynamic> json;
+    try {
+      json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    final rawIds = json['ids'];
+    if (rawIds is! List) return _badRequest('ids must be an array');
+    final ids = rawIds.whereType<String>().toList();
+
+    await _reorder.execute(entityId: entityId, ids: ids);
+    return Response(204);
   }
 
   /// DELETE /bank-accounts/:id

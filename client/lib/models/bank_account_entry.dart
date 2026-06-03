@@ -11,6 +11,7 @@ class BankAccountEntry {
   final BankAccountType accountType;
   final String currency;
   final bool isSystem;
+  final int sortOrder;
 
   const BankAccountEntry({
     required this.id,
@@ -21,6 +22,7 @@ class BankAccountEntry {
     required this.accountType,
     required this.currency,
     required this.isSystem,
+    required this.sortOrder,
   });
 
   factory BankAccountEntry.fromJson(Map<String, dynamic> json) =>
@@ -38,6 +40,7 @@ class BankAccountEntry {
         },
         currency: json['currency'] as String,
         isSystem: json['isSystem'] as bool? ?? false,
+        sortOrder: json['sortOrder'] as int? ?? 0,
       );
 
   /// BSB formatted as XXX-XXX for display.

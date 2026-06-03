@@ -20,8 +20,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
   bool _loading = true;
   String? _loadError;
   List<BankAccountEntry> _accounts = [];
-  int? _sortColumn;
-  bool _sortAscending = true;
+  bool _orderSaving = false;
 
   @override
   void initState() {
@@ -53,7 +52,6 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
       setState(() {
         _accounts = accounts;
         _loading = false;
-        _applySort();
       });
     } catch (e) {
       if (mounted) {
@@ -65,72 +63,33 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
     }
   }
 
-  void _applySort() {
-    if (_sortColumn == null) return;
-    _accounts.sort((a, b) {
-      final int cmp;
-      switch (_sortColumn) {
-        case 0:
-          cmp = a.bankName.toLowerCase().compareTo(b.bankName.toLowerCase());
-        case 1:
-          cmp = a.accountName
-              .toLowerCase()
-              .compareTo(b.accountName.toLowerCase());
-        case 2:
-          cmp = a.bsb.compareTo(b.bsb);
-        case 3:
-          cmp = a.accountNumber.compareTo(b.accountNumber);
-        case 4:
-          cmp = a.accountTypeLabel.compareTo(b.accountTypeLabel);
-        case 5:
-          cmp = a.currency.compareTo(b.currency);
-        default:
-          return 0;
-      }
-      return _sortAscending ? cmp : -cmp;
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      final item = _accounts.removeAt(oldIndex);
+      _accounts.insert(newIndex, item);
     });
+    _saveOrder();
   }
 
-  Widget _colHeader(String label, int col,
-      {MainAxisAlignment align = MainAxisAlignment.start}) {
-    final isActive = _sortColumn == col;
-    return InkWell(
-      onTap: () => setState(() {
-        if (_sortColumn == col) {
-          _sortAscending = !_sortAscending;
-        } else {
-          _sortColumn = col;
-          _sortAscending = true;
-        }
-        _applySort();
-      }),
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-        child: Row(
-          mainAxisAlignment: align,
-          children: [
-            Text(
-              label,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            if (isActive) ...[
-              const SizedBox(width: 2),
-              Icon(
-                _sortAscending
-                    ? Icons.arrow_upward_rounded
-                    : Icons.arrow_downward_rounded,
-                size: 12,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+  Future<void> _saveOrder() async {
+    if (_orderSaving) return;
+    setState(() => _orderSaving = true);
+    try {
+      await context.read<ApiClient>().put(
+            '/bank-accounts/order',
+            jsonEncode({'ids': _accounts.map((a) => a.id).toList()}),
+          );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to save order: $e'),
+              behavior: SnackBarBehavior.floating),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _orderSaving = false);
+    }
   }
 
   Future<void> _openDialog({BankAccountEntry? existing}) async {
@@ -276,42 +235,70 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
       );
     }
 
+    final headerStyle = Theme.of(context)
+        .textTheme
+        .labelLarge
+        ?.copyWith(fontWeight: FontWeight.bold);
+
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 860),
+      constraints: const BoxConstraints(maxWidth: 896),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
             child: Row(
               children: [
-                SizedBox(width: 180, child: _colHeader('Bank', 0)),
-                SizedBox(width: 200, child: _colHeader('Account Name', 1)),
-                SizedBox(width: 90, child: _colHeader('BSB', 2)),
-                SizedBox(width: 120, child: _colHeader('Account No.', 3)),
-                SizedBox(width: 110, child: _colHeader('Type', 4)),
-                SizedBox(width: 60, child: _colHeader('Currency', 5)),
+                const SizedBox(width: 32),
+                SizedBox(width: 180, child: Text('Bank', style: headerStyle)),
+                SizedBox(width: 200, child: Text('Account Name', style: headerStyle)),
+                SizedBox(width: 90, child: Text('BSB', style: headerStyle)),
+                SizedBox(width: 120, child: Text('Account No.', style: headerStyle)),
+                SizedBox(width: 110, child: Text('Type', style: headerStyle)),
+                SizedBox(width: 60, child: Text('Currency', style: headerStyle)),
                 const SizedBox(width: 80),
               ],
             ),
           ),
           const Divider(height: 1),
-          ..._accounts.map((a) => _buildRow(a)),
+          Expanded(
+            child: ReorderableListView(
+              buildDefaultDragHandles: false,
+              padding: EdgeInsets.zero,
+              onReorderItem: isAdmin ? _reorder : (_, __) {},
+              children: _accounts
+                  .asMap()
+                  .entries
+                  .map((e) => _buildRow(e.value,
+                      index: e.key, isAdmin: isAdmin))
+                  .toList(),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildRow(BankAccountEntry account) {
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
+  Widget _buildRow(BankAccountEntry account,
+      {required int index, required bool isAdmin}) {
     return Column(
+      key: ValueKey(account.id),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              SizedBox(
+                width: 32,
+                child: isAdmin
+                    ? ReorderableDragStartListener(
+                        index: index,
+                        child: const Icon(Icons.drag_handle,
+                            size: 18, color: Colors.black38),
+                      )
+                    : const SizedBox(),
+              ),
               SizedBox(
                 width: 180,
                 child: Text(account.bankName,

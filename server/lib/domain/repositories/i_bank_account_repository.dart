@@ -29,6 +29,9 @@ abstract class IBankAccountRepository {
 
   Future<void> delete(String id, {required String entityId});
 
+  /// Updates the sort_order of accounts to match the given [ids] sequence.
+  Future<void> reorder({required String entityId, required List<String> ids});
+
   /// Ensures the system Cash account exists for [entityId], creating it if absent.
   Future<void> ensureCashAccount({required String entityId});
 }

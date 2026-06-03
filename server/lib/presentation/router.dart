@@ -35,6 +35,7 @@ import '../application/bank_account/create_bank_account_use_case.dart';
 import '../application/bank_account/delete_bank_account_use_case.dart';
 import '../application/bank_account/get_bank_account_use_case.dart';
 import '../application/bank_account/list_bank_accounts_use_case.dart';
+import '../application/bank_account/reorder_bank_accounts_use_case.dart';
 import '../application/bank_account/update_bank_account_use_case.dart';
 import '../application/entity/get_entity_details_use_case.dart';
 import '../application/entity/save_entity_details_use_case.dart';
@@ -159,6 +160,7 @@ Handler buildRouter({
     list: ListBankAccountsUseCase(bankAccountRepository),
     update: UpdateBankAccountUseCase(bankAccountRepository),
     delete: DeleteBankAccountUseCase(bankAccountRepository),
+    reorder: ReorderBankAccountsUseCase(bankAccountRepository),
   );
 
   final entityDetailsRepository = PostgresEntityDetailsRepository(pool, fieldEncryptor);
@@ -311,6 +313,8 @@ Router _bankAccountRouter(BankAccountHandler h) {
   return Router()
     ..get('/', _role(blockContributor(), h.handleList))
     ..post('/', _role(requireAdministrator(), h.handleCreate))
+    // /order must be registered before /<id> to avoid being shadowed
+    ..put('/order', _role(requireAdministrator(), h.handleReorder))
     ..get('/<id>', _roleId(blockContributor(), h.handleGet))
     ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));

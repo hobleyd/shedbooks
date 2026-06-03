@@ -12,6 +12,7 @@ class BankAccount {
   final BankAccountType accountType;
   final String currency;
   final bool isSystem;
+  final int sortOrder;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -25,6 +26,7 @@ class BankAccount {
     required this.accountType,
     required this.currency,
     required this.isSystem,
+    required this.sortOrder,
     required this.createdAt,
     required this.updatedAt,
   });
