@@ -4,6 +4,7 @@ import 'transaction_entry.dart';
 class GlLine {
   final GeneralLedgerEntry gl;
   int totalCents = 0;
+  final List<TransactionEntry> transactions = [];
   GlLine(this.gl);
 }
 
@@ -32,14 +33,16 @@ class PnLData {
     final periodTxns = allTransactions.where(filter).toList();
 
     List<GlLine> groupByGl(List<TransactionEntry> txns, bool credits) {
-      final map = <String, GlLine>{};
-      for (final t in txns.where((t) => t.isCredit == credits)) {
-        final gl = glMap[t.generalLedgerId];
+      final Map<String, GlLine> map = {};
+      for (final TransactionEntry t in txns.where((TransactionEntry t) => t.isCredit == credits)) {
+        final GeneralLedgerEntry? gl = glMap[t.generalLedgerId];
         if (gl == null) continue;
-        (map[gl.id] ??= GlLine(gl)).totalCents += t.totalAmount;
+        final GlLine line = map[gl.id] ??= GlLine(gl);
+        line.totalCents += t.totalAmount;
+        line.transactions.add(t);
       }
       return map.values.toList()
-        ..sort((a, b) => a.gl.label.compareTo(b.gl.label));
+        ..sort((GlLine a, GlLine b) => a.gl.label.compareTo(b.gl.label));
     }
 
     final incomeLines = groupByGl(periodTxns, true);
