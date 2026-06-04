@@ -57,12 +57,15 @@ void main() {
     updatedAt: DateTime(2024),
   );
 
+  // Child of tGlMemberships — parentId set so path matching can build
+  // "Memberships > Recycling" for use in path-based fuzzy matching tests.
   final tGlRecycling = GeneralLedger(
     id: 'gl-recycling',
     label: 'Recycling',
     description: 'Recycling',
     gstApplicable: true,
     direction: GlDirection.moneyIn,
+    parentId: 'gl-memberships',
     createdAt: DateTime(2024),
     updatedAt: DateTime(2024),
   );
@@ -173,6 +176,80 @@ void main() {
 
       // Assert
       expect(rows[0].months.fold<int>(0, (s, v) => s + v), 120000); // $1200 total
+    });
+  });
+
+  group('ParseBudgetImportUseCase — GL path matching', () {
+    // tGlRecycling has parentId = 'gl-memberships', so its full path is
+    // "Memberships > Recycling". tGlMemberships has no parent → path = "Memberships".
+
+    test('matches CSV full path string against GL path with high confidence',
+        () async {
+      // Arrange: CSV description exactly mirrors the GL path (delimiter differs).
+      // "Memberships - Recycling" should match "Memberships > Recycling" well.
+      when(() => glRepo.findAll(entityId: tEntityId)).thenAnswer((_) async => [
+            tGlMemberships,
+            tGlRecycling,
+          ]);
+
+      const csv = ''
+          ',2026 Jan,2026 Feb,2026 Mar,2026 Apr,2026 May,2026 Jun,'
+          '2026 Jul,2026 Aug,2026 Sept,2026 Oct,2026 Nov,2026 Dec\n'
+          'Money In\n'
+          'Memberships - Recycling,100,100,100,100,100,100,100,100,100,100,100,100\n';
+
+      // Act
+      final rows = await sut.execute(csvContent: csv, entityId: tEntityId);
+
+      // Assert: full path "Memberships > Recycling" matches CSV "Memberships - Recycling"
+      expect(rows[0].suggestedGlId, 'gl-recycling');
+      expect(rows[0].confidence, greaterThan(0.8));
+    });
+
+    test('leaf segment still wins when both leaf and path match equally', () async {
+      // Arrange: "Recycling" as CSV; GL "Recycling" has path "Memberships > Recycling".
+      // The leaf "Recycling" vs description "Recycling" = 1.0 should win outright.
+      when(() => glRepo.findAll(entityId: tEntityId)).thenAnswer((_) async => [
+            tGlMemberships,
+            tGlRecycling,
+          ]);
+
+      const csv = ''
+          ',2026 Jan,2026 Feb,2026 Mar,2026 Apr,2026 May,2026 Jun,'
+          '2026 Jul,2026 Aug,2026 Sept,2026 Oct,2026 Nov,2026 Dec\n'
+          'Money In\n'
+          'Recycling,100,100,100,100,100,100,100,100,100,100,100,100\n';
+
+      // Act
+      final rows = await sut.execute(csvContent: csv, entityId: tEntityId);
+
+      // Assert
+      expect(rows[0].suggestedGlId, 'gl-recycling');
+      expect(rows[0].confidence, equals(1.0));
+    });
+
+    test('path matching does not incorrectly match parent when child is a better fit',
+        () async {
+      // Arrange: CSV "Memberships - Recycling"; both parent ("Memberships") and
+      // child ("Recycling" with path "Memberships > Recycling") are present.
+      // The child's full path more closely mirrors the CSV description.
+      when(() => glRepo.findAll(entityId: tEntityId)).thenAnswer((_) async => [
+            tGlMemberships,
+            tGlRecycling,
+          ]);
+
+      const csv = ''
+          ',2026 Jan,2026 Feb,2026 Mar,2026 Apr,2026 May,2026 Jun,'
+          '2026 Jul,2026 Aug,2026 Sept,2026 Oct,2026 Nov,2026 Dec\n'
+          'Money In\n'
+          'Memberships - Recycling,100,100,100,100,100,100,100,100,100,100,100,100\n';
+
+      // Act
+      final rows = await sut.execute(csvContent: csv, entityId: tEntityId);
+
+      // Assert: child wins over parent
+      expect(rows[0].suggestedGlId, 'gl-recycling');
+      expect(rows[0].suggestedGlId, isNot('gl-memberships'));
     });
   });
 

@@ -285,21 +285,28 @@ class ParseBudgetImportUseCase {
 
   /// Returns (glId, glLabel, confidence) for the closest matching GL account.
   ///
-  /// Handles hierarchical CSV descriptions like "Fundraising - Recycling" by
-  /// splitting on common delimiters and trying each segment against GL accounts.
-  /// Candidates are ordered by specificity — leaf segment first, then the full
-  /// string, then parent segments — so that on a score tie the most specific
-  /// (deepest) GL account wins over a parent account.
+  /// CSV candidates are built from [name] in priority order:
+  ///   [0] leaf segment  — "Recycling"              (most specific, wins ties)
+  ///   [1] full string   — "Fundraising - Recycling"
+  ///   [2+] parent segs  — "Fundraising"
+  ///
+  /// Each candidate is scored against two GL-side targets per account:
+  ///   • gl.description  — the leaf name ("Recycling")
+  ///   • full path       — parent chain joined with " > " ("Fundraising > Recycling")
+  ///
+  /// This lets a flat CSV description like "Fundraising - Recycling" match
+  /// "Fundraising > Recycling" (the GL path) with high bigram similarity even
+  /// when the leaf description alone is ambiguous.
   static (String?, String?, double) _fuzzyMatch(
     String name,
     List<GeneralLedger> accounts,
   ) {
     if (name.isEmpty || accounts.isEmpty) return (null, null, 0.0);
 
-    // Build candidate list in priority order:
-    //   [0] leaf segment  — e.g. "Recycling"   (most specific, wins ties)
-    //   [1] full string   — e.g. "Fundraising - Recycling"
-    //   [2+] parent segs  — e.g. "Fundraising"
+    // Build an id→account map so _glPath can walk parent chains.
+    final byId = <String, GeneralLedger>{for (final g in accounts) g.id: g};
+
+    // Build candidate list in priority order (leaf first, wins ties).
     final segments = name.split(RegExp(r'\s[-–/]\s'));
     final raw = <String>[];
     if (segments.length > 1) raw.add(segments.last.trim().toLowerCase());
@@ -317,9 +324,18 @@ class ParseBudgetImportUseCase {
     int bestRank = candidates.length;
 
     for (final gl in accounts) {
-      final descLower = gl.description.toLowerCase();
+      // Score each candidate against both the leaf description and the full path.
+      final targets = <String>{
+        gl.description.toLowerCase(),
+        _glPath(gl, byId).toLowerCase(),
+      };
+
       for (int rank = 0; rank < candidates.length; rank++) {
-        final s = _similarity(candidates[rank], descLower);
+        double s = 0.0;
+        for (final target in targets) {
+          final ts = _similarity(candidates[rank], target);
+          if (ts > s) s = ts;
+        }
         if (s > bestScore || (s == bestScore && rank < bestRank)) {
           bestScore = s;
           bestRank = rank;
@@ -331,6 +347,18 @@ class ParseBudgetImportUseCase {
 
     if (bestScore < 0.3) return (null, null, 0.0);
     return (bestId, bestLabel, bestScore);
+  }
+
+  /// Builds the full display path for [gl] by walking its parent chain.
+  /// Returns "Fundraising > Recycling" for a child account.
+  static String _glPath(GeneralLedger gl, Map<String, GeneralLedger> byId) {
+    final parts = <String>[];
+    GeneralLedger? current = gl;
+    while (current != null) {
+      parts.insert(0, current.description);
+      current = current.parentId != null ? byId[current.parentId!] : null;
+    }
+    return parts.join(' > ');
   }
 
   /// Dice coefficient bigram similarity between two strings.
