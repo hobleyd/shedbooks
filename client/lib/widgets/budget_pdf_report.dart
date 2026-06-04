@@ -3,6 +3,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/budget_entry.dart';
 import '../models/general_ledger_entry.dart';
+import '../utils/formatters.dart';
 
 /// Builds the Budget vs Actual section for use inside a [pw.MultiPage].
 ///
@@ -105,13 +106,8 @@ class BudgetPdfReport {
         );
 
     int variance(String glId) => actualFn(glId) - budgetFn(glId);
-    String pctLabel(String glId) {
-      final b = budgetFn(glId);
-      if (b == 0) return '';
-      final p = actualFn(glId) / b * 100;
-      final raw = p > 999 ? '>999%' : '${p.toStringAsFixed(0)}%';
-      return actualFn(glId) < b ? '($raw)' : raw;
-    }
+    String pctLabel(String glId) =>
+        Formatters.budgetPctLabel(budgetFn(glId), actualFn(glId));
 
     final colHeaderStyle =
         pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.grey700);

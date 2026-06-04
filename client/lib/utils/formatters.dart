@@ -14,6 +14,17 @@ class Formatters {
     return '\$${negative ? '-' : ''}$intPart.${parts[1]}';
   }
 
+  /// Returns the budget percentage label for [actual] vs [budget] (both cents).
+  ///
+  /// Returns '' when [budget] is zero. Values above 999% show as '>999%'.
+  /// When [actual] < [budget] the result is wrapped in parentheses.
+  static String budgetPctLabel(int budget, int actual) {
+    if (budget == 0) return '';
+    final pct = actual / budget * 100;
+    final raw = pct > 999 ? '>999%' : '${pct.toStringAsFixed(0)}%';
+    return actual < budget ? '($raw)' : raw;
+  }
+
   static String formatAbn(String abn) {
     final d = abn.replaceAll(' ', '');
     if (d.length != 11) return abn;
