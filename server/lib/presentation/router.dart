@@ -60,7 +60,9 @@ import '../application/budget/list_budget_years_use_case.dart';
 import '../application/budget/parse_budget_import_use_case.dart';
 import '../application/budget/save_budget_gl_mappings_use_case.dart';
 import '../application/budget/save_budget_use_case.dart';
+import '../application/users/list_active_users_use_case.dart';
 import '../infrastructure/repositories/postgres_budget_repository.dart';
+import '../infrastructure/repositories/postgres_user_presence_repository.dart';
 import '../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
 import '../application/closing_bank_balance/list_closing_bank_balances_use_case.dart';
 import '../application/closing_bank_balance/save_closing_bank_balance_use_case.dart';
@@ -82,6 +84,7 @@ import 'handlers/closing_bank_balance_handler.dart';
 import 'handlers/locked_month_handler.dart';
 import 'handlers/audit_handler.dart';
 import 'handlers/backup_handler.dart';
+import 'handlers/users_handler.dart';
 import 'handlers/contact_handler.dart';
 import 'handlers/dashboard_preference_handler.dart';
 import 'handlers/bank_account_handler.dart';
@@ -92,6 +95,7 @@ import 'handlers/gst_rate_handler.dart';
 import 'middleware/audit_middleware.dart';
 import 'middleware/cors_middleware.dart';
 import 'middleware/error_handler_middleware.dart';
+import 'middleware/presence_middleware.dart';
 import 'middleware/role_guard.dart';
 
 /// Builds and returns the application [Handler] with all routes wired up.
@@ -221,6 +225,10 @@ Handler buildRouter({
     list: ListAuditEntriesUseCase(PostgresAuditRepository(pool)),
   );
 
+  final usersHandler = UsersHandler(
+    list: ListActiveUsersUseCase(PostgresUserPresenceRepository(pool)),
+  );
+
   final bankImportsHandler = BankImportsHandler(
     get: GetBankImportsUseCase(PostgresBankImportRepository(pool)),
     save: SaveBankImportsUseCase(PostgresBankImportRepository(pool)),
@@ -234,9 +242,12 @@ Handler buildRouter({
 
   // Audit middleware is placed after auth so that auth claims are available.
   final audit = auditMiddleware(pool);
+  // Presence middleware tracks last-seen for authenticated users.
+  final presence = presenceMiddleware(pool);
 
   Handler _authed(Handler inner) => Pipeline()
       .addMiddleware(authMiddleware)
+      .addMiddleware(presence)
       .addMiddleware(audit)
       .addHandler(inner);
 
@@ -271,7 +282,7 @@ Handler buildRouter({
     ..mount('/budgets',
         _authed(_budgetRouter(budgetHandler)))
     ..mount('/admin',
-        _authed(_adminRouter(backupHandler, auditHandler)));
+        _authed(_adminRouter(backupHandler, auditHandler, usersHandler)));
 
   return Pipeline()
       .addMiddleware(errorHandlerMiddleware())
@@ -405,12 +416,13 @@ Router _bankReconciliationRouter(BankReconciliationHandler h) {
     ..post('/parse-statement', _role(requireContributor(), h.handleParseStatement));
 }
 
-// Contributors have no access to audit or backup. Only admins can restore.
-Router _adminRouter(BackupHandler backup, AuditHandler audit) {
+// Contributors have no access to audit or backup. Only admins can restore or view users.
+Router _adminRouter(BackupHandler backup, AuditHandler audit, UsersHandler users) {
   return Router()
     ..get('/backup', _role(blockContributor(), backup.handleBackup))
     ..post('/restore', _role(requireAdministrator(), backup.handleRestore))
-    ..get('/audit-log', _role(blockContributor(), audit.handleList));
+    ..get('/audit-log', _role(blockContributor(), audit.handleList))
+    ..get('/users', _role(requireAdministrator(), users.handleList));
 }
 
 // All roles can read budgets; only admins can write or import.

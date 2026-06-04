@@ -20,6 +20,7 @@ import '../screens/bank_reconciliation_screen.dart';
 import '../screens/locked_months_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/transactions_screen.dart';
+import '../screens/users_screen.dart';
 
 /// Routes that contributors may not access.
 const _contributorBlockedPaths = {
@@ -28,6 +29,11 @@ const _contributorBlockedPaths = {
   '/admin/audit-log',
   '/admin/backup',
   '/admin/locked-months',
+};
+
+/// Routes restricted to administrators only (viewers and contributors are redirected).
+const _administratorOnlyPaths = {
+  '/admin/users',
 };
 
 /// Creates the application router with auth-based redirect guards.
@@ -45,6 +51,12 @@ GoRouter createRouter(AuthState authState) {
       // Contributors cannot navigate to restricted admin screens.
       if (authState.isContributor &&
           _contributorBlockedPaths.contains(state.uri.path)) {
+        return '/dashboard';
+      }
+
+      // Administrator-only screens redirect everyone else.
+      if (!authState.isAdmin &&
+          _administratorOnlyPaths.contains(state.uri.path)) {
         return '/dashboard';
       }
 
@@ -123,6 +135,10 @@ GoRouter createRouter(AuthState authState) {
           GoRoute(
             path: '/admin/locked-months',
             builder: (context, state) => const LockedMonthsScreen(),
+          ),
+          GoRoute(
+            path: '/admin/users',
+            builder: (context, state) => const UsersScreen(),
           ),
         ],
       ),

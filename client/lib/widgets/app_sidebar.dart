@@ -306,6 +306,11 @@ class _AdminNavGroup extends StatelessWidget {
     (label: 'Locked Months', icon: Icons.lock_outlined, path: '/admin/locked-months'),
   ];
 
+  // Visible to administrators only; hidden from viewers and contributors.
+  static const _adminOnlySubItems = [
+    (label: 'Users', icon: Icons.manage_accounts_outlined, path: '/admin/users'),
+  ];
+
   // Paths hidden from contributors.
   static const _contributorHidden = {
     '/admin/audit-log',
@@ -320,11 +325,16 @@ class _AdminNavGroup extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final isAdminActive = currentPath.startsWith('/admin');
     final role = context.watch<AuthState>().role;
-    final subItems = role == AppRole.contributor
-        ? _allSubItems
-            .where((i) => !_contributorHidden.contains(i.path))
-            .toList()
-        : _allSubItems;
+    final List<({String label, IconData icon, String path})> subItems;
+    if (role == AppRole.administrator) {
+      subItems = [..._allSubItems, ..._adminOnlySubItems];
+    } else if (role == AppRole.contributor) {
+      subItems = _allSubItems
+          .where((i) => !_contributorHidden.contains(i.path))
+          .toList();
+    } else {
+      subItems = _allSubItems.toList();
+    }
 
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),

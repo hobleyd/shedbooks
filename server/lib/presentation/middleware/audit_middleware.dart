@@ -49,8 +49,9 @@ Middleware auditMiddleware(Pool pool) {
 
 bool _shouldAudit(String method, String path, int statusCode) {
   if (statusCode < 200 || statusCode >= 300) return false;
-  // Never log reads of the audit log itself.
+  // Never log reads of the audit log or user list (read-only, potentially high-frequency).
   if (path.endsWith('/admin/audit-log')) return false;
+  if (path.endsWith('/admin/users')) return false;
   // parse-import only parses a CSV in memory — no data is persisted.
   if (path.endsWith('/parse-import')) return false;
   // Always audit admin operations (backup/restore are sensitive reads/writes).
@@ -147,7 +148,7 @@ String? _recordId(String path) {
   final parts = path.split('/').where((p) => p.isNotEmpty).toList();
   if (parts.length < 2) return null;
   const nonIdSegments = {
-    'merge', 'effective', 'backup', 'restore', 'audit-log', 'next',
+    'merge', 'effective', 'backup', 'restore', 'audit-log', 'users', 'next',
     'confirm-import', 'gl-mappings',
   };
   final last = parts.last;
