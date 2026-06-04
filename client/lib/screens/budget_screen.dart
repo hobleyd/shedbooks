@@ -55,7 +55,7 @@ class _BudgetScreenState extends State<BudgetScreen>
 
   // Report state.
   int _reportMonth = DateTime.now().month;
-  bool _reportYtd = false;
+  bool _reportYtd = true;
 
   @override
   void initState() {
@@ -797,11 +797,11 @@ class _BudgetScreenState extends State<BudgetScreen>
     final incomeGl = _glAccounts
         .where((g) => g.direction == GlDirection.moneyIn)
         .toList()
-      ..sort((a, b) => a.description.compareTo(b.description));
+      ..sort((a, b) => a.label.compareTo(b.label));
     final expenseGl = _glAccounts
         .where((g) => g.direction == GlDirection.moneyOut)
         .toList()
-      ..sort((a, b) => a.description.compareTo(b.description));
+      ..sort((a, b) => a.label.compareTo(b.label));
 
     return Column(
       children: [
@@ -975,9 +975,13 @@ class _BudgetScreenState extends State<BudgetScreen>
             children: [
               SizedBox(
                 width: nameWidth,
-                child: Text(gl.description,
-                    style: const TextStyle(fontSize: 12),
-                    overflow: TextOverflow.ellipsis),
+                child: Padding(
+                  padding: EdgeInsets.only(
+                      left: glDepth(_glAccounts, gl.id) * 12.0),
+                  child: Text(gl.description,
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis),
+                ),
               ),
               ...List.generate(12, (i) => editCell(gl.id, i)),
               SizedBox(
@@ -1127,11 +1131,11 @@ class _BudgetScreenState extends State<BudgetScreen>
     final incomeGl = _glAccounts
         .where((g) => g.direction == GlDirection.moneyIn)
         .toList()
-      ..sort((a, b) => a.description.compareTo(b.description));
+      ..sort((a, b) => a.label.compareTo(b.label));
     final expenseGl = _glAccounts
         .where((g) => g.direction == GlDirection.moneyOut)
         .toList()
-      ..sort((a, b) => a.description.compareTo(b.description));
+      ..sort((a, b) => a.label.compareTo(b.label));
 
     int budgetFor(String glId) {
       if (budget == null) return 0;
@@ -1212,7 +1216,11 @@ class _BudgetScreenState extends State<BudgetScreen>
       final b = budgetFor(gl.id);
       final a = actualFor(gl.id);
       final v = a - b;
-      if (b == 0 && a == 0) return const SizedBox();
+      // Use annual totals for visibility: don't hide an account just because
+      // it has no budget/actuals for the currently selected period.
+      final annualB = budget?.annualFor(gl.id) ?? 0;
+      final annualA = actuals[gl.id]?.fold(0, (s, v) => s + v) ?? 0;
+      if (annualB == 0 && annualA == 0) return const SizedBox();
       return Container(
         color: bg,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1220,9 +1228,13 @@ class _BudgetScreenState extends State<BudgetScreen>
           children: [
             SizedBox(
                 width: nameWidth,
-                child: Text(gl.description,
-                    style: const TextStyle(fontSize: 12),
-                    overflow: TextOverflow.ellipsis)),
+                child: Padding(
+                  padding: EdgeInsets.only(
+                      left: glDepth(_glAccounts, gl.id) * 12.0),
+                  child: Text(gl.description,
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis),
+                )),
             numCell(b),
             numCell(a),
             varianceCell(v),
@@ -1361,11 +1373,10 @@ class _ImportDialogState extends State<_ImportDialog> {
   List<BudgetImportRow> get rows => widget.rows;
 
   Future<void> _confirm() async {
-    // Validate all rows have a GL selected.
-    final missing = rows.where((r) => r.selectedGlId == null).length;
-    if (missing > 0) {
-      setState(() =>
-          _error = '$missing row(s) have no GL account selected.');
+    // Rows without a GL selection are skipped rather than blocking the import.
+    final submittable = rows.where((r) => r.selectedGlId != null).toList();
+    if (submittable.isEmpty) {
+      setState(() => _error = 'No rows have a GL account selected.');
       return;
     }
 
@@ -1376,7 +1387,7 @@ class _ImportDialogState extends State<_ImportDialog> {
 
     try {
       final body = jsonEncode({
-        'rows': rows
+        'rows': submittable
             .map((r) => {
                   'externalCode': r.externalCode,
                   'externalName': r.externalName,
@@ -1585,6 +1596,16 @@ class _ImportDialogState extends State<_ImportDialog> {
                     value: row.selectedGlId,
                     isExpanded: true,
                     hint: const Text('Select GL account'),
+                    selectedItemBuilder: (ctx) => [
+                      const Text('— skip this row —',
+                          style: TextStyle(fontSize: 13),
+                          overflow: TextOverflow.ellipsis),
+                      ...filteredGl.map((g) => Text(
+                            buildGlPath(widget.glAccounts, g.id),
+                            style: const TextStyle(fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          )),
+                    ],
                     items: [
                       const DropdownMenuItem(
                           value: null,
@@ -1592,10 +1613,14 @@ class _ImportDialogState extends State<_ImportDialog> {
                       ...filteredGl.map(
                         (g) => DropdownMenuItem(
                           value: g.id,
-                          child: Text(
-                            buildGlPath(widget.glAccounts, g.id),
-                            style: const TextStyle(fontSize: 13),
-                            overflow: TextOverflow.ellipsis,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                                left: glDepth(widget.glAccounts, g.id) * 12.0),
+                            child: Text(
+                              g.description,
+                              style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),

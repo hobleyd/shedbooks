@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../domain/entities/budget_gl_mapping.dart';
 import '../../domain/entities/budget_line.dart';
+import '../../domain/exceptions/budget_exception.dart';
 import '../../domain/repositories/i_budget_repository.dart';
 
 /// PostgreSQL implementation of [IBudgetRepository].
@@ -81,19 +82,28 @@ class PostgresBudgetRepository implements IBudgetRepository {
       );
 
       for (final line in lines) {
-        await tx.execute(
-          Sql.named('''
-            INSERT INTO budget_lines (id, budget_id, general_ledger_id, month, amount_cents)
-            VALUES (@id::uuid, @budgetId::uuid, @glId::uuid, @month, @amountCents)
-          '''),
-          parameters: {
-            'id': _uuid.v4(),
-            'budgetId': budgetId,
-            'glId': line.generalLedgerId,
-            'month': line.month,
-            'amountCents': line.amountCents,
-          },
-        );
+        try {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO budget_lines (id, budget_id, general_ledger_id, month, amount_cents)
+              VALUES (@id::uuid, @budgetId::uuid, @glId::uuid, @month, @amountCents)
+            '''),
+            parameters: {
+              'id': _uuid.v4(),
+              'budgetId': budgetId,
+              'glId': line.generalLedgerId,
+              'month': line.month,
+              'amountCents': line.amountCents,
+            },
+          );
+        } on ServerException catch (e) {
+          if (e.code == '23505') {
+            throw const BudgetValidationException(
+              'Duplicate budget entry: the same GL account appears more than once for the same month.',
+            );
+          }
+          rethrow;
+        }
       }
     });
   }

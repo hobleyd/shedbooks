@@ -48,3 +48,15 @@ String buildGlPath(List<GeneralLedgerEntry> all, String id) {
   if (parts.isEmpty) return id;
   return parts.join(' > ');
 }
+
+/// Returns the depth of [id] in the account hierarchy (0 = top-level).
+int glDepth(List<GeneralLedgerEntry> all, String id) {
+  final byId = {for (final g in all) g.id: g};
+  int depth = 0;
+  GeneralLedgerEntry? current = byId[id];
+  while (current?.parentId != null) {
+    depth++;
+    current = byId[current!.parentId!];
+  }
+  return depth;
+}

@@ -160,12 +160,16 @@ class BudgetHandler {
       return _badRequest(e.message);
     }
 
-    await _confirmImport.execute(
-      year: year,
-      rows: dto.rows,
-      saveMappings: dto.saveMappings,
-      entityId: entityId,
-    );
+    try {
+      await _confirmImport.execute(
+        year: year,
+        rows: dto.rows,
+        saveMappings: dto.saveMappings,
+        entityId: entityId,
+      );
+    } on BudgetValidationException catch (e) {
+      return _badRequest(e.message);
+    }
 
     final lines = await _get.execute(year, entityId: entityId);
     return Response.ok(

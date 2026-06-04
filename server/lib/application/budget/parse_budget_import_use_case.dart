@@ -135,7 +135,11 @@ class ParseBudgetImportUseCase {
     List<GeneralLedger> glAccounts,
     Map<String, BudgetGlMapping> mappingsByCode,
   ) {
-    final dataRows = rawRows.skip(1).where((r) => r.isNotEmpty).toList();
+    final dataRows = rawRows
+        .skip(1)
+        .where((r) => r.isNotEmpty)
+        .where((r) => !_isSkipRow(_cell(r, 0).trim().toLowerCase()))
+        .toList();
     return dataRows.map((row) {
       final code = _cell(row, 0);
       final name = _cell(row, 1);

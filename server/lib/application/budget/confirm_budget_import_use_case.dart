@@ -31,19 +31,24 @@ class ConfirmBudgetImportUseCase {
     required bool saveMappings,
     required String entityId,
   }) async {
-    // Convert rows to BudgetLine entities (one per GL account per month).
-    final lines = <BudgetLine>[];
+    // Convert rows to BudgetLine entities, aggregating by (glId, month) so that
+    // multiple CSV rows mapped to the same GL account are summed rather than duplicated.
+    final lineMap = <(String, int), int>{};
     for (final row in rows) {
       for (int m = 0; m < 12; m++) {
         if (row.months[m] != 0) {
-          lines.add(BudgetLine(
-            generalLedgerId: row.generalLedgerId,
-            month: m + 1,
-            amountCents: row.months[m],
-          ));
+          final key = (row.generalLedgerId, m + 1);
+          lineMap[key] = (lineMap[key] ?? 0) + row.months[m];
         }
       }
     }
+    final lines = lineMap.entries
+        .map((e) => BudgetLine(
+              generalLedgerId: e.key.$1,
+              month: e.key.$2,
+              amountCents: e.value,
+            ))
+        .toList();
 
     await _repository.saveLines(year, lines, entityId: entityId);
 

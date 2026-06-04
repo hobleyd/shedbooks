@@ -26,7 +26,6 @@ class _GlRow {
   final String _origDescription;
   final bool _origGstApplicable;
   final GlDirection _origDirection;
-  final String? _origParentId;
 
   _GlRow.fromEntry(GeneralLedgerEntry e)
       : id = e.id,
@@ -40,8 +39,7 @@ class _GlRow {
         _origLabel = e.label,
         _origDescription = e.description,
         _origGstApplicable = e.gstApplicable,
-        _origDirection = e.direction,
-        _origParentId = e.parentId;
+        _origDirection = e.direction;
 
   _GlRow.blank({required this.direction, this.parentId})
       : id = null,
@@ -53,16 +51,14 @@ class _GlRow {
         _origLabel = '',
         _origDescription = '',
         _origGstApplicable = false,
-        _origDirection = direction,
-        _origParentId = null;
+        _origDirection = direction;
 
   bool get isModified =>
       !isNew &&
       (labelController.text != _origLabel ||
           descriptionController.text != _origDescription ||
           gstApplicable != _origGstApplicable ||
-          direction != _origDirection ||
-          parentId != _origParentId);
+          direction != _origDirection);
 
   void dispose() {
     labelController.dispose();
@@ -289,21 +285,6 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
     return result;
   }
 
-  /// Returns the IDs of all accounts that are descendants of [row].
-  Set<String> _descendantIds(_GlRow row) {
-    final result = <String>{};
-    if (row.id == null) return result;
-    void collect(String parentId) {
-      for (final r in _rows) {
-        if (r.parentId == parentId && r.id != null) {
-          if (result.add(r.id!)) collect(r.id!);
-        }
-      }
-    }
-    collect(row.id!);
-    return result;
-  }
-
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -463,13 +444,10 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           Expanded(child: Text('Description', style: labelStyle)),
           const SizedBox(width: 8),
           SizedBox(
-              width: 180, child: Text('Parent Account', style: labelStyle)),
-          const SizedBox(width: 8),
-          SizedBox(
             width: 80,
             child: Center(child: Text('GST', style: labelStyle)),
           ),
-          const SizedBox(width: 48),
+          const SizedBox(width: 96),
         ],
       ),
     );
@@ -477,21 +455,6 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
 
   Widget _buildTableRow(_GlRow row, int depth, GlDirection direction) {
     final bool canEdit = context.watch<AuthState>().canEdit;
-    final descendants = _descendantIds(row);
-
-    // Valid parents: same direction, already persisted (has ID), not self, not a descendant.
-    final validParents = _rows
-        .where((r) =>
-            r.direction == direction &&
-            r.id != null &&
-            r.id != row.id &&
-            !descendants.contains(r.id))
-        .toList();
-
-    // If current parentId is not in validParents (orphan / cycle guard), show null.
-    final resolvedParentId = validParents.any((p) => p.id == row.parentId)
-        ? row.parentId
-        : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -532,48 +495,6 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          // Parent account selector.
-          SizedBox(
-            width: 180,
-            child: DropdownButton<String?>(
-              value: resolvedParentId,
-              isExpanded: true,
-              isDense: true,
-              underline: Container(height: 1, color: Colors.grey.shade400),
-              hint: const Text(
-                '— top level —',
-                style: TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text(
-                    '— top level —',
-                    style: TextStyle(fontSize: 13),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                ...validParents.map((p) => DropdownMenuItem<String?>(
-                      value: p.id,
-                      child: Text(
-                        p.labelController.text.isNotEmpty
-                            ? p.labelController.text
-                            : p.descriptionController.text,
-                        style: const TextStyle(fontSize: 13),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    )),
-              ],
-              onChanged: (!_saving && canEdit)
-                  ? (v) {
-                      setState(() => row.parentId = v);
-                      _markDirty();
-                    }
-                  : null,
-            ),
-          ),
-          const SizedBox(width: 8),
           SizedBox(
             width: 80,
             child: Center(
@@ -586,6 +507,16 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
                         _markDirty();
                       },
               ),
+            ),
+          ),
+          SizedBox(
+            width: 48,
+            child: IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: (_saving || !canEdit || row.id == null)
+                  ? null
+                  : () => _addRow(direction, parentId: row.id),
+              tooltip: 'Add child account',
             ),
           ),
           SizedBox(
