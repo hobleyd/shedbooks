@@ -1,7 +1,8 @@
 class Formatters {
   static String formatCents(int cents) {
-    final dollars = cents / 100;
-    final parts = dollars.toStringAsFixed(2).split('.');
+    final formatted = (cents / 100).toStringAsFixed(2);
+    final negative = formatted.startsWith('-');
+    final parts = (negative ? formatted.substring(1) : formatted).split('.');
     final buf = StringBuffer();
     int c = 0;
     for (int i = parts[0].length - 1; i >= 0; i--) {
@@ -9,7 +10,8 @@ class Formatters {
       buf.write(parts[0][i]);
       c++;
     }
-    return '\$${buf.toString().split('').reversed.join()}.${parts[1]}';
+    final intPart = buf.toString().split('').reversed.join();
+    return '\$${negative ? '-' : ''}$intPart.${parts[1]}';
   }
 
   static String formatAbn(String abn) {
