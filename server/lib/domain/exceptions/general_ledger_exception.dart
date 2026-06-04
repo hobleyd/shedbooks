@@ -18,3 +18,10 @@ final class GeneralLedgerNotFoundException extends GeneralLedgerException {
 final class GeneralLedgerValidationException extends GeneralLedgerException {
   const GeneralLedgerValidationException(super.message);
 }
+
+/// Thrown when attempting to delete an account that has child accounts.
+final class GeneralLedgerHasChildrenException extends GeneralLedgerException {
+  final String id;
+  const GeneralLedgerHasChildrenException(this.id)
+      : super('General ledger account $id has child accounts and cannot be deleted');
+}

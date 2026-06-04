@@ -567,7 +567,7 @@ class TransactionFormState extends State<TransactionForm> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                          child: Text(gl.description,
+                          child: Text(buildGlPath(widget.glEntries, gl.id),
                               overflow: TextOverflow.ellipsis)),
                       if (gl.gstApplicable) ...[
                         const SizedBox(width: 8),
@@ -837,7 +837,7 @@ class TransactionFormState extends State<TransactionForm> {
                           ),
                           const SizedBox(width: 4),
                           Expanded(
-                              child: Text(g.description,
+                              child: Text(buildGlPath(widget.glEntries, g.id),
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 13))),
                         ]),

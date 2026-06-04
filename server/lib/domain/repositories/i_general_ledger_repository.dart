@@ -9,6 +9,7 @@ abstract interface class IGeneralLedgerRepository {
     required String description,
     required bool gstApplicable,
     required GlDirection direction,
+    String? parentId,
   });
 
   /// Returns a general ledger account by [id] within [entityId], or null if not found / deleted.
@@ -26,9 +27,11 @@ abstract interface class IGeneralLedgerRepository {
     required String description,
     required bool gstApplicable,
     required GlDirection direction,
+    String? parentId,
   });
 
   /// Soft-deletes the account with [id] within [entityId].
   /// Throws [GeneralLedgerNotFoundException] if [id] does not exist within [entityId].
+  /// Throws [GeneralLedgerHasChildrenException] if the account has child accounts.
   Future<void> delete(String id, {required String entityId});
 }

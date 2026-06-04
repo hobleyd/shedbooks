@@ -152,7 +152,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
       final glEntries = (jsonDecode(results[0].body) as List)
           .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
           .toList()
-        ..sort((a, b) => a.description.compareTo(b.description));
+        ..sort((a, b) => a.label.compareTo(b.label));
       final contacts = (jsonDecode(results[1].body) as List)
           .map((e) => ContactEntry.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -1348,7 +1348,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
                             Text('(Skip)', style: TextStyle(fontSize: 12))),
                     ...glEntries.map((g) => DropdownMenuItem(
                           value: g.id,
-                          child: Text(g.description,
+                          child: Text(buildGlPath(_glEntries, g.id),
                               style: const TextStyle(fontSize: 12),
                               overflow: TextOverflow.ellipsis),
                         )),

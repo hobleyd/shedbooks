@@ -59,5 +59,20 @@ void main() {
       verifyNever(
           () => repository.delete(any(), entityId: any(named: 'entityId')));
     });
+
+    test('propagates GeneralLedgerHasChildrenException from repository',
+        () async {
+      // Arrange: account exists but repository rejects delete due to children.
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tAccount);
+      when(() => repository.delete(tId, entityId: tEntityId))
+          .thenThrow(GeneralLedgerHasChildrenException(tId));
+
+      // Act / Assert
+      await expectLater(
+        () => sut.execute(tId, entityId: tEntityId),
+        throwsA(isA<GeneralLedgerHasChildrenException>()),
+      );
+    });
   });
 }

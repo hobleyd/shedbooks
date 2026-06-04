@@ -17,11 +17,16 @@ class _GlRow {
   final FocusNode labelFocusNode;
   bool gstApplicable;
   GlDirection direction;
+
+  /// Current parent account ID; null means top-level.
+  String? parentId;
+
   final bool isNew;
   final String _origLabel;
   final String _origDescription;
   final bool _origGstApplicable;
   final GlDirection _origDirection;
+  final String? _origParentId;
 
   _GlRow.fromEntry(GeneralLedgerEntry e)
       : id = e.id,
@@ -30,13 +35,15 @@ class _GlRow {
         labelFocusNode = FocusNode(),
         gstApplicable = e.gstApplicable,
         direction = e.direction,
+        parentId = e.parentId,
         isNew = false,
         _origLabel = e.label,
         _origDescription = e.description,
         _origGstApplicable = e.gstApplicable,
-        _origDirection = e.direction;
+        _origDirection = e.direction,
+        _origParentId = e.parentId;
 
-  _GlRow.blank({required this.direction})
+  _GlRow.blank({required this.direction, this.parentId})
       : id = null,
         labelController = TextEditingController(),
         descriptionController = TextEditingController(),
@@ -46,14 +53,16 @@ class _GlRow {
         _origLabel = '',
         _origDescription = '',
         _origGstApplicable = false,
-        _origDirection = direction;
+        _origDirection = direction,
+        _origParentId = null;
 
   bool get isModified =>
       !isNew &&
       (labelController.text != _origLabel ||
           descriptionController.text != _origDescription ||
           gstApplicable != _origGstApplicable ||
-          direction != _origDirection);
+          direction != _origDirection ||
+          parentId != _origParentId);
 
   void dispose() {
     labelController.dispose();
@@ -63,7 +72,8 @@ class _GlRow {
 }
 
 /// Displays the General Ledger chart of accounts with inline editing,
-/// split into Money In and Money Out tabs.
+/// split into Money In and Money Out tabs. Accounts are displayed as a tree
+/// based on their parent/child relationships.
 class GeneralLedgerScreen extends StatefulWidget {
   const GeneralLedgerScreen({super.key});
 
@@ -78,8 +88,6 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   bool _saving = false;
   String? _loadError;
   bool _isDirty = false;
-  int? _sortColumn;
-  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -117,7 +125,6 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           _pendingDeletions.clear();
           _isDirty = false;
           _loading = false;
-          _applySort();
         });
         context.read<NavigationGuard>().setDirty(false);
       } else {
@@ -136,79 +143,14 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
     }
   }
 
-  void _applySort() {
-    if (_sortColumn == null) return;
-    _rows.sort((a, b) {
-      final int cmp;
-      switch (_sortColumn) {
-        case 0:
-          cmp = a.labelController.text
-              .toLowerCase()
-              .compareTo(b.labelController.text.toLowerCase());
-        case 1:
-          cmp = a.descriptionController.text
-              .toLowerCase()
-              .compareTo(b.descriptionController.text.toLowerCase());
-        case 2:
-          cmp = (a.gstApplicable ? 1 : 0)
-              .compareTo(b.gstApplicable ? 1 : 0);
-        default:
-          return 0;
-      }
-      return _sortAscending ? cmp : -cmp;
-    });
-  }
-
-  Widget _colHeader(String label, int col,
-      {MainAxisAlignment align = MainAxisAlignment.start}) {
-    final isActive = _sortColumn == col;
-    return InkWell(
-      onTap: () => setState(() {
-        if (_sortColumn == col) {
-          _sortAscending = !_sortAscending;
-        } else {
-          _sortColumn = col;
-          _sortAscending = true;
-        }
-        _applySort();
-      }),
-      borderRadius: BorderRadius.circular(4),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-        child: Row(
-          mainAxisAlignment: align,
-          children: [
-            Text(
-              label,
-              style: Theme.of(context)
-                  .textTheme
-                  .labelLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            if (isActive) ...[
-              const SizedBox(width: 2),
-              Icon(
-                _sortAscending
-                    ? Icons.arrow_upward_rounded
-                    : Icons.arrow_downward_rounded,
-                size: 12,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   void _markDirty() {
     if (_isDirty) return;
     setState(() => _isDirty = true);
     context.read<NavigationGuard>().setDirty(true);
   }
 
-  void _addRow(GlDirection direction) {
-    final newRow = _GlRow.blank(direction: direction);
+  void _addRow(GlDirection direction, {String? parentId}) {
+    final newRow = _GlRow.blank(direction: direction, parentId: parentId);
     setState(() => _rows.add(newRow));
     _markDirty();
     WidgetsBinding.instance.addPostFrameCallback(
@@ -241,19 +183,17 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
       }
     }
 
-    setState(() {
-      _rows.sort((a, b) => a.labelController.text
-          .trim()
-          .toLowerCase()
-          .compareTo(b.labelController.text.trim().toLowerCase()));
-      _saving = true;
-    });
+    setState(() => _saving = true);
 
     try {
       final client = context.read<ApiClient>();
 
       for (final id in List<String>.from(_pendingDeletions)) {
         final res = await client.delete('/general-ledger/$id');
+        if (res.statusCode == 409) {
+          throw Exception(
+              'Cannot delete — account has child accounts. Remove or reassign children first.');
+        }
         if (res.statusCode != 204) {
           throw Exception('Delete failed (${res.statusCode})');
         }
@@ -265,7 +205,9 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           'label': row.labelController.text.trim(),
           'description': row.descriptionController.text.trim(),
           'gstApplicable': row.gstApplicable,
-          'direction': row.direction == GlDirection.moneyIn ? 'moneyIn' : 'moneyOut',
+          'direction':
+              row.direction == GlDirection.moneyIn ? 'moneyIn' : 'moneyOut',
+          'parentId': row.parentId,
         });
         if (row.isNew) {
           final res = await client.post('/general-ledger', body);
@@ -315,6 +257,51 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
       ),
     );
     return result ?? false;
+  }
+
+  /// Flattens [rows] into a depth-ordered list for tree rendering.
+  ///
+  /// Children are inserted immediately after their parent. Rows whose parentId
+  /// does not match any sibling (orphans, cross-direction refs) appear at depth 0.
+  List<({_GlRow row, int depth})> _buildTreeItems(List<_GlRow> rows) {
+    final byId = <String, _GlRow>{
+      for (final r in rows)
+        if (r.id != null) r.id!: r,
+    };
+    final visited = <_GlRow>{};
+    final result = <({_GlRow row, int depth})>[];
+
+    void visit(_GlRow row, int depth) {
+      if (visited.contains(row)) return;
+      visited.add(row);
+      result.add((row: row, depth: depth));
+      for (final r in rows) {
+        if (r.parentId != null && r.parentId == row.id) visit(r, depth + 1);
+      }
+    }
+
+    for (final row in rows) {
+      final hasValidParent =
+          row.parentId != null && byId.containsKey(row.parentId);
+      if (!hasValidParent) visit(row, 0);
+    }
+
+    return result;
+  }
+
+  /// Returns the IDs of all accounts that are descendants of [row].
+  Set<String> _descendantIds(_GlRow row) {
+    final result = <String>{};
+    if (row.id == null) return result;
+    void collect(String parentId) {
+      for (final r in _rows) {
+        if (r.parentId == parentId && r.id != null) {
+          if (result.add(r.id!)) collect(r.id!);
+        }
+      }
+    }
+    collect(row.id!);
+    return result;
   }
 
   @override
@@ -420,22 +407,29 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   }
 
   Widget _buildTable(GlDirection direction) {
-    final rows = _rows.where((r) => r.direction == direction).toList();
+    final dirRows = _rows.where((r) => r.direction == direction).toList();
+    final treeItems = _buildTreeItems(dirRows);
     final bool canEdit = context.watch<AuthState>().canEdit;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildTableHeader(),
         const Divider(height: 1),
         Expanded(
-          child: rows.isEmpty
+          child: treeItems.isEmpty
               ? const Center(
-                  child: Text('No entries yet. Use "Add entry" to create one.'),
+                  child:
+                      Text('No entries yet. Use "Add entry" to create one.'),
                 )
               : ListView.separated(
-                  itemCount: rows.length,
+                  itemCount: treeItems.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (_, i) => _buildTableRow(rows[i]),
+                  itemBuilder: (_, i) => _buildTableRow(
+                    treeItems[i].row,
+                    treeItems[i].depth,
+                    direction,
+                  ),
                 ),
         ),
         const Divider(height: 1),
@@ -444,7 +438,8 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           child: Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
-              onPressed: (_saving || !canEdit) ? null : () => _addRow(direction),
+              onPressed:
+                  (_saving || !canEdit) ? null : () => _addRow(direction),
               icon: const Icon(Icons.add),
               label: const Text('Add entry'),
             ),
@@ -455,18 +450,24 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   }
 
   Widget _buildTableHeader() {
+    final labelStyle = Theme.of(context)
+        .textTheme
+        .labelLarge
+        ?.copyWith(fontWeight: FontWeight.bold);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
         children: [
-          SizedBox(width: 220, child: _colHeader('Label', 0)),
+          SizedBox(width: 200, child: Text('Label', style: labelStyle)),
           const SizedBox(width: 8),
-          Expanded(child: _colHeader('Description', 1)),
+          Expanded(child: Text('Description', style: labelStyle)),
           const SizedBox(width: 8),
           SizedBox(
-            width: 128,
-            child: _colHeader('GST Applicable', 2,
-                align: MainAxisAlignment.center),
+              width: 180, child: Text('Parent Account', style: labelStyle)),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 80,
+            child: Center(child: Text('GST', style: labelStyle)),
           ),
           const SizedBox(width: 48),
         ],
@@ -474,25 +475,46 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
     );
   }
 
-  Widget _buildTableRow(_GlRow row) {
+  Widget _buildTableRow(_GlRow row, int depth, GlDirection direction) {
     final bool canEdit = context.watch<AuthState>().canEdit;
+    final descendants = _descendantIds(row);
+
+    // Valid parents: same direction, already persisted (has ID), not self, not a descendant.
+    final validParents = _rows
+        .where((r) =>
+            r.direction == direction &&
+            r.id != null &&
+            r.id != row.id &&
+            !descendants.contains(r.id))
+        .toList();
+
+    // If current parentId is not in validParents (orphan / cycle guard), show null.
+    final resolvedParentId = validParents.any((p) => p.id == row.parentId)
+        ? row.parentId
+        : null;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // Label — indented by depth to show hierarchy.
           SizedBox(
-            width: 220,
-            child: TextFormField(
-              controller: row.labelController,
-              focusNode: row.labelFocusNode,
-              enabled: !_saving && canEdit,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                isDense: true,
+            width: 200,
+            child: Padding(
+              padding: EdgeInsets.only(left: depth * 16.0),
+              child: TextFormField(
+                controller: row.labelController,
+                focusNode: row.labelFocusNode,
+                enabled: !_saving && canEdit,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  isDense: true,
+                ),
+                onChanged: (_) => _markDirty(),
               ),
-              onChanged: (_) => _markDirty(),
             ),
           ),
           const SizedBox(width: 8),
@@ -502,15 +524,58 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
               enabled: !_saving && canEdit,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 isDense: true,
               ),
               onChanged: (_) => _markDirty(),
             ),
           ),
           const SizedBox(width: 8),
+          // Parent account selector.
           SizedBox(
-            width: 128,
+            width: 180,
+            child: DropdownButton<String?>(
+              value: resolvedParentId,
+              isExpanded: true,
+              isDense: true,
+              underline: Container(height: 1, color: Colors.grey.shade400),
+              hint: const Text(
+                '— top level —',
+                style: TextStyle(fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text(
+                    '— top level —',
+                    style: TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                ...validParents.map((p) => DropdownMenuItem<String?>(
+                      value: p.id,
+                      child: Text(
+                        p.labelController.text.isNotEmpty
+                            ? p.labelController.text
+                            : p.descriptionController.text,
+                        style: const TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    )),
+              ],
+              onChanged: (!_saving && canEdit)
+                  ? (v) {
+                      setState(() => row.parentId = v);
+                      _markDirty();
+                    }
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 80,
             child: Center(
               child: Checkbox(
                 value: row.gstApplicable,

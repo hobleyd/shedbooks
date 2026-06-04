@@ -10,6 +10,7 @@ class GeneralLedgerResponse {
   final String direction;
   final String createdAt;
   final String updatedAt;
+  final String? parentId;
 
   const GeneralLedgerResponse({
     required this.id,
@@ -19,6 +20,7 @@ class GeneralLedgerResponse {
     required this.direction,
     required this.createdAt,
     required this.updatedAt,
+    this.parentId,
   });
 
   factory GeneralLedgerResponse.fromEntity(GeneralLedger entity) {
@@ -30,6 +32,7 @@ class GeneralLedgerResponse {
       direction: entity.direction == GlDirection.moneyIn ? 'moneyIn' : 'moneyOut',
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
+      parentId: entity.parentId,
     );
   }
 
@@ -41,6 +44,7 @@ class GeneralLedgerResponse {
         'direction': direction,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
+        'parentId': parentId,
       };
 
   String toJsonString() => jsonEncode(toJson());

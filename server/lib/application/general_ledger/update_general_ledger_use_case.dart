@@ -15,6 +15,7 @@ class UpdateGeneralLedgerUseCase {
     required String description,
     required bool gstApplicable,
     required GlDirection direction,
+    String? parentId,
   }) async {
     if (label.trim().isEmpty) {
       throw const GeneralLedgerValidationException('Label must not be empty');
@@ -30,6 +31,7 @@ class UpdateGeneralLedgerUseCase {
       description: description.trim(),
       gstApplicable: gstApplicable,
       direction: direction,
+      parentId: parentId,
     );
   }
 }

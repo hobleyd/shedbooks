@@ -20,14 +20,15 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
     required String description,
     required bool gstApplicable,
     required GlDirection direction,
+    String? parentId,
   }) async {
     final id = _uuid.v4();
 
     final result = await _pool.execute(
       Sql.named('''
-        INSERT INTO general_ledger (id, entity_id, label, description, gst_applicable, direction)
-        VALUES (@id::uuid, @entityId, @label, @description, @gstApplicable, @direction::gl_direction)
-        RETURNING id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
+        INSERT INTO general_ledger (id, entity_id, label, description, gst_applicable, direction, parent_id)
+        VALUES (@id::uuid, @entityId, @label, @description, @gstApplicable, @direction::gl_direction, @parentId::uuid)
+        RETURNING id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at, parent_id::text
       '''),
       parameters: {
         'id': id,
@@ -36,6 +37,7 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
         'description': description,
         'gstApplicable': gstApplicable,
         'direction': _directionToDb(direction),
+        'parentId': parentId,
       },
     );
 
@@ -46,7 +48,7 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
   Future<GeneralLedger?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
+        SELECT id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at, parent_id::text
         FROM general_ledger
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -63,7 +65,7 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
   Future<List<GeneralLedger>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
+        SELECT id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at, parent_id::text
         FROM general_ledger
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -83,6 +85,7 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
     required String description,
     required bool gstApplicable,
     required GlDirection direction,
+    String? parentId,
   }) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -91,11 +94,12 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
             description    = @description,
             gst_applicable = @gstApplicable,
             direction      = @direction::gl_direction,
+            parent_id      = @parentId::uuid,
             updated_at     = NOW()
         WHERE id = @id::uuid
           AND entity_id = @entityId
           AND deleted_at IS NULL
-        RETURNING id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at
+        RETURNING id, label, description, gst_applicable, direction::text, created_at, updated_at, deleted_at, parent_id::text
       '''),
       parameters: {
         'id': id,
@@ -104,6 +108,7 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
         'description': description,
         'gstApplicable': gstApplicable,
         'direction': _directionToDb(direction),
+        'parentId': parentId,
       },
     );
 
@@ -113,6 +118,18 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
 
   @override
   Future<void> delete(String id, {required String entityId}) async {
+    final children = await _pool.execute(
+      Sql.named('''
+        SELECT 1 FROM general_ledger
+        WHERE parent_id = @id::uuid
+          AND entity_id = @entityId
+          AND deleted_at IS NULL
+        LIMIT 1
+      '''),
+      parameters: {'id': id, 'entityId': entityId},
+    );
+    if (children.isNotEmpty) throw GeneralLedgerHasChildrenException(id);
+
     final result = await _pool.execute(
       Sql.named('''
         UPDATE general_ledger
@@ -138,6 +155,7 @@ class PostgresGeneralLedgerRepository implements IGeneralLedgerRepository {
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,
+      parentId: row['parent_id'] as String?,
     );
   }
 

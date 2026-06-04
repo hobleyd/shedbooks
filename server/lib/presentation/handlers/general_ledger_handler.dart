@@ -73,6 +73,7 @@ class GeneralLedgerHandler {
         description: dto.description,
         gstApplicable: dto.gstApplicable,
         direction: dto.direction,
+        parentId: dto.parentId,
       );
       _auditChanges(request)?.set(_glSnapshot(account));
       return Response(
@@ -133,6 +134,7 @@ class GeneralLedgerHandler {
         description: dto.description,
         gstApplicable: dto.gstApplicable,
         direction: dto.direction,
+        parentId: dto.parentId,
       );
       if (before != null) {
         final diff = diffMaps(_glSnapshot(before), _glSnapshot(account));
@@ -163,6 +165,8 @@ class GeneralLedgerHandler {
       await _delete.execute(id, entityId: entityId);
       if (before != null) _auditChanges(request)?.set(_glSnapshot(before));
       return Response(204);
+    } on GeneralLedgerHasChildrenException catch (e) {
+      return _conflict(e.message);
     } on GeneralLedgerNotFoundException catch (e) {
       return _notFound(e.message);
     }
@@ -200,6 +204,12 @@ class GeneralLedgerHandler {
 
   static Response _notFound(String message) => Response.notFound(
         jsonEncode({'error': message}),
+        headers: _jsonHeaders,
+      );
+
+  static Response _conflict(String message) => Response(
+        409,
+        body: jsonEncode({'error': message}),
         headers: _jsonHeaders,
       );
 }

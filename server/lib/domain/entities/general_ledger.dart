@@ -27,6 +27,9 @@ class GeneralLedger {
   /// Soft-delete timestamp; null when the record is active.
   final DateTime? deletedAt;
 
+  /// Parent account ID; null for top-level accounts.
+  final String? parentId;
+
   const GeneralLedger({
     required this.id,
     required this.label,
@@ -36,6 +39,7 @@ class GeneralLedger {
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    this.parentId,
   });
 
   /// Returns true when this record has been soft-deleted.
@@ -48,6 +52,7 @@ class GeneralLedger {
     GlDirection? direction,
     DateTime? updatedAt,
     DateTime? deletedAt,
+    Object? parentId = _sentinel,
   }) {
     return GeneralLedger(
       id: id,
@@ -58,6 +63,9 @@ class GeneralLedger {
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      parentId: parentId == _sentinel ? this.parentId : parentId as String?,
     );
   }
+
+  static const Object _sentinel = Object();
 }

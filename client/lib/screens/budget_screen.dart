@@ -1593,7 +1593,7 @@ class _ImportDialogState extends State<_ImportDialog> {
                         (g) => DropdownMenuItem(
                           value: g.id,
                           child: Text(
-                            g.description,
+                            buildGlPath(widget.glAccounts, g.id),
                             style: const TextStyle(fontSize: 13),
                             overflow: TextOverflow.ellipsis,
                           ),

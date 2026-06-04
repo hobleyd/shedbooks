@@ -1115,7 +1115,7 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          g.description,
+                          buildGlPath(widget.glEntries, g.id),
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 13),
                         ),

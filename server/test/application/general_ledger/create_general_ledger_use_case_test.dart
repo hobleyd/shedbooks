@@ -136,5 +136,77 @@ void main() {
         throwsA(isA<GeneralLedgerValidationException>()),
       );
     });
+
+    test('passes parentId through to repository', () async {
+      // Arrange
+      const tParentId = '00000000-0000-0000-0000-000000000002';
+      when(
+        () => repository.create(
+          entityId: tEntityId,
+          label: 'Recycling',
+          description: 'Recycling',
+          gstApplicable: true,
+          direction: GlDirection.moneyIn,
+          parentId: tParentId,
+        ),
+      ).thenAnswer((_) async => tAccount);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        label: 'Recycling',
+        description: 'Recycling',
+        gstApplicable: true,
+        direction: GlDirection.moneyIn,
+        parentId: tParentId,
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: tEntityId,
+          label: 'Recycling',
+          description: 'Recycling',
+          gstApplicable: true,
+          direction: GlDirection.moneyIn,
+          parentId: tParentId,
+        ),
+      ).called(1);
+    });
+
+    test('passes null parentId when not provided', () async {
+      // Arrange
+      when(
+        () => repository.create(
+          entityId: tEntityId,
+          label: 'Sales Revenue',
+          description: 'Revenue from product sales',
+          gstApplicable: true,
+          direction: GlDirection.moneyIn,
+          parentId: null,
+        ),
+      ).thenAnswer((_) async => tAccount);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        label: 'Sales Revenue',
+        description: 'Revenue from product sales',
+        gstApplicable: true,
+        direction: GlDirection.moneyIn,
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: tEntityId,
+          label: 'Sales Revenue',
+          description: 'Revenue from product sales',
+          gstApplicable: true,
+          direction: GlDirection.moneyIn,
+          parentId: null,
+        ),
+      ).called(1);
+    });
   });
 }
