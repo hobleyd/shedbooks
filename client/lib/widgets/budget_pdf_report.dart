@@ -59,7 +59,8 @@ class BudgetPdfReport {
       pw.SizedBox(height: 16),
       _section('Income', incomeGl, budgetFn, actualFn, formatCents),
       pw.SizedBox(height: 12),
-      _section('Expenses', expenseGl, budgetFn, actualFn, formatCents),
+      _section('Expenses', expenseGl, budgetFn, actualFn, formatCents,
+          showColumnHeaders: true),
       pw.SizedBox(height: 8),
       _netRow(incomeGl, expenseGl, budgetFn, actualFn, formatCents),
     ];
@@ -70,8 +71,9 @@ class BudgetPdfReport {
     List<GeneralLedgerEntry> accounts,
     int Function(String) budgetFn,
     int Function(String) actualFn,
-    String Function(int) fmt,
-  ) {
+    String Function(int) fmt, {
+    bool showColumnHeaders = false,
+  }) {
     final rows =
         accounts.where((g) => budgetFn(g.id) > 0 || actualFn(g.id) > 0).toList();
     if (rows.isEmpty) return pw.SizedBox();
@@ -103,15 +105,38 @@ class BudgetPdfReport {
         );
 
     int variance(String glId) => actualFn(glId) - budgetFn(glId);
-    double pct(String glId) {
+    String pctLabel(String glId) {
       final b = budgetFn(glId);
-      if (b == 0) return 0;
-      return actualFn(glId) / b * 100;
+      if (b == 0) return '';
+      final p = actualFn(glId) / b * 100;
+      return p > 999 ? '>999%' : '${p.toStringAsFixed(0)}%';
     }
+
+    final colHeaderStyle =
+        pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.grey700);
+
+    pw.Widget colHeaderCell(String text) =>
+        pw.Text(text, style: colHeaderStyle, textAlign: pw.TextAlign.right);
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
+        if (showColumnHeaders)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 2),
+            child: pw.Table(
+              columnWidths: colWidths,
+              children: [
+                pw.TableRow(children: [
+                  pw.SizedBox(),
+                  colHeaderCell('Budget'),
+                  colHeaderCell('Actual'),
+                  colHeaderCell('Variance'),
+                  colHeaderCell('% of Budget'),
+                ]),
+              ],
+            ),
+          ),
         pw.Container(
           color: PdfColors.grey800,
           padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -147,7 +172,7 @@ class BudgetPdfReport {
                           fontSize: 9,
                           color: variance(g.id) >= 0 ? PdfColors.green700 : PdfColors.red700,
                         )),
-                    cell('${pct(g.id).toStringAsFixed(0)}%'),
+                    cell(pctLabel(g.id)),
                   ],
                 )),
             pw.TableRow(

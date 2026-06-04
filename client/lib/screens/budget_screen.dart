@@ -1085,10 +1085,11 @@ class _BudgetScreenState extends State<BudgetScreen>
     Widget pctCell(int budget, int actual) {
       if (budget == 0) return const SizedBox(width: numWidth);
       final pct = actual / budget * 100;
+      final label = pct > 999 ? '>999%' : '${pct.toStringAsFixed(0)}%';
       return SizedBox(
         width: numWidth,
         child: Text(
-          '${pct.toStringAsFixed(0)}%',
+          label,
           textAlign: TextAlign.right,
           style: const TextStyle(fontSize: 12),
         ),
@@ -1176,13 +1177,8 @@ class _BudgetScreenState extends State<BudgetScreen>
     final netB = totalIncomeB - totalExpenseB;
     final netA = totalIncomeA - totalExpenseA;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Header row.
-        Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 8, vertical: 4),
+    Widget columnHeaders() => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(children: [
             const SizedBox(width: nameWidth),
             headerCell('Budget'),
@@ -1190,8 +1186,13 @@ class _BudgetScreenState extends State<BudgetScreen>
             headerCell('Variance'),
             headerCell('% of Budget'),
           ]),
-        ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         // Income section.
+        columnHeaders(),
         Row(children: [
           sectionLabel('Income'),
           SizedBox(width: numWidth * 4),
@@ -1204,6 +1205,7 @@ class _BudgetScreenState extends State<BudgetScreen>
         totalsRow('Income', incomeGl),
         const SizedBox(height: 8),
         // Expenses section.
+        columnHeaders(),
         Row(children: [
           sectionLabel('Expenses'),
           SizedBox(width: numWidth * 4),
