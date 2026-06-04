@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
+import '../models/budget_entry.dart';
 import '../models/closing_bank_balance_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
@@ -14,6 +15,7 @@ import '../models/pnl_data.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../utils/formatters.dart';
+import '../widgets/budget_pdf_report.dart';
 import '../widgets/pdf_report_components.dart';
 import '../widgets/pnl_pdf_report.dart';
 
@@ -41,6 +43,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   List<BankAccountEntry> _bankAccounts = [];
   List<ClosingBankBalanceEntry> _closingBalances = [];
   Map<String, GeneralLedgerEntry> _glMap = {};
+  BudgetEntry? _budget;
   bool _loading = true;
   List<PlatformFile> _bankStatements = [];
 
@@ -53,16 +56,21 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   Future<void> _loadData() async {
     try {
       final client = context.read<ApiClient>();
+      final now = DateTime.now();
+      final reportYear = DateTime(now.year, now.month - 1).year;
+
       final results = await Future.wait([
         client.get('/entity-details'),
         client.get('/transactions'),
         client.get('/general-ledger'),
         client.get('/bank-accounts'),
         client.get('/closing-bank-balances'),
+        client.get('/budgets/$reportYear'),
       ]);
       if (!mounted) return;
 
-      if (results.any((r) => r.statusCode != 200)) {
+      // Only the first 5 are required; budget (index 5) is optional.
+      if (results.take(5).any((r) => r.statusCode != 200)) {
         setState(() => _loading = false);
         return;
       }
@@ -84,6 +92,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         _closingBalances = (jsonDecode(results[4].body) as List)
             .map((e) => ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
             .toList();
+        if (results[5].statusCode == 200) {
+          _budget = BudgetEntry.fromJson(
+            jsonDecode(results[5].body) as Map<String, dynamic>,
+          );
+        }
         _loading = false;
       });
     } catch (_) {
@@ -225,6 +238,29 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       ],
     ));
 
+    // Append Budget vs Actual
+    final budgetActuals = _computeBudgetActuals(reportYear, reportMonth);
+    final budgetWidgets = BudgetPdfReport.build(
+      budget: _budget,
+      glAccounts: _glMap.values.toList(),
+      actuals: budgetActuals,
+      startMonth: 1,
+      endMonth: reportMonth,
+      periodLabel: 'Year to Date to $reportMonthName $reportYear',
+      formatCents: Formatters.formatCents,
+    );
+    if (budgetWidgets.isNotEmpty) {
+      doc.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(30),
+        footer: (ctx) => PdfReportComponents.pageFooter(ctx, generated),
+        build: (ctx) => [
+          PdfReportComponents.entityHeader(entity),
+          ...budgetWidgets,
+        ],
+      ));
+    }
+
     // Append Bank Statements
     for (final file in _bankStatements) {
       if (file.bytes == null) continue;
@@ -242,6 +278,20 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     }
 
     await Printing.layoutPdf(onLayout: (_) async => doc.save());
+  }
+
+  Map<String, List<int>> _computeBudgetActuals(int year, int upToMonth) {
+    final actuals = <String, List<int>>{};
+    for (final t in _allTransactions) {
+      final parts = t.transactionDate.split('-');
+      if (parts.length < 3) continue;
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (y != year || m == null || m < 1 || m > upToMonth) continue;
+      actuals[t.generalLedgerId] ??= List.filled(12, 0);
+      actuals[t.generalLedgerId]![m - 1] += t.totalAmount;
+    }
+    return actuals;
   }
 
   List<_MonthSummary> _buildMonthSummaries(
