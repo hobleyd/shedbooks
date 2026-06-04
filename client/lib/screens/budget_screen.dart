@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -48,8 +49,9 @@ class _BudgetScreenState extends State<BudgetScreen>
   List<TransactionEntry> _allTransactions = [];
   EntityDetails? _entityDetails;
 
-  // Controllers: glId → list of 12 TextEditingControllers (Jan–Dec).
+  // Controllers and focus nodes: glId → list of 12 (Jan–Dec).
   final Map<String, List<TextEditingController>> _controllers = {};
+  final Map<String, List<FocusNode>> _focusNodes = {};
   bool _hasUnsavedChanges = false;
 
   late TabController _tabController;
@@ -69,6 +71,7 @@ class _BudgetScreenState extends State<BudgetScreen>
   void dispose() {
     _tabController.dispose();
     _disposeControllers();
+    _disposeFocusNodes();
     super.dispose();
   }
 
@@ -79,6 +82,15 @@ class _BudgetScreenState extends State<BudgetScreen>
       }
     }
     _controllers.clear();
+  }
+
+  void _disposeFocusNodes() {
+    for (final list in _focusNodes.values) {
+      for (final n in list) {
+        n.dispose();
+      }
+    }
+    _focusNodes.clear();
   }
 
   // ── Data loading ───────────────────────────────────────────────────────────
@@ -161,7 +173,9 @@ class _BudgetScreenState extends State<BudgetScreen>
     }
 
     _disposeControllers();
+    _disposeFocusNodes();
     _initControllers(budget);
+    _initFocusNodes();
 
     setState(() {
       _budget = budget;
@@ -179,6 +193,65 @@ class _BudgetScreenState extends State<BudgetScreen>
         );
       });
     }
+  }
+
+  void _initFocusNodes() {
+    for (final gl in _glAccounts) {
+      _focusNodes[gl.id] = List.generate(12, (monthIdx) {
+        final node = FocusNode();
+        node.addListener(() {
+          if (node.hasFocus) {
+            final ctrl = _controllers[gl.id]?[monthIdx];
+            if (ctrl != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (node.hasFocus) {
+                  ctrl.selection = TextSelection(
+                    baseOffset: 0,
+                    extentOffset: ctrl.text.length,
+                  );
+                }
+              });
+            }
+          }
+        });
+        return node;
+      });
+    }
+  }
+
+  /// Returns GL ids in the same order they appear in the edit grid
+  /// (income sorted by label, then expense sorted by label).
+  List<String> _buildOrderedGlIds() {
+    final income = _glAccounts
+        .where((g) => g.direction == GlDirection.moneyIn)
+        .toList()
+      ..sort((a, b) => a.label.compareTo(b.label));
+    final expense = _glAccounts
+        .where((g) => g.direction == GlDirection.moneyOut)
+        .toList()
+      ..sort((a, b) => a.label.compareTo(b.label));
+    return [...income.map((g) => g.id), ...expense.map((g) => g.id)];
+  }
+
+  void _moveFocus(String glId, int monthIdx, int rowDelta, int colDelta) {
+    final orderedIds = _buildOrderedGlIds();
+    final rowIdx = orderedIds.indexOf(glId);
+    if (rowIdx == -1) return;
+
+    int newRow = rowIdx + rowDelta;
+    int newCol = monthIdx + colDelta;
+
+    // Wrap columns into next/previous row (Tab-style).
+    if (newCol > 11) {
+      newCol = 0;
+      newRow += 1;
+    } else if (newCol < 0) {
+      newCol = 11;
+      newRow -= 1;
+    }
+
+    if (newRow < 0 || newRow >= orderedIds.length) return;
+    _focusNodes[orderedIds[newRow]]?[newCol].requestFocus();
   }
 
   // ── Saving ─────────────────────────────────────────────────────────────────
@@ -693,27 +766,55 @@ class _BudgetScreenState extends State<BudgetScreen>
 
     Widget editCell(String glId, int monthIdx) {
       final ctrl = _controllers[glId]?[monthIdx];
-      if (ctrl == null) return SizedBox(width: monthWidth);
+      final focusNode = _focusNodes[glId]?[monthIdx];
+      if (ctrl == null || focusNode == null) return SizedBox(width: monthWidth);
       return SizedBox(
         width: monthWidth,
-        child: TextField(
-          controller: ctrl,
-          enabled: isAdmin,
-          textAlign: TextAlign.right,
-          keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
-          style: const TextStyle(fontSize: 12),
-          decoration: const InputDecoration(
-            isDense: true,
-            contentPadding:
-                EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            border: OutlineInputBorder(),
-          ),
-          onChanged: (_) {
-            if (!_hasUnsavedChanges) {
-              setState(() => _hasUnsavedChanges = true);
+        child: Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          onKeyEvent: (_, event) {
+            if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+              return KeyEventResult.ignored;
+            }
+            final shift = HardwareKeyboard.instance.isShiftPressed;
+            switch (event.logicalKey) {
+              case LogicalKeyboardKey.tab:
+                _moveFocus(glId, monthIdx, 0, shift ? -1 : 1);
+                return KeyEventResult.handled;
+              case LogicalKeyboardKey.enter:
+                _moveFocus(glId, monthIdx, shift ? -1 : 1, 0);
+                return KeyEventResult.handled;
+              case LogicalKeyboardKey.arrowUp:
+                _moveFocus(glId, monthIdx, -1, 0);
+                return KeyEventResult.handled;
+              case LogicalKeyboardKey.arrowDown:
+                _moveFocus(glId, monthIdx, 1, 0);
+                return KeyEventResult.handled;
+              default:
+                return KeyEventResult.ignored;
             }
           },
+          child: TextField(
+            controller: ctrl,
+            focusNode: focusNode,
+            enabled: isAdmin,
+            textAlign: TextAlign.right,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontSize: 12),
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) {
+              if (!_hasUnsavedChanges) {
+                setState(() => _hasUnsavedChanges = true);
+              }
+            },
+          ),
         ),
       );
     }
