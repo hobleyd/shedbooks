@@ -52,6 +52,15 @@ import '../application/gst_rate/list_gst_rates_use_case.dart';
 import '../application/gst_rate/update_gst_rate_use_case.dart';
 import '../application/bank_import/get_bank_imports_use_case.dart';
 import '../application/bank_import/save_bank_imports_use_case.dart';
+import '../application/budget/confirm_budget_import_use_case.dart';
+import '../application/budget/delete_budget_use_case.dart';
+import '../application/budget/get_budget_gl_mappings_use_case.dart';
+import '../application/budget/get_budget_use_case.dart';
+import '../application/budget/list_budget_years_use_case.dart';
+import '../application/budget/parse_budget_import_use_case.dart';
+import '../application/budget/save_budget_gl_mappings_use_case.dart';
+import '../application/budget/save_budget_use_case.dart';
+import '../infrastructure/repositories/postgres_budget_repository.dart';
 import '../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
 import '../application/closing_bank_balance/list_closing_bank_balances_use_case.dart';
 import '../application/closing_bank_balance/save_closing_bank_balance_use_case.dart';
@@ -68,6 +77,7 @@ import 'handlers/aba_sequence_handler.dart';
 import 'handlers/abn_lookup_handler.dart';
 import 'handlers/bank_reconciliation_handler.dart';
 import 'handlers/bank_imports_handler.dart';
+import 'handlers/budget_handler.dart';
 import 'handlers/closing_bank_balance_handler.dart';
 import 'handlers/locked_month_handler.dart';
 import 'handlers/audit_handler.dart';
@@ -193,6 +203,18 @@ Handler buildRouter({
         GetNextAbaSequenceUseCase(PostgresAbaSequenceRepository(pool)),
   );
 
+  final budgetRepository = PostgresBudgetRepository(pool);
+  final budgetHandler = BudgetHandler(
+    listYears: ListBudgetYearsUseCase(budgetRepository),
+    get: GetBudgetUseCase(budgetRepository),
+    save: SaveBudgetUseCase(budgetRepository),
+    delete: DeleteBudgetUseCase(budgetRepository),
+    parseImport: ParseBudgetImportUseCase(budgetRepository, generalLedgerRepository),
+    confirmImport: ConfirmBudgetImportUseCase(budgetRepository),
+    getMappings: GetBudgetGlMappingsUseCase(budgetRepository),
+    saveMappings: SaveBudgetGlMappingsUseCase(budgetRepository),
+  );
+
   final backupHandler = BackupHandler(pool: pool);
 
   final auditHandler = AuditHandler(
@@ -246,6 +268,8 @@ Handler buildRouter({
         _authed(_closingBankBalanceRouter(closingBankBalanceHandler)))
     ..mount('/bank-reconciliation',
         _authed(_bankReconciliationRouter(bankReconciliationHandler)))
+    ..mount('/budgets',
+        _authed(_budgetRouter(budgetHandler)))
     ..mount('/admin',
         _authed(_adminRouter(backupHandler, auditHandler)));
 
@@ -387,4 +411,24 @@ Router _adminRouter(BackupHandler backup, AuditHandler audit) {
     ..get('/backup', _role(blockContributor(), backup.handleBackup))
     ..post('/restore', _role(requireAdministrator(), backup.handleRestore))
     ..get('/audit-log', _role(blockContributor(), audit.handleList));
+}
+
+// All roles can read budgets; only admins can write or import.
+// Fixed paths (gl-mappings, parse-import) are registered before <year> to avoid shadowing.
+Router _budgetRouter(BudgetHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..get('/gl-mappings', h.handleGetMappings)
+    ..put('/gl-mappings', _role(requireAdministrator(), h.handleSaveMappings))
+    ..post('/parse-import', _role(requireAdministrator(), h.handleParseImport))
+    ..get('/<year>', h.handleGet)
+    ..put('/<year>', _roleId(requireAdministrator(), h.handleSave))
+    ..delete('/<year>', _roleId(requireAdministrator(), h.handleDelete))
+    ..post(
+      '/<year>/confirm-import',
+      (Request req, String year) => _role(
+        requireAdministrator(),
+        (r) => h.handleConfirmImport(r, year),
+      )(req),
+    );
 }

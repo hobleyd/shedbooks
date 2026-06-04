@@ -268,6 +268,136 @@ components:
         error:
           type: string
 
+    BudgetLine:
+      type: object
+      required: [generalLedgerId, months]
+      properties:
+        generalLedgerId:
+          type: string
+          format: uuid
+        months:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+          minItems: 12
+          maxItems: 12
+          description: Monthly budget amounts in cents; index 0 = January.
+
+    BudgetResponse:
+      type: object
+      required: [year, lines]
+      properties:
+        year:
+          type: integer
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetLine'
+
+    SaveBudgetRequest:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetLine'
+
+    ParsedImportRow:
+      type: object
+      required: [externalCode, externalName, months, confidence]
+      properties:
+        externalCode:
+          type: string
+        externalName:
+          type: string
+        suggestedGlId:
+          type: string
+          format: uuid
+          nullable: true
+        suggestedGlLabel:
+          type: string
+          nullable: true
+        months:
+          type: array
+          items:
+            type: integer
+          minItems: 12
+          maxItems: 12
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    ParseImportResponse:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParsedImportRow'
+
+    ConfirmedImportRow:
+      type: object
+      required: [externalCode, generalLedgerId, months]
+      properties:
+        externalCode:
+          type: string
+        externalName:
+          type: string
+        generalLedgerId:
+          type: string
+          format: uuid
+        months:
+          type: array
+          items:
+            type: integer
+          minItems: 12
+          maxItems: 12
+
+    ConfirmImportRequest:
+      type: object
+      required: [rows, saveMappings]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfirmedImportRow'
+        saveMappings:
+          type: boolean
+
+    GlMapping:
+      type: object
+      required: [externalCode, externalName, generalLedgerId]
+      properties:
+        externalCode:
+          type: string
+        externalName:
+          type: string
+        generalLedgerId:
+          type: string
+          format: uuid
+
+    GlMappingsResponse:
+      type: object
+      required: [mappings]
+      properties:
+        mappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlMapping'
+
+    SaveGlMappingsRequest:
+      type: object
+      required: [mappings]
+      properties:
+        mappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlMapping'
+
 paths:
   /general-ledger:
     get:
@@ -873,3 +1003,201 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /budgets:
+    get:
+      summary: List calendar years that have a saved budget
+      operationId: listBudgetYears
+      tags: [Budget]
+      responses:
+        '200':
+          description: Array of years
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /budgets/gl-mappings:
+    get:
+      summary: Get saved GL code mappings for CSV import
+      operationId: getBudgetGlMappings
+      tags: [Budget]
+      responses:
+        '200':
+          description: GL mappings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlMappingsResponse'
+        '401':
+          description: Unauthorised
+    put:
+      summary: Replace all GL code mappings (admin only)
+      operationId: saveBudgetGlMappings
+      tags: [Budget]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveGlMappingsRequest'
+      responses:
+        '200':
+          description: Updated mappings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlMappingsResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+        '403':
+          description: Forbidden
+
+  /budgets/parse-import:
+    post:
+      summary: Parse a budget CSV and return rows with GL match suggestions (admin only)
+      operationId: parseBudgetImport
+      tags: [Budget]
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Parsed rows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParseImportResponse'
+        '400':
+          description: Parse error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+        '403':
+          description: Forbidden
+
+  /budgets/{year}:
+    get:
+      summary: Get the budget for a calendar year
+      operationId: getBudget
+      tags: [Budget]
+      parameters:
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Budget
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetResponse'
+        '401':
+          description: Unauthorised
+    put:
+      summary: Save (replace) the budget for a calendar year (admin only)
+      operationId: saveBudget
+      tags: [Budget]
+      parameters:
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveBudgetRequest'
+      responses:
+        '200':
+          description: Updated budget
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+        '403':
+          description: Forbidden
+    delete:
+      summary: Delete the budget for a calendar year (admin only)
+      operationId: deleteBudget
+      tags: [Budget]
+      parameters:
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Unauthorised
+        '403':
+          description: Forbidden
+
+  /budgets/{year}/confirm-import:
+    post:
+      summary: Confirm and save an imported budget (admin only)
+      operationId: confirmBudgetImport
+      tags: [Budget]
+      parameters:
+        - name: year
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmImportRequest'
+      responses:
+        '200':
+          description: Saved budget
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+        '403':
+          description: Forbidden
