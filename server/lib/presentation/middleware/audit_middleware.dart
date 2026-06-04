@@ -51,6 +51,8 @@ bool _shouldAudit(String method, String path, int statusCode) {
   if (statusCode < 200 || statusCode >= 300) return false;
   // Never log reads of the audit log itself.
   if (path.endsWith('/admin/audit-log')) return false;
+  // parse-import only parses a CSV in memory — no data is persisted.
+  if (path.endsWith('/parse-import')) return false;
   // Always audit admin operations (backup/restore are sensitive reads/writes).
   if (path.contains('/admin/')) return true;
   // Audit all mutating requests on data resources.
@@ -129,6 +131,7 @@ const _tableMap = {
   'dashboard-preferences': 'dashboard_preferences',
   'abn-lookup': 'contacts',
   'aba-sequences': 'aba_sequences',
+  'budgets': 'budgets',
 };
 
 String _tableName(String path) {
@@ -145,6 +148,7 @@ String? _recordId(String path) {
   if (parts.length < 2) return null;
   const nonIdSegments = {
     'merge', 'effective', 'backup', 'restore', 'audit-log', 'next',
+    'confirm-import', 'gl-mappings',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

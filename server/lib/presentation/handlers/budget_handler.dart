@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:shelf/shelf.dart';
 
+import '../audit_changes.dart';
 import '../../application/budget/confirm_budget_import_use_case.dart';
 import '../../application/budget/delete_budget_use_case.dart';
 import '../../application/budget/get_budget_gl_mappings_use_case.dart';
@@ -98,6 +99,11 @@ class BudgetHandler {
       return _badRequest(e.message);
     }
 
+    _auditChanges(request)?.set({
+      'year': year,
+      'lineCount': dto.lines.length,
+    });
+
     final lines = await _get.execute(year, entityId: entityId);
     return Response.ok(
       BudgetResponse.fromLines(year, lines).toJsonString(),
@@ -114,6 +120,7 @@ class BudgetHandler {
     if (year == null) return _badRequest('year must be an integer');
 
     await _delete.execute(year, entityId: entityId);
+    _auditChanges(request)?.set({'year': year});
     return Response(204);
   }
 
@@ -171,6 +178,12 @@ class BudgetHandler {
       return _badRequest(e.message);
     }
 
+    _auditChanges(request)?.set({
+      'year': year,
+      'rowCount': dto.rows.length,
+      'saveMappings': dto.saveMappings,
+    });
+
     final lines = await _get.execute(year, entityId: entityId);
     return Response.ok(
       BudgetResponse.fromLines(year, lines).toJsonString(),
@@ -210,6 +223,7 @@ class BudgetHandler {
     }
 
     await _saveMappings.execute(dto.mappings, entityId: entityId);
+    _auditChanges(request)?.set({'mappingCount': dto.mappings.length});
     final mappings = await _getMappings.execute(entityId: entityId);
     return Response.ok(
       BudgetGlMappingsResponse(mappings: mappings).toJsonString(),
@@ -223,6 +237,9 @@ class BudgetHandler {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;
     return claims?['https://shedbooks.com/entity_id'] as String?;
   }
+
+  static AuditChanges? _auditChanges(Request request) =>
+      request.context['audit.changes'] as AuditChanges?;
 
   static const Map<String, String> _jsonHeaders = {
     HttpHeaders.contentTypeHeader: 'application/json',
