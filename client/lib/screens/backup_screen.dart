@@ -47,7 +47,7 @@ class _BackupScreenState extends State<BackupScreen> {
       final stamp =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
           '-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-      final filename = 'shedbooks-backup-$stamp.json';
+      final filename = 'shedbooks-backup-$stamp.bak';
 
       final blob = html.Blob([res.bodyBytes], 'application/octet-stream');
       final url = html.Url.createObjectUrlFromBlob(blob);
@@ -69,7 +69,7 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _restore() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['json'],
+      allowedExtensions: ['bak', 'json'],
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;

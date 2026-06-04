@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
+
+import '../../infrastructure/encryption/backup_crypto.dart';
 
 /// Handles entity-scoped backup and restore via HTTP.
 ///
@@ -15,6 +18,11 @@ class BackupHandler {
   const BackupHandler({required Pool pool}) : _pool = pool;
 
   static const _jsonbColumns = {'selected_account_pairs', 'changes'};
+  static const _defaultBackupKey = 'shedbooks-backup-default-key-v1';
+
+  BackupCrypto get _crypto => BackupCrypto(
+        Platform.environment['BACKUP_KEY'] ?? _defaultBackupKey,
+      );
 
   /// GET /admin/backup
   ///
@@ -122,13 +130,14 @@ class BackupHandler {
         'audit_log': auditLog,
       };
 
-      final bytes = utf8.encode(jsonEncode(backup));
+      final jsonBytes = Uint8List.fromList(utf8.encode(jsonEncode(backup)));
+      final bytes = _crypto.encryptAndCompress(jsonBytes);
       return Response.ok(
         bytes,
         headers: {
           'Content-Type': 'application/octet-stream',
           'Content-Disposition':
-              'attachment; filename="shedbooks-backup-$stamp.json"',
+              'attachment; filename="shedbooks-backup-$stamp.bak"',
         },
       );
     } catch (e) {
@@ -150,16 +159,23 @@ class BackupHandler {
     final entityId = _getEntityId(request);
     if (entityId == null) return _forbidden();
 
-    final bodyBytes =
-        await request.read().expand((chunk) => chunk).toList();
+    final rawBytes =
+        Uint8List.fromList(await request.read().expand((c) => c).toList());
 
     final Map<String, dynamic> backup;
     try {
-      backup = jsonDecode(utf8.decode(bodyBytes)) as Map<String, dynamic>;
+      final Uint8List jsonBytes;
+      if (BackupCrypto.isEncrypted(rawBytes)) {
+        jsonBytes = _crypto.decryptAndDecompress(rawBytes);
+      } else {
+        // Legacy plain-JSON backup (.json files from before encryption).
+        jsonBytes = rawBytes;
+      }
+      backup = jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
     } catch (e) {
       return Response(
         400,
-        body: jsonEncode({'error': 'Invalid JSON: $e'}),
+        body: jsonEncode({'error': 'Invalid backup file: $e'}),
         headers: _jsonHeaders,
       );
     }
