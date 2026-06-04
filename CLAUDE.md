@@ -61,6 +61,16 @@ Authentication is handled through **Auth0**.
   Handlers read it to attach field-level change details (diff for UPDATE, snapshot for CREATE/DELETE).
 - Pipeline order in router: `authMiddleware → auditMiddleware → handler`.
 
+## Audit Logging — Required for Every Handler That Writes to the DB
+Every handler that creates, updates, or deletes data **must** call `_auditChanges(request)?.set(...)` with meaningful change details after the write succeeds. Read-only endpoints (GET) and pure-parse endpoints (no DB write) must **not** set audit changes.
+
+**Checklist when adding or modifying a handler:**
+1. Add `static AuditChanges? _auditChanges(Request r) => r.context['audit.changes'] as AuditChanges?;` to the handler class if not already present.
+2. Call `_auditChanges(request)?.set({...})` immediately after every successful write, with a map describing what changed (e.g. `{'year': year, 'lineCount': n}` for budget save; diff map for updates; snapshot map for creates/deletes).
+3. If the endpoint's path uses a non-UUID trailing segment (e.g. `confirm-import`, `gl-mappings`), add it to `nonIdSegments` in `audit_middleware.dart → _recordId()`.
+4. If the resource is not yet in `_tableMap` in `audit_middleware.dart`, add it.
+5. If the endpoint is a POST that performs no DB write (e.g. a parse/preview endpoint), exclude it in `_shouldAudit()` by path suffix.
+
 ## Flutter Widget Notes
 - **Never use `DropdownButtonFormField`** — its `value` parameter is deprecated (as of Flutter 3.33) and triggers a lint error. Use `DropdownButton` directly instead, managing state with a local field and `setState`.
 
