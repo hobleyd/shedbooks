@@ -1085,13 +1085,18 @@ class _BudgetScreenState extends State<BudgetScreen>
     Widget pctCell(int budget, int actual) {
       if (budget == 0) return const SizedBox(width: numWidth);
       final pct = actual / budget * 100;
-      final label = pct > 999 ? '>999%' : '${pct.toStringAsFixed(0)}%';
+      final negative = actual < budget;
+      final raw = pct > 999 ? '>999%' : '${pct.toStringAsFixed(0)}%';
+      final label = negative ? '($raw)' : raw;
       return SizedBox(
         width: numWidth,
         child: Text(
           label,
           textAlign: TextAlign.right,
-          style: const TextStyle(fontSize: 12),
+          style: TextStyle(
+            fontSize: 12,
+            color: negative ? Colors.red.shade700 : null,
+          ),
         ),
       );
     }

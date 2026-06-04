@@ -109,7 +109,8 @@ class BudgetPdfReport {
       final b = budgetFn(glId);
       if (b == 0) return '';
       final p = actualFn(glId) / b * 100;
-      return p > 999 ? '>999%' : '${p.toStringAsFixed(0)}%';
+      final raw = p > 999 ? '>999%' : '${p.toStringAsFixed(0)}%';
+      return actualFn(glId) < b ? '($raw)' : raw;
     }
 
     final colHeaderStyle =
@@ -172,7 +173,10 @@ class BudgetPdfReport {
                           fontSize: 9,
                           color: variance(g.id) >= 0 ? PdfColors.green700 : PdfColors.red700,
                         )),
-                    cell(pctLabel(g.id)),
+                    cell(pctLabel(g.id),
+                        style: actualFn(g.id) < budgetFn(g.id)
+                            ? pw.TextStyle(fontSize: 9, color: PdfColors.red700)
+                            : null),
                   ],
                 )),
             pw.TableRow(
