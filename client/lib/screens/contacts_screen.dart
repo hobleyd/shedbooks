@@ -19,6 +19,7 @@ class _ContactRow {
   final TextEditingController abnController;
   final TextEditingController bsbController;
   final TextEditingController accountNumberController;
+  final FocusNode nameFocusNode;
   ContactType contactType;
   bool gstRegistered;
   _AbnLookupState abnLookupState;
@@ -36,6 +37,7 @@ class _ContactRow {
         abnController = TextEditingController(text: e.abn ?? ''),
         bsbController = TextEditingController(text: e.bsb ?? ''),
         accountNumberController = TextEditingController(text: e.accountNumber ?? ''),
+        nameFocusNode = FocusNode(),
         contactType = e.contactType,
         gstRegistered = e.gstRegistered,
         abnLookupState = _AbnLookupState.idle,
@@ -53,6 +55,7 @@ class _ContactRow {
         abnController = TextEditingController(),
         bsbController = TextEditingController(),
         accountNumberController = TextEditingController(),
+        nameFocusNode = FocusNode(),
         contactType = ContactType.person,
         gstRegistered = false,
         abnLookupState = _AbnLookupState.idle,
@@ -79,6 +82,7 @@ class _ContactRow {
     abnController.dispose();
     bsbController.dispose();
     accountNumberController.dispose();
+    nameFocusNode.dispose();
   }
 }
 
@@ -97,6 +101,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   List<_ContactRow> _rows = [];
   final Set<String> _pendingDeletions = {};
   final Set<String> _bankDetailsRevealed = {};
+  final ScrollController _scrollController = ScrollController();
   bool _loading = true;
   bool _saving = false;
   bool _merging = false;
@@ -118,6 +123,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     for (final row in _rows) {
       row.dispose();
     }
+    _scrollController.dispose();
     context.read<NavigationGuard>().setDirty(false);
     super.dispose();
   }
@@ -258,8 +264,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   void _addRow() {
-    setState(() => _rows.add(_ContactRow.blank()));
+    final newRow = _ContactRow.blank();
+    setState(() => _rows.add(newRow));
     _markDirty();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+      newRow.nameFocusNode.requestFocus();
+    });
   }
 
   void _deleteRow(int index) {
@@ -571,6 +588,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   child: Text('No contacts yet. Use "Add contact" to create one.'),
                 )
               : ListView.separated(
+                  controller: _scrollController,
                   itemCount: _rows.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) => _buildTableRow(i),
@@ -598,6 +616,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SizedBox(width: 40),
           Expanded(child: _colHeader('Name', 0)),
           const SizedBox(width: 8),
+          SizedBox(width: 160, child: _colHeader('Type', 2)),
+          const SizedBox(width: 8),
           SizedBox(width: 130, child: _colHeader('ABN', 1)),
           const SizedBox(width: 8),
           SizedBox(width: 90, child: _colHeader('BSB', 4)),
@@ -605,8 +625,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
           SizedBox(width: 120, child: _colHeader('Account No.', 5)),
           const SizedBox(width: 8),
           const SizedBox(width: 32), // bank reveal toggle
-          const SizedBox(width: 8),
-          SizedBox(width: 160, child: _colHeader('Type', 2)),
           const SizedBox(width: 8),
           SizedBox(
             width: 128,
@@ -657,6 +675,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
           Expanded(
             child: TextFormField(
               controller: row.nameController,
+              focusNode: row.nameFocusNode,
               enabled: !_saving && canEdit,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
@@ -665,6 +684,48 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 isDense: true,
               ),
               onChanged: (_) => _markDirty(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 160,
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                isDense: true,
+              ),
+              child: DropdownButton<ContactType>(
+                value: row.contactType,
+                isExpanded: true,
+                isDense: true,
+                underline: const SizedBox.shrink(),
+                items: const [
+                  DropdownMenuItem(
+                    value: ContactType.person,
+                    child: Text('Person'),
+                  ),
+                  DropdownMenuItem(
+                    value: ContactType.company,
+                    child: Text('Company'),
+                  ),
+                ],
+                onChanged: (_saving || !canEdit)
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          row.contactType = value;
+                          if (value == ContactType.person) {
+                            row.gstRegistered = false;
+                            row.abnController.clear();
+                            row.abnLookupState = _AbnLookupState.idle;
+                          }
+                        });
+                        _markDirty();
+                      },
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -739,48 +800,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     ),
                   )
                 : const SizedBox.shrink(),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 160,
-            child: InputDecorator(
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                isDense: true,
-              ),
-              child: DropdownButton<ContactType>(
-                value: row.contactType,
-                isExpanded: true,
-                isDense: true,
-                underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(
-                    value: ContactType.person,
-                    child: Text('Person'),
-                  ),
-                  DropdownMenuItem(
-                    value: ContactType.company,
-                    child: Text('Company'),
-                  ),
-                ],
-                onChanged: (_saving || !canEdit)
-                    ? null
-                    : (value) {
-                        if (value == null) return;
-                        setState(() {
-                          row.contactType = value;
-                          if (value == ContactType.person) {
-                            row.gstRegistered = false;
-                            row.abnController.clear();
-                            row.abnLookupState = _AbnLookupState.idle;
-                          }
-                        });
-                        _markDirty();
-                      },
-              ),
-            ),
           ),
           const SizedBox(width: 8),
           SizedBox(
