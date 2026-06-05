@@ -186,7 +186,16 @@ class _FinancialPerformanceScreenState
           'Annual income, expenses, and net profit / (loss)',
           style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
         ),
-        pw.SizedBox(height: 20),
+        pw.SizedBox(height: 14),
+        _buildPdfLegend(),
+        pw.SizedBox(height: 10),
+        _buildPdfBarChart(data),
+        pw.SizedBox(height: 24),
+        pw.Text(
+          'Summary',
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 8),
         pw.Table(
           border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
           columnWidths: const {
@@ -480,6 +489,167 @@ class _Cell extends StatelessWidget {
   }
 }
 
+String _shortCents(int cents) {
+  final double dollars = cents / 100;
+  if (dollars >= 1000000) return '${(dollars / 1000000).toStringAsFixed(1)}M';
+  if (dollars >= 1000) return '${(dollars / 1000).toStringAsFixed(0)}k';
+  return dollars.toStringAsFixed(0);
+}
+
+pw.Widget _buildPdfLegend() {
+  pw.Widget item(PdfColor color, String label) => pw.Row(
+        mainAxisSize: pw.MainAxisSize.min,
+        children: [
+          pw.Container(
+            width: 9,
+            height: 9,
+            decoration: pw.BoxDecoration(color: color),
+          ),
+          pw.SizedBox(width: 4),
+          pw.Text(label, style: const pw.TextStyle(fontSize: 8)),
+        ],
+      );
+
+  return pw.Row(
+    children: [
+      item(PdfColors.green600, 'Income'),
+      pw.SizedBox(width: 14),
+      item(PdfColors.red600, 'Expenses'),
+      pw.SizedBox(width: 14),
+      item(PdfColors.blue700, 'Net Profit'),
+      pw.SizedBox(width: 14),
+      item(PdfColors.orange700, 'Net Loss'),
+    ],
+  );
+}
+
+pw.Widget _buildPdfBarChart(List<_YearData> data) {
+  if (data.isEmpty) return pw.SizedBox();
+
+  const double leftPad = 44.0;
+  const double rightPad = 4.0;
+  const double topPad = 4.0;
+  const double bottomPad = 18.0;
+  const double totalWidth = 450.0;
+  const double totalHeight = 160.0;
+  const double chartWidth = totalWidth - leftPad - rightPad;
+  const double chartHeight = totalHeight - topPad - bottomPad;
+
+  double maxVal = 1;
+  for (final _YearData d in data) {
+    if (d.incomeCents > maxVal) maxVal = d.incomeCents.toDouble();
+    if (d.expensesCents > maxVal) maxVal = d.expensesCents.toDouble();
+    if (d.netCents.abs() > maxVal) maxVal = d.netCents.abs().toDouble();
+  }
+
+  const int gridSteps = 4;
+  const pw.TextStyle labelStyle =
+      pw.TextStyle(fontSize: 7, color: PdfColors.grey600);
+
+  return pw.SizedBox(
+    width: totalWidth,
+    height: totalHeight,
+    child: pw.Stack(
+      children: [
+        pw.Positioned(
+          left: leftPad,
+          top: topPad,
+          child: pw.SizedBox(
+            width: chartWidth,
+            height: chartHeight,
+            child: pw.CustomPaint(
+              size: PdfPoint(chartWidth, chartHeight),
+              painter: (PdfGraphics canvas, PdfPoint size) {
+                // Grid lines (drawn before bars so bars appear on top)
+                for (int i = 0; i <= gridSteps; i++) {
+                  final double y = size.y * i / gridSteps;
+                  canvas.setColor(
+                      i == 0 ? PdfColors.grey500 : PdfColors.grey200);
+                  canvas.moveTo(0, y);
+                  canvas.lineTo(size.x, y);
+                  canvas.strokePath();
+                }
+
+                // Y-axis
+                canvas.setColor(PdfColors.grey400);
+                canvas.moveTo(0, 0);
+                canvas.lineTo(0, size.y);
+                canvas.strokePath();
+
+                // Bars
+                final double groupWidth = size.x / data.length;
+                const double groupPadFraction = 0.12;
+                final double usableWidth =
+                    groupWidth * (1 - 2 * groupPadFraction);
+                const double barGap = 2.0;
+                const int barCount = 3;
+                final double barWidth =
+                    (usableWidth - barGap * (barCount - 1)) / barCount;
+
+                for (int i = 0; i < data.length; i++) {
+                  final _YearData d = data[i];
+                  final double groupX =
+                      groupWidth * i + groupWidth * groupPadFraction;
+
+                  void drawBar(int idx, int cents, PdfColor color) {
+                    if (cents <= 0) return;
+                    final double bh = (cents / maxVal) * size.y;
+                    final double x = groupX + idx * (barWidth + barGap);
+                    canvas.setColor(color);
+                    canvas.drawRect(x, 0, barWidth, bh);
+                    canvas.fillPath();
+                  }
+
+                  drawBar(0, d.incomeCents, PdfColors.green600);
+                  drawBar(1, d.expensesCents, PdfColors.red600);
+                  drawBar(
+                    2,
+                    d.netCents.abs(),
+                    d.netCents >= 0 ? PdfColors.blue700 : PdfColors.orange700,
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+
+        // Y-axis labels
+        for (int i = 0; i <= gridSteps; i++)
+          pw.Positioned(
+            top: topPad + chartHeight * (1 - i / gridSteps) - 5,
+            left: 0,
+            child: pw.SizedBox(
+              width: leftPad - 4,
+              child: pw.Align(
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(
+                  '\$${_shortCents((maxVal * i / gridSteps).round())}',
+                  style: labelStyle,
+                ),
+              ),
+            ),
+          ),
+
+        // Year labels
+        for (int i = 0; i < data.length; i++)
+          pw.Positioned(
+            top: topPad + chartHeight + 4,
+            left: leftPad + chartWidth * i / data.length,
+            child: pw.SizedBox(
+              width: chartWidth / data.length,
+              child: pw.Center(
+                child: pw.Text(
+                  '${data[i].year}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
 class _FinancialBarChart extends StatelessWidget {
   final List<_YearData> data;
 
@@ -671,17 +841,6 @@ class _BarChartPainter extends CustomPainter {
           leftPad + groupWidth * i + groupWidth / 2 - tp.width / 2;
       tp.paint(canvas, Offset(labelX, topPad + chartHeight + 6));
     }
-  }
-
-  String _shortCents(int cents) {
-    final double dollars = cents / 100;
-    if (dollars >= 1000000) {
-      return '${(dollars / 1000000).toStringAsFixed(1)}M';
-    }
-    if (dollars >= 1000) {
-      return '${(dollars / 1000).toStringAsFixed(0)}k';
-    }
-    return dollars.toStringAsFixed(0);
   }
 
   @override
