@@ -230,6 +230,7 @@ class _ReportsNavGroup extends StatelessWidget {
   static const _subItems = [
     (label: 'BAS Report', icon: Icons.receipt_long_outlined, path: '/reports/bas'),
     (label: 'Budget', icon: Icons.account_balance_wallet_outlined, path: '/reports/budget'),
+    (label: 'Financial Performance', icon: Icons.analytics_outlined, path: '/reports/financial-performance'),
     (label: 'P&L', icon: Icons.trending_up_outlined, path: '/reports/pl'),
   ];
 

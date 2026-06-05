@@ -11,6 +11,7 @@ import '../screens/entity_screen.dart';
 import '../screens/bas_report_screen.dart';
 import '../screens/budget_screen.dart';
 import '../screens/pl_report_screen.dart';
+import '../screens/financial_performance_screen.dart';
 import '../screens/monthly_report_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/general_ledger_screen.dart';
@@ -103,6 +104,11 @@ GoRouter createRouter(AuthState authState) {
           GoRoute(
             path: '/reports/monthly',
             builder: (context, state) => const MonthlyReportScreen(),
+          ),
+          GoRoute(
+            path: '/reports/financial-performance',
+            builder: (context, state) =>
+                const FinancialPerformanceScreen(),
           ),
           GoRoute(
             path: '/admin/entity',
