@@ -1182,18 +1182,20 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               if (isMoneyOut)
                 SizedBox(
                   width: 40,
-                  child: Checkbox(
-                    value: _selectedTransactionIds.contains(t.id),
-                    onChanged: (v) {
-                      setState(() {
-                        if (v == true) {
-                          _selectedTransactionIds.add(t.id);
-                        } else {
-                          _selectedTransactionIds.remove(t.id);
-                        }
-                      });
-                    },
-                  ),
+                  child: t.bankMatched
+                      ? null
+                      : Checkbox(
+                          value: _selectedTransactionIds.contains(t.id),
+                          onChanged: (v) {
+                            setState(() {
+                              if (v == true) {
+                                _selectedTransactionIds.add(t.id);
+                              } else {
+                                _selectedTransactionIds.remove(t.id);
+                              }
+                            });
+                          },
+                        ),
                 ),
               SizedBox(
                 width: 90,
