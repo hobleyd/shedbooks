@@ -510,7 +510,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ..._bankAccounts.map((account) {
                 final balance = balances[account.id];
                 final isCash = account.accountType == BankAccountType.cash;
-                final showLock = isLocked && !isCash && balance != null;
+                final showLock = isLocked && balance != null;
                 final width = accountWidths[account.id] ?? 150.0;
 
                 if (balance == null) {
