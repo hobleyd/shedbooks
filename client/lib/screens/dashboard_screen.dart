@@ -542,50 +542,73 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 final showLock = isLocked && balance != null;
                 final width = accountWidths[account.id] ?? 150.0;
 
+                // All balance cells reserve the same 18px on the right for the
+                // lock icon so balance numbers align across all rows in the column.
+                Widget iconSlot = showLock
+                    ? Tooltip(
+                        message: 'Month is locked',
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: Icon(Icons.lock_outlined,
+                              size: 14, color: Colors.orange.shade700),
+                        ),
+                      )
+                    : const SizedBox(width: 18);
+
                 if (balance == null && carried == null) {
                   return SizedBox(
                     width: width,
-                    child: Text('—',
-                        style: const TextStyle(color: Colors.black38),
-                        textAlign: TextAlign.right),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text('—',
+                              style: const TextStyle(color: Colors.black38),
+                              textAlign: TextAlign.right),
+                        ),
+                        iconSlot,
+                      ],
+                    ),
                   );
                 }
 
                 if (balance != null) {
-                  if (showLock) {
-                    return SizedBox(
-                      width: width,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          _netText(balance),
-                          const SizedBox(width: 4),
-                          Tooltip(
-                            message: 'Month is locked',
-                            child: Icon(Icons.lock_outlined,
-                                size: 14, color: Colors.orange.shade700),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  return SizedBox(width: width, child: _netText(balance));
+                  return SizedBox(
+                    width: width,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(child: _netText(balance)),
+                        iconSlot,
+                      ],
+                    ),
+                  );
                 }
 
                 // Carried-over opening balance from prior month closing balance.
                 return SizedBox(
                   width: width,
-                  child: Tooltip(
-                    message: 'Opening balance (carried from prior month)',
-                    child: Text(
-                      _formatAmount(carried!),
-                      style: const TextStyle(
-                        color: Colors.black38,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Tooltip(
+                          message: 'Opening balance (carried from prior month)',
+                          child: Text(
+                            _formatAmount(carried!),
+                            style: const TextStyle(
+                              color: Colors.black38,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
                       ),
-                      textAlign: TextAlign.right,
-                    ),
+                      iconSlot,
+                    ],
                   ),
                 );
               }),
