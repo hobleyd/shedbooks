@@ -644,7 +644,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final isSelected = row.id != null && _selectedIds.contains(row.id);
     final hasTxns = row.id != null && _contactsWithTransactions.contains(row.id);
     final busy = _saving || _merging;
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final AuthState authState = context.watch<AuthState>();
+    final bool canEdit = authState.canEdit;
+    final bool isAdmin = authState.isAdmin;
 
     final hasBankDetails = row.bsbController.text.isNotEmpty ||
         row.accountNumberController.text.isNotEmpty;
@@ -790,13 +792,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       icon: const Icon(Icons.autorenew),
                       tooltip:
                           bankHidden ? 'Show bank details' : 'Hide bank details',
-                      onPressed: () => setState(() {
-                        if (bankHidden) {
-                          _bankDetailsRevealed.add(rowKey);
-                        } else {
-                          _bankDetailsRevealed.remove(rowKey);
-                        }
-                      }),
+                      onPressed: isAdmin
+                          ? () => setState(() {
+                                if (bankHidden) {
+                                  _bankDetailsRevealed.add(rowKey);
+                                } else {
+                                  _bankDetailsRevealed.remove(rowKey);
+                                }
+                              })
+                          : null,
                     ),
                   )
                 : const SizedBox.shrink(),
