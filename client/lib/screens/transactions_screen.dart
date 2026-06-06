@@ -982,7 +982,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           onPressed: _canGoForward ? _nextMonth : null,
           tooltip: 'Next month',
         ),
-        if (_selectedTransactionIds.isNotEmpty) ...[
+        if (_selectedTransactionIds.isNotEmpty &&
+            context.read<AuthState>().isAdmin) ...[
           const SizedBox(width: 16),
           FilledButton.icon(
             onPressed: _handleBankUpload,
@@ -1006,7 +1007,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                if (isMoneyOut)
+                if (isMoneyOut && context.read<AuthState>().isAdmin)
                   SizedBox(
                     width: 40,
                     child: Checkbox(
@@ -1123,7 +1124,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
             child: Row(
               children: [
-                if (isMoneyOut) const SizedBox(width: 40),
+                if (isMoneyOut && context.read<AuthState>().isAdmin) const SizedBox(width: 40),
                 Icon(Icons.add,
                     size: 16,
                     color: Theme.of(context).colorScheme.primary),
@@ -1179,7 +1180,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              if (isMoneyOut)
+              if (isMoneyOut && context.read<AuthState>().isAdmin)
                 SizedBox(
                   width: 40,
                   child: t.bankMatched
