@@ -254,7 +254,7 @@ Handler buildRouter({
   final router = Router()
     ..get('/health', (Request _) => Response.ok('ok'))
     ..post('/aba-sequences/next',
-        _authed(_role(requireContributor(), abaSequenceHandler.handleNext)))
+        _authed(_role(requireAdministrator(), abaSequenceHandler.handleNext)))
     ..mount('/abn-lookup',
         _authed((req) => abnLookupHandler.handle(req)))
     ..mount('/general-ledger',
@@ -343,14 +343,14 @@ Router _contactRouter(ContactHandler h) {
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
 }
 
-// Contributors have no access. Viewers can read; only admins can write.
+// Administrators only.
 Router _bankAccountRouter(BankAccountHandler h) {
   return Router()
-    ..get('/', _role(blockContributor(), h.handleList))
+    ..get('/', _role(requireAdministrator(), h.handleList))
     ..post('/', _role(requireAdministrator(), h.handleCreate))
     // /order must be registered before /<id> to avoid being shadowed
     ..put('/order', _role(requireAdministrator(), h.handleReorder))
-    ..get('/<id>', _roleId(blockContributor(), h.handleGet))
+    ..get('/<id>', _roleId(requireAdministrator(), h.handleGet))
     ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
 }
@@ -369,23 +369,23 @@ Router _dashboardPreferenceRouter(DashboardPreferenceHandler h) {
     ..put('/', _role(requireContributor(), h.handleSave));
 }
 
-// Contributors have no access. Viewers can read; only admins can write.
+// Administrators only.
 Router _gstRateRouter(GstRateHandler h) {
   return Router()
-    ..get('/', _role(blockContributor(), h.handleList))
+    ..get('/', _role(requireAdministrator(), h.handleList))
     ..post('/', _role(requireAdministrator(), h.handleCreate))
     // /effective must be registered before /<id> to avoid shadowing
-    ..get('/effective', _role(blockContributor(), h.handleGetEffective))
-    ..get('/<id>', _roleId(blockContributor(), h.handleGet))
+    ..get('/effective', _role(requireAdministrator(), h.handleGetEffective))
+    ..get('/<id>', _roleId(requireAdministrator(), h.handleGet))
     ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
 }
 
-// Viewers can read; contributors and admins can write.
+// Administrators only.
 Router _bankImportsRouter(BankImportsHandler h) {
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleSave));
+    ..get('/', _role(requireAdministrator(), h.handleList))
+    ..post('/', _role(requireAdministrator(), h.handleSave));
 }
 
 // All roles can read; only admins can lock or unlock.
@@ -416,12 +416,12 @@ Router _bankReconciliationRouter(BankReconciliationHandler h) {
     ..post('/parse-statement', _role(requireContributor(), h.handleParseStatement));
 }
 
-// Contributors have no access to audit or backup. Only admins can restore or view users.
+// Administrators only.
 Router _adminRouter(BackupHandler backup, AuditHandler audit, UsersHandler users) {
   return Router()
-    ..get('/backup', _role(blockContributor(), backup.handleBackup))
+    ..get('/backup', _role(requireAdministrator(), backup.handleBackup))
     ..post('/restore', _role(requireAdministrator(), backup.handleRestore))
-    ..get('/audit-log', _role(blockContributor(), audit.handleList))
+    ..get('/audit-log', _role(requireAdministrator(), audit.handleList))
     ..get('/users', _role(requireAdministrator(), users.handleList));
 }
 
