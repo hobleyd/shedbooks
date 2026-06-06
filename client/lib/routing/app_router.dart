@@ -49,6 +49,12 @@ GoRouter createRouter(AuthState authState) {
       if (!isAuthenticated && !isOnLogin) return '/';
       if (isAuthenticated && isOnLogin) return '/dashboard';
 
+      // Viewers cannot navigate to any admin screen.
+      if (!authState.canEdit &&
+          state.uri.path.startsWith('/admin/')) {
+        return '/dashboard';
+      }
+
       // Contributors cannot navigate to restricted admin screens.
       if (authState.isContributor &&
           _contributorBlockedPaths.contains(state.uri.path)) {

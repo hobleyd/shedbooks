@@ -334,7 +334,7 @@ class _AdminNavGroup extends StatelessWidget {
           .where((i) => !_contributorHidden.contains(i.path))
           .toList();
     } else {
-      subItems = _allSubItems.toList();
+      subItems = [];
     }
 
     return Theme(
