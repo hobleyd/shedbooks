@@ -272,6 +272,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return result;
   }
 
+  /// For non-cash accounts that have no closing balance in [month], returns the
+  /// immediately prior month's closing balance as an opening-balance carry-over.
+  Map<String, int> _monthCarriedBalances(int month, Map<String, int> closingBalances) {
+    final result = <String, int>{};
+    final String prevYearMonth;
+    if (month > 1) {
+      prevYearMonth = '$_viewYear-${(month - 1).toString().padLeft(2, '0')}';
+    } else {
+      prevYearMonth = '${_viewYear - 1}-12';
+    }
+    for (final account in _bankAccounts.where((a) => a.accountType != BankAccountType.cash)) {
+      if (closingBalances.containsKey(account.id)) continue;
+      final prevBalance = _closingBalances
+          .where((b) => b.bankAccountId == account.id && b.balanceDate.startsWith(prevYearMonth))
+          .firstOrNull;
+      if (prevBalance != null) result[account.id] = prevBalance.balanceCents;
+    }
+    return result;
+  }
+
   bool get _canGoForwardYear => _viewYear < DateTime.now().year;
 
   void _prevYear() => setState(() {
@@ -406,6 +426,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final allMonthBalances = <int, Map<String, int>>{
       for (final m in _months) m.month: _monthEndBalances(m.month),
     };
+    final allMonthCarriedBalances = <int, Map<String, int>>{
+      for (final m in _months) m.month: _monthCarriedBalances(m.month, allMonthBalances[m.month]!),
+    };
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -446,7 +469,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const Divider(height: 1),
           ..._months.map((m) => _buildMonthRow(
               m, colWidth, accountWidths, totalColWidth,
-              allMonthBalances[m.month]!)),
+              allMonthBalances[m.month]!,
+              allMonthCarriedBalances[m.month]!)),
           const Divider(height: 1, thickness: 2),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -485,8 +509,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Map<String, double> accountWidths,
     double totalColWidth,
     Map<String, int> balances,
+    Map<String, int> carriedBalances,
   ) {
-    final totalBalance = balances.values.fold<int>(0, (sum, val) => sum + val);
+    final displayBalances = {...carriedBalances, ...balances};
+    // When all account balances are carried from the prior month (no closing balance recorded),
+    // project the running total by adding this month's net income/outgoings.
+    final carriedNet = balances.isEmpty && carriedBalances.isNotEmpty ? m.netCents : 0;
+    final totalBalance = displayBalances.values.fold<int>(0, (sum, val) => sum + val) + carriedNet;
     final isLocked = _isMonthLocked(m);
 
     return Column(
@@ -509,11 +538,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               SizedBox(width: colWidth, child: _netText(m.netCents)),
               ..._bankAccounts.map((account) {
                 final balance = balances[account.id];
-                final isCash = account.accountType == BankAccountType.cash;
+                final carried = carriedBalances[account.id];
                 final showLock = isLocked && balance != null;
                 final width = accountWidths[account.id] ?? 150.0;
 
-                if (balance == null) {
+                if (balance == null && carried == null) {
                   return SizedBox(
                     width: width,
                     child: Text('—',
@@ -522,30 +551,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   );
                 }
 
-                if (showLock) {
-                  return SizedBox(
-                    width: width,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        _netText(balance),
-                        const SizedBox(width: 4),
-                        Tooltip(
-                          message: 'Month is locked',
-                          child: Icon(Icons.lock_outlined,
-                              size: 14, color: Colors.orange.shade700),
-                        ),
-                      ],
-                    ),
-                  );
+                if (balance != null) {
+                  if (showLock) {
+                    return SizedBox(
+                      width: width,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _netText(balance),
+                          const SizedBox(width: 4),
+                          Tooltip(
+                            message: 'Month is locked',
+                            child: Icon(Icons.lock_outlined,
+                                size: 14, color: Colors.orange.shade700),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return SizedBox(width: width, child: _netText(balance));
                 }
 
-                return SizedBox(width: width, child: _netText(balance));
+                // Carried-over opening balance from prior month closing balance.
+                return SizedBox(
+                  width: width,
+                  child: Tooltip(
+                    message: 'Opening balance (carried from prior month)',
+                    child: Text(
+                      _formatAmount(carried!),
+                      style: const TextStyle(
+                        color: Colors.black38,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                );
               }),
               SizedBox(
                 width: totalColWidth,
-                child: balances.isEmpty
+                child: displayBalances.isEmpty
                     ? Text('—',
                         style: const TextStyle(color: Colors.black38),
                         textAlign: TextAlign.right)
