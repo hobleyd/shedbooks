@@ -570,7 +570,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     setState(() => _saving = true);
     try {
       String? contactId = data.existingContactId;
-      if (contactId == null && data.saveNewContact && data.newContactName != null) {
+      if (contactId == null && data.newContactName != null && data.newContactName!.isNotEmpty) {
         final contactRes = await context.read<ApiClient>().post(
               '/contacts',
               jsonEncode({
@@ -665,8 +665,32 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
     setState(() => _editSaving = true);
 
+    String? contactId = data.existingContactId;
+    if (contactId == null && data.newContactName != null && data.newContactName!.isNotEmpty) {
+      final contactRes = await context.read<ApiClient>().post(
+            '/contacts',
+            jsonEncode({
+              'name': data.newContactName,
+              'contactType': 'person',
+              'gstRegistered': false,
+            }),
+          );
+      if (!mounted) return;
+      if (contactRes.statusCode != 201) {
+        String msg = 'Failed to create contact (${contactRes.statusCode})';
+        try {
+          msg = (jsonDecode(contactRes.body) as Map)['error'] as String? ?? msg;
+        } catch (_) {}
+        _showSnackbar(msg);
+        setState(() => _editSaving = false);
+        return;
+      }
+      contactId = ContactEntry.fromJson(
+          jsonDecode(contactRes.body) as Map<String, dynamic>).id;
+    }
+
     final body = jsonEncode({
-      'contactId': data.existingContactId,
+      'contactId': contactId,
       'generalLedgerId': data.gl.id,
       'amount': data.amountCents,
       'gstAmount': data.gstCents,

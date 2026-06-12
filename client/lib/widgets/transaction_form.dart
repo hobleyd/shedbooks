@@ -10,7 +10,6 @@ class TransactionFormData {
   final DateTime date;
   final String? existingContactId;
   final String? newContactName;
-  final bool saveNewContact;
   final GeneralLedgerEntry gl;
   final int amountCents;
   final int gstCents;
@@ -22,7 +21,6 @@ class TransactionFormData {
     required this.date,
     this.existingContactId,
     this.newContactName,
-    this.saveNewContact = false,
     required this.gl,
     required this.amountCents,
     required this.gstCents,
@@ -70,14 +68,9 @@ class TransactionForm extends StatefulWidget {
 class TransactionFormState extends State<TransactionForm> {
   late DateTime _date;
 
-  // Full (new) mode contact
   ContactEntry? _selectedContact;
   String _contactTypedText = '';
-  bool _saveNewContact = false;
   int _contactResetKey = 0;
-
-  // Compact (edit) mode contact
-  String? _editContactId;
 
   GeneralLedgerEntry? _selectedGl;
   GlDirection? _selectedDirection;
@@ -98,7 +91,9 @@ class TransactionFormState extends State<TransactionForm> {
     final t = widget.initial;
     if (t != null) {
       _date = DateTime.parse(t.transactionDate);
-      _editContactId = t.contactId;
+      final contactMatches = widget.contacts.where((c) => c.id == t.contactId);
+      _selectedContact = contactMatches.isEmpty ? null : contactMatches.first;
+      _contactTypedText = _selectedContact?.name ?? '';
       final glMatches = widget.glEntries.where((g) => g.id == t.generalLedgerId);
       _selectedGl = glMatches.isEmpty ? null : glMatches.first;
       _amountController.text = _centsToString(t.amount);
@@ -156,7 +151,6 @@ class TransactionFormState extends State<TransactionForm> {
     setState(() {
       _selectedContact = null;
       _contactTypedText = '';
-      _saveNewContact = false;
       _contactResetKey++;
       _selectedGl = null;
       _selectedDirection = null;
@@ -184,11 +178,10 @@ class TransactionFormState extends State<TransactionForm> {
     final gst = _parseAmount(_gstController.text)!;
     widget.onSave(TransactionFormData(
       date: _date,
-      existingContactId: widget.compact ? _editContactId : _selectedContact?.id,
-      newContactName: !widget.compact && _selectedContact == null
+      existingContactId: _selectedContact?.id,
+      newContactName: _selectedContact == null && _contactTypedText.trim().isNotEmpty
           ? _contactTypedText.trim()
           : null,
-      saveNewContact: !widget.compact && _saveNewContact,
       gl: _selectedGl!,
       amountCents: _dollarsToCents(amount),
       gstCents: _dollarsToCents(gst),
@@ -201,15 +194,8 @@ class TransactionFormState extends State<TransactionForm> {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   String? _validate() {
-    if (widget.compact) {
-      if (_editContactId == null) return 'Please select a contact';
-    } else {
-      if (_selectedContact == null) {
-        if (_contactTypedText.trim().isEmpty) return 'Please enter a contact';
-        if (!_saveNewContact) {
-          return 'Contact not found — tick "Save to contacts" or select an existing contact';
-        }
-      }
+    if (_selectedContact == null && _contactTypedText.trim().isEmpty) {
+      return 'Please enter a contact';
     }
     if (_selectedGl == null) return 'Please select a general ledger account';
     final amount = _parseAmount(_amountController.text);
@@ -396,12 +382,26 @@ class TransactionFormState extends State<TransactionForm> {
     );
   }
 
-  Widget _buildContactField() {
+  Widget _buildContactField({InputDecoration? decoration}) {
+    final fieldDecoration = (decoration ?? const InputDecoration(
+      labelText: 'Contact',
+      border: OutlineInputBorder(),
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+    )).copyWith(
+      suffixIcon: _selectedContact != null
+          ? const Icon(Icons.check_circle_outline, color: Colors.green, size: 18)
+          : null,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Autocomplete<ContactEntry>(
           key: ValueKey(_contactResetKey),
+          initialValue: _contactTypedText.isNotEmpty
+              ? TextEditingValue(text: _contactTypedText)
+              : null,
           displayStringForOption: (c) => c.name,
           optionsBuilder: (textEditingValue) {
             if (textEditingValue.text.isEmpty) return widget.contacts;
@@ -411,7 +411,6 @@ class TransactionFormState extends State<TransactionForm> {
           onSelected: (contact) => setState(() {
             _selectedContact = contact;
             _contactTypedText = contact.name;
-            _saveNewContact = false;
           }),
           fieldViewBuilder: (context, textController, focusNode, _) {
             return TextFormField(
@@ -425,20 +424,9 @@ class TransactionFormState extends State<TransactionForm> {
                       value != _selectedContact!.name) {
                     _selectedContact = null;
                   }
-                  if (value.trim().isEmpty) _saveNewContact = false;
                 });
               },
-              decoration: InputDecoration(
-                labelText: 'Contact',
-                border: const OutlineInputBorder(),
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                suffixIcon: _selectedContact != null
-                    ? const Icon(Icons.check_circle_outline,
-                        color: Colors.green, size: 18)
-                    : null,
-              ),
+              decoration: fieldDecoration,
             );
           },
           optionsViewBuilder: (context, onSelected, options) {
@@ -474,18 +462,12 @@ class TransactionFormState extends State<TransactionForm> {
           },
         ),
         if (_hasUnmatchedContact)
-          CheckboxListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            value: _saveNewContact,
-            onChanged: widget.isSaving
-                ? null
-                : (v) => setState(() => _saveNewContact = v ?? false),
-            title: Text(
-              'Save "${_contactTypedText.trim()}" to contacts',
-              style: const TextStyle(fontSize: 13),
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 2),
+            child: Text(
+              '"${_contactTypedText.trim()}" will be added to contacts',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
-            controlAffinity: ListTileControlAffinity.leading,
           ),
       ],
     );
@@ -785,28 +767,7 @@ class TransactionFormState extends State<TransactionForm> {
               if (isMoneyOut) const SizedBox(width: 40),
               SizedBox(width: 140, child: _buildDateFieldCompact()),
               const SizedBox(width: 8),
-              Expanded(
-                child: InputDecorator(
-                  decoration: dec.copyWith(labelText: 'Contact'),
-                  child: DropdownButton<String>(
-                    value: _editContactId,
-                    isExpanded: true,
-                    isDense: true,
-                    underline: const SizedBox.shrink(),
-                    items: widget.contacts
-                        .map((c) => DropdownMenuItem(
-                              value: c.id,
-                              child: Text(c.name,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13)),
-                            ))
-                        .toList(),
-                    onChanged: widget.isSaving
-                        ? null
-                        : (v) => setState(() => _editContactId = v),
-                  ),
-                ),
-              ),
+              Expanded(child: _buildContactField(decoration: dec.copyWith(labelText: 'Contact'))),
               const SizedBox(width: 8),
               Expanded(
                 child: InputDecorator(
