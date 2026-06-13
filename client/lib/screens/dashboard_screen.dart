@@ -247,9 +247,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// Returns a map of bankAccountId -> balanceCents for [month] in [_viewYear].
   ///
-  /// Cash-type accounts use a cumulative balance computed from bank-matched
-  /// cash transactions (rather than closing_bank_balances, since Cash skips
-  /// the bank reconciliation process).
+  /// Cash-type accounts use a running balance computed from all cash-flagged
+  /// transactions (income adds, expenses subtract), since Cash accounts skip
+  /// the bank reconciliation process and have no closing_bank_balances entries.
   Map<String, int> _monthEndBalances(int month) {
     final yearMonth = '$_viewYear-${month.toString().padLeft(2, '0')}';
     final result = <String, int>{
@@ -257,16 +257,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
         b.bankAccountId: b.balanceCents,
     };
 
-    // For Cash-type accounts, accumulate all cash-flagged income up to this month.
+    // For Cash-type accounts, compute running balance from all cash-flagged
+    // transactions up to this month (income adds, expenses subtract).
     for (final account in _bankAccounts.where((a) => a.accountType == BankAccountType.cash)) {
       if (result.containsKey(account.id)) continue;
+      bool hasCash = false;
       int balance = 0;
       for (final t in _allTransactions) {
-        if (!t.isCash || !t.isCredit) continue;
+        if (!t.isCash) continue;
         final txYearMonth = t.transactionDate.length >= 7 ? t.transactionDate.substring(0, 7) : '';
-        if (txYearMonth.compareTo(yearMonth) <= 0) balance += t.totalAmount;
+        if (txYearMonth.compareTo(yearMonth) <= 0) {
+          hasCash = true;
+          balance += t.isCredit ? t.totalAmount : -t.totalAmount;
+        }
       }
-      if (balance > 0) result[account.id] = balance;
+      if (hasCash) result[account.id] = balance;
     }
 
     return result;
