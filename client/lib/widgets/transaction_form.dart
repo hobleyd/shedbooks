@@ -122,6 +122,7 @@ class TransactionFormState extends State<TransactionForm> {
       }
     } else {
       _date = DateTime.now();
+      _receiptOutController.text = widget.nextMoneyOutReceipt;
     }
   }
 
