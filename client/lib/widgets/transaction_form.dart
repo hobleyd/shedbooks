@@ -101,7 +101,12 @@ class TransactionFormState extends State<TransactionForm> {
       _totalController.text = _centsToString(t.totalAmount);
       _descriptionController.text = t.description;
       if (_selectedGl?.direction == GlDirection.moneyOut) {
-        _receiptOutController.text = t.receiptNumber;
+        _isCash = t.isCash;
+        if (t.isCash) {
+          _cashReceiptController.text = t.receiptNumber;
+        } else {
+          _receiptOutController.text = t.receiptNumber;
+        }
       } else {
         switch (t.receiptNumber) {
           case 'Bank Transfer':
@@ -187,7 +192,7 @@ class TransactionFormState extends State<TransactionForm> {
       gstCents: _dollarsToCents(gst),
       receiptNumber: _buildReceiptNumber(),
       description: _descriptionController.text.trim(),
-      isCash: !_isMoneyOut && _isCash,
+      isCash: _isCash,
     ));
   }
 
@@ -203,7 +208,13 @@ class TransactionFormState extends State<TransactionForm> {
     final gst = _parseAmount(_gstController.text);
     if (gst == null || gst < 0) return 'GST amount must be zero or more';
     if (_isMoneyOut) {
-      if (_receiptOutController.text.trim().isEmpty) return 'Receipt number is required';
+      if (_isCash) {
+        if (_cashReceiptController.text.trim().isEmpty) {
+          return 'Receipt number is required for cash transactions';
+        }
+      } else {
+        if (_receiptOutController.text.trim().isEmpty) return 'Receipt number is required';
+      }
     } else if (_isCash) {
       if (_cashReceiptController.text.trim().isEmpty) {
         return 'Receipt number is required for cash transactions';
@@ -213,7 +224,9 @@ class TransactionFormState extends State<TransactionForm> {
   }
 
   String _buildReceiptNumber() {
-    if (_isMoneyOut) return _receiptOutController.text.trim();
+    if (_isMoneyOut) {
+      return _isCash ? _cashReceiptController.text.trim() : _receiptOutController.text.trim();
+    }
     if (_isCash) return _cashReceiptController.text.trim();
     return _paymentType == 'square' ? 'Square' : 'Bank Transfer';
   }
@@ -480,11 +493,13 @@ class TransactionFormState extends State<TransactionForm> {
       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     );
 
-    final filteredGls = _selectedDirection == null
-        ? widget.glEntries
-        : widget.glEntries
-            .where((g) => g.direction == _selectedDirection)
-            .toList();
+    final filteredGls = (_selectedDirection == null
+            ? widget.glEntries
+            : widget.glEntries
+                .where((g) => g.direction == _selectedDirection)
+                .toList())
+        ..sort((a, b) => buildGlPath(widget.glEntries, a.id)
+            .compareTo(buildGlPath(widget.glEntries, b.id)));
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -532,41 +547,78 @@ class TransactionFormState extends State<TransactionForm> {
               isExpanded: true,
               isDense: true,
               underline: const SizedBox.shrink(),
+              selectedItemBuilder: (context) => filteredGls.map((gl) {
+                final glIsIn = gl.direction == GlDirection.moneyIn;
+                return Row(children: [
+                  Icon(
+                    glIsIn
+                        ? Icons.arrow_circle_down_outlined
+                        : Icons.arrow_circle_up_outlined,
+                    size: 16,
+                    color: glIsIn
+                        ? Colors.green.shade700
+                        : Colors.red.shade700,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: Text(buildGlPath(widget.glEntries, gl.id),
+                          overflow: TextOverflow.ellipsis)),
+                  if (gl.gstApplicable) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Text('GST',
+                          style: TextStyle(
+                              fontSize: 10, color: Colors.blue.shade700)),
+                    ),
+                  ],
+                ]);
+              }).toList(),
               items: filteredGls.map((gl) {
                 final glIsIn = gl.direction == GlDirection.moneyIn;
+                final depth = glDepth(widget.glEntries, gl.id);
                 return DropdownMenuItem(
                   value: gl,
-                  child: Row(
-                    children: [
-                      Icon(
-                        glIsIn
-                            ? Icons.arrow_circle_down_outlined
-                            : Icons.arrow_circle_up_outlined,
-                        size: 16,
-                        color: glIsIn
-                            ? Colors.green.shade700
-                            : Colors.red.shade700,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: Text(buildGlPath(widget.glEntries, gl.id),
-                              overflow: TextOverflow.ellipsis)),
-                      if (gl.gstApplicable) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(3),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: Text('GST',
-                              style: TextStyle(
-                                  fontSize: 10, color: Colors.blue.shade700)),
+                  child: Padding(
+                    padding: EdgeInsets.only(left: depth * 16.0),
+                    child: Row(
+                      children: [
+                        Icon(
+                          glIsIn
+                              ? Icons.arrow_circle_down_outlined
+                              : Icons.arrow_circle_up_outlined,
+                          size: 16,
+                          color: glIsIn
+                              ? Colors.green.shade700
+                              : Colors.red.shade700,
                         ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Text(gl.description,
+                                overflow: TextOverflow.ellipsis)),
+                        if (gl.gstApplicable) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(3),
+                              border: Border.all(color: Colors.blue.shade200),
+                            ),
+                            child: Text('GST',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.blue.shade700)),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 );
               }).toList(),
@@ -661,18 +713,51 @@ class TransactionFormState extends State<TransactionForm> {
   }
 
   Widget _buildMoneyOutReceipt() {
-    return SizedBox(
-      width: 200,
-      child: TextFormField(
-        controller: _receiptOutController,
-        enabled: !widget.isSaving,
-        decoration: const InputDecoration(
-          border: OutlineInputBorder(),
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-          helperText: 'Auto-generated — edit if needed',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CheckboxListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          value: _isCash,
+          onChanged: widget.isSaving
+              ? null
+              : (v) => setState(() {
+                    _isCash = v ?? false;
+                    _cashReceiptController.clear();
+                  }),
+          title: const Text('Cash transaction', style: TextStyle(fontSize: 13)),
+          controlAffinity: ListTileControlAffinity.leading,
         ),
-      ),
+        const SizedBox(height: 4),
+        SizedBox(
+          width: 200,
+          child: _isCash
+              ? TextFormField(
+                  controller: _cashReceiptController,
+                  enabled: !widget.isSaving,
+                  decoration: const InputDecoration(
+                    labelText: 'Receipt Number',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                )
+              : TextFormField(
+                  controller: _receiptOutController,
+                  enabled: !widget.isSaving,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                    helperText: 'Auto-generated — edit if needed',
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
@@ -748,6 +833,13 @@ class TransactionFormState extends State<TransactionForm> {
 
   Widget _buildCompactLayout() {
     final isMoneyOut = _isMoneyOut;
+    final compactGls = (widget.glEntries
+            .where((g) => g.direction ==
+                (isMoneyOut ? GlDirection.moneyOut : GlDirection.moneyIn))
+            .toList()
+          ..sort((a, b) => buildGlPath(widget.glEntries, a.id)
+              .compareTo(buildGlPath(widget.glEntries, b.id))))
+        .toList();
     const dec = InputDecoration(
       border: OutlineInputBorder(),
       isDense: true,
@@ -777,31 +869,49 @@ class TransactionFormState extends State<TransactionForm> {
                     isExpanded: true,
                     isDense: true,
                     underline: const SizedBox.shrink(),
-                    items: widget.glEntries
-                        .where((g) => g.direction ==
-                            (isMoneyOut
-                                ? GlDirection.moneyOut
-                                : GlDirection.moneyIn))
-                        .map((g) {
+                    selectedItemBuilder: (context) => compactGls.map((g) {
                       final glIsIn = g.direction == GlDirection.moneyIn;
+                      return Row(children: [
+                        Icon(
+                          glIsIn
+                              ? Icons.arrow_circle_down_outlined
+                              : Icons.arrow_circle_up_outlined,
+                          size: 14,
+                          color: glIsIn
+                              ? Colors.green.shade700
+                              : Colors.red.shade700,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                            child: Text(buildGlPath(widget.glEntries, g.id),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13))),
+                      ]);
+                    }).toList(),
+                    items: compactGls.map((g) {
+                      final glIsIn = g.direction == GlDirection.moneyIn;
+                      final depth = glDepth(widget.glEntries, g.id);
                       return DropdownMenuItem(
                         value: g,
-                        child: Row(children: [
-                          Icon(
-                            glIsIn
-                                ? Icons.arrow_circle_down_outlined
-                                : Icons.arrow_circle_up_outlined,
-                            size: 14,
-                            color: glIsIn
-                                ? Colors.green.shade700
-                                : Colors.red.shade700,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                              child: Text(buildGlPath(widget.glEntries, g.id),
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13))),
-                        ]),
+                        child: Padding(
+                          padding: EdgeInsets.only(left: depth * 16.0),
+                          child: Row(children: [
+                            Icon(
+                              glIsIn
+                                  ? Icons.arrow_circle_down_outlined
+                                  : Icons.arrow_circle_up_outlined,
+                              size: 14,
+                              color: glIsIn
+                                  ? Colors.green.shade700
+                                  : Colors.red.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                                child: Text(g.description,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 13))),
+                          ]),
+                        ),
                       );
                     }).toList(),
                     onChanged: widget.isSaving ? null : _onGlChangedCompact,
@@ -817,8 +927,39 @@ class TransactionFormState extends State<TransactionForm> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               if (isMoneyOut) ...[
-                const SizedBox(width: 40),
-                _buildCompactReceiptField(dec),
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Checkbox(
+                    value: _isCash,
+                    onChanged: widget.isSaving
+                        ? null
+                        : (v) => setState(() {
+                              _isCash = v ?? false;
+                              _cashReceiptController.clear();
+                            }),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text('Cash', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 160,
+                  child: _isCash
+                      ? TextFormField(
+                          controller: _cashReceiptController,
+                          enabled: !widget.isSaving,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: dec.copyWith(labelText: 'Receipt No.'),
+                        )
+                      : TextFormField(
+                          controller: _receiptOutController,
+                          enabled: !widget.isSaving,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: dec.copyWith(labelText: 'Receipt'),
+                        ),
+                ),
               ] else ...[
                 SizedBox(
                   width: 20,
@@ -993,15 +1134,4 @@ class TransactionFormState extends State<TransactionForm> {
     );
   }
 
-  Widget _buildCompactReceiptField(InputDecoration dec) {
-    return SizedBox(
-      width: 130,
-      child: TextFormField(
-        controller: _receiptOutController,
-        enabled: !widget.isSaving,
-        style: const TextStyle(fontSize: 13),
-        decoration: dec.copyWith(labelText: 'Receipt'),
-      ),
-    );
-  }
 }

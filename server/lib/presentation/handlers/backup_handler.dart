@@ -36,7 +36,8 @@ class BackupHandler {
     try {
       final gl = await _queryRows('''
         SELECT id::text, entity_id, label, description, gst_applicable,
-               direction::text AS direction, created_at, updated_at, deleted_at
+               direction::text AS direction, parent_id::text,
+               created_at, updated_at, deleted_at
         FROM general_ledger WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -58,14 +59,14 @@ class BackupHandler {
         SELECT id::text, entity_id, contact_id::text, general_ledger_id::text,
                amount, gst_amount,
                transaction_type::text AS transaction_type,
-               receipt_number, description, transaction_date,
+               receipt_number, description, transaction_date, is_cash,
                created_at, updated_at, deleted_at, bank_matched
         FROM transactions WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
       final bankAccounts = await _queryRows('''
         SELECT id::text, entity_id, bank_name, account_name, bsb,
-               account_number, account_type, currency,
+               account_number, account_type, currency, is_system, sort_order,
                created_at, updated_at, deleted_at
         FROM bank_accounts WHERE entity_id = @entityId
       ''', {'entityId': entityId});
@@ -108,6 +109,25 @@ class BackupHandler {
         ORDER BY created_at
       ''', {'entityId': entityId});
 
+      final budgets = await _queryRows('''
+        SELECT id::text, entity_id, year, created_at, updated_at
+        FROM budgets WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      final budgetLines = await _queryRows('''
+        SELECT bl.id::text, bl.budget_id::text, bl.general_ledger_id::text,
+               bl.month, bl.amount_cents
+        FROM budget_lines bl
+        JOIN budgets b ON b.id = bl.budget_id
+        WHERE b.entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      final budgetGlMappings = await _queryRows('''
+        SELECT id::text, entity_id, external_code, external_name,
+               general_ledger_id::text
+        FROM budget_gl_mappings WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
       final now = DateTime.now();
       final stamp =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
@@ -128,6 +148,9 @@ class BackupHandler {
         'dashboard_preferences': dashPrefs,
         'entity_details': entityDetails,
         'audit_log': auditLog,
+        'budgets': budgets,
+        'budget_lines': budgetLines,
+        'budget_gl_mappings': budgetGlMappings,
       };
 
       final jsonBytes = Uint8List.fromList(utf8.encode(jsonEncode(backup)));
@@ -201,6 +224,8 @@ class BackupHandler {
       await _pool.runTx((tx) async {
         // ── Delete existing entity data in reverse FK order ────────────────
         await _del(tx, 'audit_log', entityId);
+        await _del(tx, 'budget_gl_mappings', entityId);
+        await _del(tx, 'budgets', entityId); // cascades to budget_lines
         await _del(tx, 'transactions', entityId);
         await _del(tx, 'contacts', entityId);
         await _del(tx, 'general_ledger', entityId);
@@ -276,10 +301,11 @@ class BackupHandler {
             Sql.named('''
               INSERT INTO bank_accounts
                 (id, entity_id, bank_name, account_name, bsb, account_number,
-                 account_type, currency, created_at, updated_at, deleted_at)
+                 account_type, currency, is_system, sort_order,
+                 created_at, updated_at, deleted_at)
               VALUES (
                 @id::uuid, @e, @bn, @an, @bsb, @anum,
-                @at, @cur,
+                @at, @cur, @sys, @so,
                 @ca::timestamptz, @ua::timestamptz, @da::timestamptz
               )
             '''),
@@ -292,6 +318,8 @@ class BackupHandler {
               'anum': r['account_number'] as String,
               'at': r['account_type'] as String,
               'cur': r['currency'] as String,
+              'sys': (r['is_system'] as bool?) ?? false,
+              'so': (r['sort_order'] as int?) ?? 0,
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],
@@ -322,7 +350,10 @@ class BackupHandler {
           );
         }
 
-        for (final r in _rows(backup, 'general_ledger')) {
+        // Insert all GL rows with parent_id = NULL first (self-referencing FK
+        // requires parents to exist before children can reference them).
+        final glRows = _rows(backup, 'general_ledger');
+        for (final r in glRows) {
           await tx.execute(
             Sql.named('''
               INSERT INTO general_ledger
@@ -344,6 +375,23 @@ class BackupHandler {
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],
+            },
+          );
+        }
+        // Second pass: restore parent_id now that all rows exist.
+        for (final r in glRows) {
+          final parentId = r['parent_id'] as String?;
+          if (parentId == null) continue;
+          await tx.execute(
+            Sql.named('''
+              UPDATE general_ledger
+              SET parent_id = @pid::uuid
+              WHERE id = @id::uuid AND entity_id = @e
+            '''),
+            parameters: {
+              'pid': parentId,
+              'id': r['id'] as String,
+              'e': entityId,
             },
           );
         }
@@ -382,11 +430,12 @@ class BackupHandler {
               INSERT INTO transactions
                 (id, entity_id, contact_id, general_ledger_id, amount,
                  gst_amount, transaction_type, receipt_number, description,
-                 transaction_date, created_at, updated_at, deleted_at, bank_matched)
+                 transaction_date, is_cash, created_at, updated_at, deleted_at,
+                 bank_matched)
               VALUES (
                 @id::uuid, @e, @cid::uuid, @glid::uuid,
                 @amt, @gst, @tt::transaction_type,
-                @rcpt, @desc, @td::date,
+                @rcpt, @desc, @td::date, @ic,
                 @ca::timestamptz, @ua::timestamptz, @da::timestamptz, @bm
               )
             '''),
@@ -401,6 +450,7 @@ class BackupHandler {
               'rcpt': r['receipt_number'] as String,
               'desc': r['description'] as String,
               'td': _dateString(r['transaction_date']),
+              'ic': (r['is_cash'] as bool?) ?? false,
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],
@@ -504,6 +554,63 @@ class BackupHandler {
               'sc': r['status_code'] as int,
               'chg': changesJson,
               'ca': r['created_at'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'budgets')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO budgets (id, entity_id, year, created_at, updated_at)
+              VALUES (
+                @id::uuid, @e, @yr,
+                @ca::timestamptz, @ua::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'yr': r['year'] as int,
+              'ca': r['created_at'] as String,
+              'ua': r['updated_at'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'budget_lines')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO budget_lines
+                (id, budget_id, general_ledger_id, month, amount_cents)
+              VALUES (
+                @id::uuid, @bid::uuid, @glid::uuid, @month, @cents
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'bid': r['budget_id'] as String,
+              'glid': r['general_ledger_id'] as String,
+              'month': r['month'] as int,
+              'cents': r['amount_cents'] as int,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'budget_gl_mappings')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO budget_gl_mappings
+                (id, entity_id, external_code, external_name, general_ledger_id)
+              VALUES (
+                @id::uuid, @e, @code, @name, @glid::uuid
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'code': r['external_code'] as String,
+              'name': (r['external_name'] as String?) ?? '',
+              'glid': r['general_ledger_id'] as String,
             },
           );
         }
