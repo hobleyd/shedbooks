@@ -435,9 +435,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       for (final m in _months) m.month: _monthCarriedBalances(m.month, allMonthBalances[m.month]!),
     };
 
+    // x = row-padding(4) + month(80) + 3×col(360) + half-gap(8) = 452
+    const double _separatorX = 452;
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      child: Column(
+      child: Stack(
+        children: [
+          Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
@@ -457,6 +462,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: colWidth,
                     child: Text('Net',
                         style: headerStyle, textAlign: TextAlign.right)),
+                const SizedBox(width: 17),
                 ..._bankAccounts.map((a) => SizedBox(
                       width: accountColWidth(a),
                       child: Text(a.accountName,
@@ -498,10 +504,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     width: colWidth,
                     child: _amountText(totalOutgoings, isIncome: false, bold: true)),
                 SizedBox(width: colWidth, child: _netText(totalNet, bold: true)),
+                const SizedBox(width: 17),
                 ..._bankAccounts.map((a) => SizedBox(width: accountColWidth(a))),
                 const SizedBox(width: totalColWidth),
               ],
             ),
+          ),
+          ],
+          ),
+          Positioned(
+            left: _separatorX,
+            top: 0,
+            bottom: 0,
+            child: Container(width: 1, color: Colors.black26),
           ),
         ],
       ),
@@ -541,6 +556,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: colWidth,
                   child: _amountText(m.outgoingsCents, isIncome: false)),
               SizedBox(width: colWidth, child: _netText(m.netCents)),
+              const SizedBox(width: 17),
               ..._bankAccounts.map((account) {
                 final balance = balances[account.id];
                 final carried = carriedBalances[account.id];
