@@ -87,6 +87,24 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   @override
+  void didUpdateWidget(covariant TransactionsScreen old) {
+    super.didUpdateWidget(old);
+    // With state retention, the existing State is reused when the user
+    // re-navigates to /transactions. If a different contact arrives via
+    // `extra`, switch the search filter to that contact and jump to the
+    // Money Out tab (matching initState's behaviour). Reference data is
+    // already loaded, so no reload is needed.
+    final newContact = widget.initialContact;
+    if (newContact != null && newContact.id != old.initialContact?.id) {
+      setState(() {
+        _searchContact = newContact;
+        _searchYear = DateTime.now().year;
+        _tabController.index = 1;
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _tabController.dispose();
     super.dispose();

@@ -9,11 +9,15 @@ import '../widgets/app_sidebar.dart';
 const String _auth0Domain = String.fromEnvironment('AUTH0_DOMAIN');
 const String _auth0ClientId = String.fromEnvironment('AUTH0_CLIENT_ID');
 
-/// Shell layout wrapping all authenticated screens with an AppBar and sidebar.
+/// Shell layout wrapping all authenticated screens with a sidebar.
+///
+/// Hosts the [StatefulNavigationShell] from go_router so each screen's State
+/// (filters, scroll position, controllers, in-progress workflows) is retained
+/// across navigation rather than being torn down and rebuilt.
 class AppShell extends StatelessWidget {
-  final Widget child;
+  final StatefulNavigationShell navigationShell;
 
-  const AppShell({super.key, required this.child});
+  const AppShell({super.key, required this.navigationShell});
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +29,7 @@ class AppShell extends StatelessWidget {
         children: [
           AppSidebar(onSignOut: () => _signOut(context, authState)),
           const VerticalDivider(width: 1),
-          Expanded(child: child),
+          Expanded(child: navigationShell),
         ],
       ),
     );

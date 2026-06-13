@@ -74,84 +74,125 @@ GoRouter createRouter(AuthState authState) {
         path: '/',
         builder: (context, state) => const LoginScreen(),
       ),
-      ShellRoute(
-        builder: (context, state, child) => AppShell(child: child),
-        routes: [
-          GoRoute(
-            path: '/dashboard',
-            builder: (context, state) => const DashboardScreen(),
-          ),
-          GoRoute(
-            path: '/transactions',
-            builder: (context, state) => TransactionsScreen(
-              initialContact: state.extra as ContactEntry?,
+      // Each authenticated screen lives in its own branch so its State is
+      // retained across navigation (filters, scroll position, controllers,
+      // in-progress workflows). go_router renders the branches inside an
+      // IndexedStack and only swaps which one is visible.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            AppShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/dashboard',
+              builder: (context, state) => const DashboardScreen(),
             ),
-          ),
-          GoRoute(
-            path: '/bank-reconciliation',
-            builder: (context, state) => const BankReconciliationScreen(),
-          ),
-          GoRoute(
-            path: '/invoices',
-            builder: (context, state) => const InvoicesScreen(),
-          ),
-          GoRoute(
-            path: '/reports/bas',
-            builder: (context, state) => const BasReportScreen(),
-          ),
-          GoRoute(
-            path: '/reports/pl',
-            builder: (context, state) => const PlReportScreen(),
-          ),
-          GoRoute(
-            path: '/reports/budget',
-            builder: (context, state) => const BudgetScreen(),
-          ),
-          GoRoute(
-            path: '/reports/monthly',
-            builder: (context, state) => const MonthlyReportScreen(),
-          ),
-          GoRoute(
-            path: '/reports/financial-performance',
-            builder: (context, state) =>
-                const FinancialPerformanceScreen(),
-          ),
-          GoRoute(
-            path: '/admin/entity',
-            builder: (context, state) => const EntityScreen(),
-          ),
-          GoRoute(
-            path: '/admin/bank-accounts',
-            builder: (context, state) => const BankAccountsScreen(),
-          ),
-          GoRoute(
-            path: '/admin/contacts',
-            builder: (context, state) => const ContactsScreen(),
-          ),
-          GoRoute(
-            path: '/admin/general-ledger',
-            builder: (context, state) => const GeneralLedgerScreen(),
-          ),
-          GoRoute(
-            path: '/admin/gst-management',
-            builder: (context, state) => const GstManagementScreen(),
-          ),
-          GoRoute(
-            path: '/admin/audit-log',
-            builder: (context, state) => const AuditScreen(),
-          ),
-          GoRoute(
-            path: '/admin/backup',
-            builder: (context, state) => const BackupScreen(),
-          ),
-          GoRoute(
-            path: '/admin/locked-months',
-            builder: (context, state) => const LockedMonthsScreen(),
-          ),
-          GoRoute(
-            path: '/admin/users',
-            builder: (context, state) => const UsersScreen(),
-          ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/transactions',
+              builder: (context, state) => TransactionsScreen(
+                initialContact: state.extra as ContactEntry?,
+              ),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/bank-reconciliation',
+              builder: (context, state) => const BankReconciliationScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/invoices',
+              builder: (context, state) => const InvoicesScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/reports/bas',
+              builder: (context, state) => const BasReportScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/reports/pl',
+              builder: (context, state) => const PlReportScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/reports/budget',
+              builder: (context, state) => const BudgetScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/reports/monthly',
+              builder: (context, state) => const MonthlyReportScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/reports/financial-performance',
+              builder: (context, state) =>
+                  const FinancialPerformanceScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/entity',
+              builder: (context, state) => const EntityScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/bank-accounts',
+              builder: (context, state) => const BankAccountsScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/contacts',
+              builder: (context, state) => const ContactsScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/general-ledger',
+              builder: (context, state) => const GeneralLedgerScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/gst-management',
+              builder: (context, state) => const GstManagementScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/audit-log',
+              builder: (context, state) => const AuditScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/backup',
+              builder: (context, state) => const BackupScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/locked-months',
+              builder: (context, state) => const LockedMonthsScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/users',
+              builder: (context, state) => const UsersScreen(),
+            ),
+          ]),
         ],
       ),
     ],
