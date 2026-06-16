@@ -1,3 +1,20 @@
+-- Copyright (C) 2026 David Hobley
+--
+-- This file is part of Shedbooks.
+--
+-- Shedbooks is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- Shedbooks is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
+
 -- Infer parent_id for GL accounts from label hierarchy.
 -- e.g. label "4-2000-60" becomes a child of "4-2000" which is a child of "4".
 -- The direct parent is the longest label that is a strict prefix (label || '-') of this account's label.
