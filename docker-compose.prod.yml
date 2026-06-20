@@ -1,0 +1,74 @@
+# Production Docker Compose — uses pre-built images from OCIR.
+# Image references and secrets are supplied via /opt/shedbooks/.env on the instance.
+# See terraform/outputs.tf → next_steps for the full deployment checklist.
+
+networks:
+  shedbooks-data:
+    internal: true
+  shedbooks-web: {}
+
+services:
+  db:
+    image: ${SHEDBOOKS_DB_IMAGE:-shedbooks/db:latest}
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/ssl-certs/server.crt
+      - -c
+      - ssl_key_file=/ssl-certs/server.key
+    environment:
+      POSTGRES_DB: shedbooks
+      POSTGRES_USER: shedbooks
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - /opt/shedbooks/certs/postgres:/ssl-certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shedbooks -d shedbooks"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shedbooks-data
+    restart: unless-stopped
+
+  server:
+    image: ${SHEDBOOKS_SERVER_IMAGE:-shedbooks/server:latest}
+    environment:
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      ABR_GUID: ${ABR_GUID:-}
+      PORT: "8080"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: shedbooks
+      DB_USER: shedbooks
+      DB_PASSWORD: ${DB_PASSWORD}
+      MIGRATIONS_DIR: /app/migrations
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - shedbooks-data
+      - shedbooks-web
+    restart: unless-stopped
+
+  client:
+    image: ${SHEDBOOKS_CLIENT_IMAGE:-shedbooks/client:latest}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/shedbooks/certs:/etc/nginx/certs:ro
+    depends_on:
+      - server
+    networks:
+      - shedbooks-web
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

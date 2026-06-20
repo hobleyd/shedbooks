@@ -158,6 +158,12 @@ class _AppSidebarState extends State<AppSidebar> {
                     path: '/invoices',
                     currentPath: currentPath,
                   ),
+                  _NavItem(
+                    label: 'Members',
+                    icon: Icons.badge_outlined,
+                    path: '/members',
+                    currentPath: currentPath,
+                  ),
                   _ReportsNavGroup(
                     currentPath: currentPath,
                     expanded: _reportsExpanded,

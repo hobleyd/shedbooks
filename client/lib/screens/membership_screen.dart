@@ -17,7 +17,7 @@
 
 import 'dart:convert';
 
-import 'package:excel/excel.dart';
+import 'package:excel/excel.dart' hide Border;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -43,6 +43,7 @@ class _MemberRow {
   final TextEditingController woodworkingCtrl;
   final TextEditingController metalworkingCtrl;
   final TextEditingController gymWaiverCtrl;
+  final FocusNode firstNameFocus;
   final FocusNode lastNameFocus;
 
   // Originals for dirty-check
@@ -59,6 +60,37 @@ class _MemberRow {
   final String _origWoodworking;
   final String _origMetalworking;
   final String _origGymWaiver;
+
+  _MemberRow.blank()
+      : id = null,
+        lastNameCtrl = TextEditingController(),
+        firstNameCtrl = TextEditingController(),
+        dateJoinedCtrl = TextEditingController(),
+        statusCtrl = TextEditingController(),
+        streetCtrl = TextEditingController(),
+        poBoxCtrl = TextEditingController(),
+        emailCtrl = TextEditingController(),
+        phoneCtrl = TextEditingController(),
+        dobCtrl = TextEditingController(),
+        emergencyCtrl = TextEditingController(),
+        woodworkingCtrl = TextEditingController(),
+        metalworkingCtrl = TextEditingController(),
+        gymWaiverCtrl = TextEditingController(),
+        firstNameFocus = FocusNode(),
+        lastNameFocus = FocusNode(),
+        _origLastName = '',
+        _origFirstName = '',
+        _origDateJoined = '',
+        _origStatus = '',
+        _origStreet = '',
+        _origPoBox = '',
+        _origEmail = '',
+        _origPhone = '',
+        _origDob = '',
+        _origEmergency = '',
+        _origWoodworking = '',
+        _origMetalworking = '',
+        _origGymWaiver = '';
 
   _MemberRow.fromEntry(MemberEntry e)
       : id = e.id,
@@ -79,6 +111,7 @@ class _MemberRow {
         metalworkingCtrl =
             TextEditingController(text: e.metalworkingInduction ?? ''),
         gymWaiverCtrl = TextEditingController(text: e.gymWaiver ?? ''),
+        firstNameFocus = FocusNode(),
         lastNameFocus = FocusNode(),
         _origLastName = e.lastName,
         _origFirstName = e.firstName,
@@ -138,6 +171,22 @@ class _MemberRow {
             gymWaiverCtrl.text.trim().isEmpty ? null : gymWaiverCtrl.text.trim(),
       };
 
+  void reset() {
+    lastNameCtrl.text = _origLastName;
+    firstNameCtrl.text = _origFirstName;
+    dateJoinedCtrl.text = _origDateJoined;
+    statusCtrl.text = _origStatus;
+    streetCtrl.text = _origStreet;
+    poBoxCtrl.text = _origPoBox;
+    emailCtrl.text = _origEmail;
+    phoneCtrl.text = _origPhone;
+    dobCtrl.text = _origDob;
+    emergencyCtrl.text = _origEmergency;
+    woodworkingCtrl.text = _origWoodworking;
+    metalworkingCtrl.text = _origMetalworking;
+    gymWaiverCtrl.text = _origGymWaiver;
+  }
+
   void dispose() {
     lastNameCtrl.dispose();
     firstNameCtrl.dispose();
@@ -152,6 +201,7 @@ class _MemberRow {
     woodworkingCtrl.dispose();
     metalworkingCtrl.dispose();
     gymWaiverCtrl.dispose();
+    firstNameFocus.dispose();
     lastNameFocus.dispose();
   }
 }
@@ -169,7 +219,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
   bool _loading = true;
   String? _error;
   bool _saving = false;
-  bool _addingMember = false;
+  _MemberRow? _pendingNewRow;
   int? _sortColumn;
   bool _sortAscending = true;
 
@@ -184,6 +234,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
     for (final row in _rows) {
       row.dispose();
     }
+    _pendingNewRow?.dispose();
     super.dispose();
   }
 
@@ -227,17 +278,33 @@ class _MembershipScreenState extends State<MembershipScreen> {
   }
 
   void _addRow() {
-    setState(() => _addingMember = true);
+    setState(() => _pendingNewRow = _MemberRow.blank());
     _updateDirty();
   }
 
-  Future<void> _saveNewMember(Map<String, dynamic> body) async {
+  void _cancelNew() {
+    setState(() {
+      _pendingNewRow?.dispose();
+      _pendingNewRow = null;
+    });
+    _updateDirty();
+  }
+
+  Future<void> _saveNewMember(_MemberRow row) async {
+    if (row.lastNameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Last name must not be empty')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       final client = context.read<ApiClient>();
-      final res = await client.post('/members', jsonEncode(body));
+      final res =
+          await client.post('/members', jsonEncode(row.toRequestJson()));
       if (res.statusCode == 201) {
-        setState(() => _addingMember = false);
+        _pendingNewRow?.dispose();
+        setState(() => _pendingNewRow = null);
         await _load();
         _updateDirty();
       } else {
@@ -571,7 +638,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
   }
 
   void _updateDirty() {
-    final hasDirty = _addingMember || _rows.any((r) => r.isDirty);
+    final hasDirty = _pendingNewRow != null || _rows.any((r) => r.isDirty);
     context.read<NavigationGuard>().setDirty(hasDirty);
   }
 
@@ -585,7 +652,6 @@ class _MembershipScreenState extends State<MembershipScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _Toolbar(
-            onAdd: canEdit && !_addingMember ? _addRow : null,
             onImport: canEdit ? _importFromXlsx : null,
             onRefresh: _loading ? null : _load,
           ),
@@ -613,51 +679,20 @@ class _MembershipScreenState extends State<MembershipScreen> {
             Expanded(
               child: _saving
                   ? const Center(child: CircularProgressIndicator())
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_addingMember)
-                          _AddMemberPanel(
-                            isSaving: _saving,
-                            onSave: _saveNewMember,
-                            onCancel: () {
-                              setState(() => _addingMember = false);
-                              _updateDirty();
-                            },
-                          ),
-                        if (_rows.isEmpty && !_addingMember)
-                          Expanded(
-                            child: Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text('No members yet.'),
-                                  if (canEdit) ...[
-                                    const SizedBox(height: 8),
-                                    ElevatedButton(
-                                      onPressed: _addRow,
-                                      child: const Text('Add member'),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          )
-                        else if (_rows.isNotEmpty)
-                          Expanded(
-                            child: _MemberTable(
-                              rows: _rows,
-                              canEdit: canEdit,
-                              onSave: _saveRow,
-                              onDelete: _deleteRow,
-                              onChanged: _updateDirty,
-                              sortColumn: _sortColumn,
-                              sortAscending: _sortAscending,
-                              onSort: _onSort,
-                            ),
-                          ),
-                      ],
-                    ),
+                  : _MemberTable(
+                        rows: _rows,
+                        canEdit: canEdit,
+                        onSave: _saveRow,
+                        onDelete: _deleteRow,
+                        onChanged: _updateDirty,
+                        sortColumn: _sortColumn,
+                        sortAscending: _sortAscending,
+                        onSort: _onSort,
+                        pendingRow: _pendingNewRow,
+                        onAddNew: _addRow,
+                        onSaveNew: _saveNewMember,
+                        onCancelNew: _cancelNew,
+                      ),
             ),
         ],
       ),
@@ -668,11 +703,10 @@ class _MembershipScreenState extends State<MembershipScreen> {
 // ── Toolbar ────────────────────────────────────────────────────────────────
 
 class _Toolbar extends StatelessWidget {
-  final VoidCallback? onAdd;
   final VoidCallback? onImport;
   final VoidCallback? onRefresh;
 
-  const _Toolbar({this.onAdd, this.onImport, this.onRefresh});
+  const _Toolbar({this.onImport, this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
@@ -697,14 +731,6 @@ class _Toolbar extends StatelessWidget {
               onPressed: onImport,
             ),
           ],
-          if (onAdd != null) ...[
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              icon: const Icon(Icons.person_add_outlined),
-              label: const Text('Add member'),
-              onPressed: onAdd,
-            ),
-          ],
         ],
       ),
     );
@@ -713,7 +739,19 @@ class _Toolbar extends StatelessWidget {
 
 // ── Table ──────────────────────────────────────────────────────────────────
 
-class _MemberTable extends StatelessWidget {
+// Fixed widths for always-visible primary columns.
+const double _kExpandW = 32;
+const double _kFirstNameW = 120;
+const double _kLastNameW = 130;
+const double _kDateJoinedW = 100;
+const double _kStatusW = 80;
+const double _kPhoneW = 120;
+const double _kWoodworkingW = 130;
+const double _kMetalworkingW = 130;
+const double _kGymWaiverW = 100;
+const double _kActionsW = 80;
+
+class _MemberTable extends StatefulWidget {
   final List<_MemberRow> rows;
   final bool canEdit;
   final Future<void> Function(_MemberRow) onSave;
@@ -722,6 +760,10 @@ class _MemberTable extends StatelessWidget {
   final int? sortColumn;
   final bool sortAscending;
   final void Function(int col) onSort;
+  final _MemberRow? pendingRow;
+  final VoidCallback? onAddNew;
+  final Future<void> Function(_MemberRow)? onSaveNew;
+  final VoidCallback? onCancelNew;
 
   const _MemberTable({
     required this.rows,
@@ -732,55 +774,332 @@ class _MemberTable extends StatelessWidget {
     required this.sortColumn,
     required this.sortAscending,
     required this.onSort,
+    this.pendingRow,
+    this.onAddNew,
+    this.onSaveNew,
+    this.onCancelNew,
   });
 
-  // Column indices that can be sorted (excludes the trailing actions column).
-  static const _sortableCount = 13;
+  @override
+  State<_MemberTable> createState() => _MemberTableState();
+}
 
-  static const _columnLabels = [
-    'First Name',
-    'Last Name',
-    'Date Joined',
-    'Status',
-    'Street Address',
-    'PO Box',
-    'Email',
-    'Phone',
-    'Date of Birth',
-    'Emergency Contact',
-    'Woodworking Induction',
-    'Metalworking Induction',
-    'Gym Waiver',
-    '', // actions — not sortable
-  ];
+class _MemberTableState extends State<_MemberTable> {
+  final Set<String> _expanded = {};
+  final Set<String> _editing = {};
+  final ScrollController _scrollController = ScrollController();
 
-  DataColumn _col(BuildContext context, String label, int index) {
-    if (index >= _sortableCount) {
-      return const DataColumn(label: SizedBox.shrink());
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_MemberTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pendingRow == null && widget.pendingRow != null) {
+      final row = widget.pendingRow!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        }
+        row.firstNameFocus.requestFocus();
+      });
     }
-    final isActive = sortColumn == index;
-    return DataColumn(
-      label: InkWell(
-        onTap: () => onSort(index),
+  }
+
+  void _toggleExpand(String key) {
+    setState(() {
+      if (_expanded.contains(key)) {
+        _expanded.remove(key);
+      } else {
+        _expanded.add(key);
+      }
+    });
+  }
+
+  void _startEdit(String key) {
+    setState(() => _editing.add(key));
+  }
+
+  void _cancelEdit(_MemberRow row, String key) {
+    row.reset();
+    widget.onChanged();
+    setState(() => _editing.remove(key));
+  }
+
+  Future<void> _saveEdit(_MemberRow row, String key) async {
+    await widget.onSave(row);
+    if (mounted) setState(() => _editing.remove(key));
+  }
+
+  // ── Shared cell helpers ────────────────────────────────────────────────────
+
+  Widget _readCell(BuildContext context, TextEditingController ctrl, double width) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          ctrl.text.isEmpty ? '—' : ctrl.text,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+    );
+  }
+
+  Widget _subLabel(BuildContext context, String label, double width) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          label,
+          style: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(fontWeight: FontWeight.bold),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+
+  // ── Date cell helpers ──────────────────────────────────────────────────────
+
+  static String _formatDate(String iso) {
+    if (iso.isEmpty) return '';
+    final parts = iso.split('-');
+    if (parts.length == 3) return '${parts[2]}/${parts[1]}/${parts[0]}';
+    return iso;
+  }
+
+  static String _isoDate(DateTime dt) =>
+      '${dt.year.toString().padLeft(4, '0')}-'
+      '${dt.month.toString().padLeft(2, '0')}-'
+      '${dt.day.toString().padLeft(2, '0')}';
+
+  Future<void> _pickDate(TextEditingController ctrl) async {
+    DateTime? initial;
+    if (ctrl.text.isNotEmpty) {
+      try {
+        initial = DateTime.parse(ctrl.text);
+      } catch (_) {}
+    }
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2060),
+    );
+    if (picked != null && mounted) {
+      ctrl.text = _isoDate(picked);
+      widget.onChanged();
+      setState(() {});
+    }
+  }
+
+  void _clearDate(TextEditingController ctrl) {
+    ctrl.text = '';
+    widget.onChanged();
+    setState(() {});
+  }
+
+  Widget _readDateCell(
+      BuildContext context, TextEditingController ctrl, double width) {
+    final formatted = _formatDate(ctrl.text);
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          formatted.isEmpty ? '—' : formatted,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+    );
+  }
+
+  // ── Edit panel ─────────────────────────────────────────────────────────────
+
+  Widget _buildDateField(BuildContext context, String label,
+      TextEditingController ctrl, InputDecoration baseDec) {
+    final formatted = _formatDate(ctrl.text);
+    final hasValue = ctrl.text.isNotEmpty;
+    return GestureDetector(
+      onTap: () => _pickDate(ctrl),
+      child: InputDecorator(
+        isEmpty: !hasValue,
+        decoration: baseDec.copyWith(
+          labelText: label,
+          suffixIcon: hasValue
+              ? GestureDetector(
+                  onTap: () => _clearDate(ctrl),
+                  child: const Icon(Icons.clear, size: 18),
+                )
+              : const Icon(Icons.calendar_today_outlined, size: 18),
+        ),
+        child: Text(
+          formatted,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditPanel(BuildContext context, _MemberRow row,
+      {required String key, bool isPending = false}) {
+    final baseDec = InputDecoration(
+      border: const OutlineInputBorder(),
+      isDense: true,
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      floatingLabelBehavior: FloatingLabelBehavior.always,
+      filled: true,
+      fillColor: Theme.of(context).colorScheme.surface,
+    );
+
+    Widget tf(String label, TextEditingController ctrl,
+        {FocusNode? focusNode}) =>
+        TextFormField(
+          controller: ctrl,
+          focusNode: focusNode,
+          decoration: baseDec.copyWith(labelText: label),
+          onChanged: (_) => widget.onChanged(),
+        );
+
+    Widget df(String label, TextEditingController ctrl) =>
+        _buildDateField(context, label, ctrl, baseDec);
+
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainerLowest,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            SizedBox(
+                width: _kFirstNameW + 8,
+                child: tf('First Name', row.firstNameCtrl,
+                    focusNode: row.firstNameFocus)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: _kLastNameW + 8,
+                child: tf('Last Name', row.lastNameCtrl,
+                    focusNode: row.lastNameFocus)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: _kDateJoinedW + 16,
+                child: df('Date Joined', row.dateJoinedCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(width: _kStatusW + 8, child: tf('Status', row.statusCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(width: _kPhoneW + 8, child: tf('Phone', row.phoneCtrl)),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            SizedBox(width: 200, child: tf('Street Address', row.streetCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(width: 90, child: tf('PO Box', row.poBoxCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(width: 200, child: tf('Email', row.emailCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: 120, child: df('Date of Birth', row.dobCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: 180,
+                child: tf('Emergency Contact', row.emergencyCtrl)),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            SizedBox(
+                width: _kWoodworkingW + 16,
+                child: df('Woodworking Induction', row.woodworkingCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: _kMetalworkingW + 16,
+                child: df('Metalworking Induction', row.metalworkingCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: _kGymWaiverW + 16,
+                child: df('Gym Waiver', row.gymWaiverCtrl)),
+          ]),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              FilledButton(
+                onPressed: isPending
+                    ? () => widget.onSaveNew?.call(row)
+                    : () => _saveEdit(row, key),
+                child: const Text('Save'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: isPending
+                    ? widget.onCancelNew
+                    : () => _cancelEdit(row, key),
+                child: const Text('Cancel'),
+              ),
+              if (!isPending) ...[
+                const Spacer(),
+                TextButton.icon(
+                  icon: Icon(Icons.delete_outline,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.error),
+                  label: Text('Delete',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                  onPressed: () => widget.onDelete(row),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Header ─────────────────────────────────────────────────────────────────
+
+  Widget _headerCell(
+      BuildContext context, String label, int sortIndex, double width) {
+    final isActive = widget.sortColumn == sortIndex;
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: () => widget.onSort(sortIndex),
         borderRadius: BorderRadius.circular(4),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
+              Flexible(
+                child: Text(
+                  label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (isActive) ...[
                 const SizedBox(width: 2),
                 Icon(
-                  sortAscending
+                  widget.sortAscending
                       ? Icons.arrow_upward_rounded
                       : Icons.arrow_downward_rounded,
-                  size: 12,
+                  size: 10,
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ],
@@ -791,472 +1110,216 @@ class _MemberTable extends StatelessWidget {
     );
   }
 
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      color: Theme.of(context)
+          .colorScheme
+          .surfaceContainerHighest
+          .withAlpha(100),
+      child: Row(
+        children: [
+          const SizedBox(width: _kExpandW),
+          _headerCell(context, 'First Name', 0, _kFirstNameW),
+          _headerCell(context, 'Last Name', 1, _kLastNameW),
+          _headerCell(context, 'Date Joined', 2, _kDateJoinedW),
+          _headerCell(context, 'Status', 3, _kStatusW),
+          _headerCell(context, 'Phone', 7, _kPhoneW),
+          _headerCell(context, 'Woodworking', 10, _kWoodworkingW),
+          _headerCell(context, 'Metalworking', 11, _kMetalworkingW),
+          _headerCell(context, 'Gym Waiver', 12, _kGymWaiverW),
+          const SizedBox(width: _kActionsW),
+        ],
+      ),
+    );
+  }
+
+  // ── Rows ───────────────────────────────────────────────────────────────────
+
+  Widget _buildRow(BuildContext context, _MemberRow row,
+      {bool isPending = false}) {
+    final key = row.id ?? '__new__';
+    final isEditing = isPending || (_editing.contains(key) && widget.canEdit);
+
+    if (isEditing) {
+      return Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Color(0x1F000000), width: 0.5),
+          ),
+        ),
+        child: _buildEditPanel(context, row, key: key, isPending: isPending),
+      );
+    }
+
+    final isExpanded = _expanded.contains(key);
+    final isDirty = row.isDirty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDirty
+            ? Theme.of(context).colorScheme.tertiaryContainer.withAlpha(60)
+            : null,
+        border: const Border(
+          bottom: BorderSide(color: Color(0x1F000000), width: 0.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 48,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                GestureDetector(
+                  onTap: () => _toggleExpand(key),
+                  child: SizedBox(
+                    width: _kExpandW,
+                    height: 48,
+                    child: Center(
+                      child: Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.keyboard_arrow_right_rounded,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+                _readCell(context, row.firstNameCtrl, _kFirstNameW),
+                _readCell(context, row.lastNameCtrl, _kLastNameW),
+                _readCell(context, row.dateJoinedCtrl, _kDateJoinedW),
+                _readCell(context, row.statusCtrl, _kStatusW),
+                _readCell(context, row.phoneCtrl, _kPhoneW),
+                _readDateCell(context, row.woodworkingCtrl, _kWoodworkingW),
+                _readDateCell(context, row.metalworkingCtrl, _kMetalworkingW),
+                _readDateCell(context, row.gymWaiverCtrl, _kGymWaiverW),
+                SizedBox(
+                  width: _kActionsW,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.canEdit)
+                        IconButton(
+                          icon: Icon(Icons.edit_outlined,
+                              size: 18,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant),
+                          tooltip: 'Edit',
+                          onPressed: () => _startEdit(key),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                        ),
+                      if (widget.canEdit)
+                        IconButton(
+                          icon: Icon(Icons.delete_outline,
+                              size: 18,
+                              color: Theme.of(context).colorScheme.error),
+                          tooltip: 'Delete',
+                          onPressed: () => widget.onDelete(row),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isExpanded)
+            Container(
+              color: Theme.of(context).colorScheme.surfaceContainerLowest,
+              padding: const EdgeInsets.fromLTRB(_kExpandW, 6, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _subLabel(context, 'Street Address', 200),
+                      const SizedBox(width: 12),
+                      _subLabel(context, 'PO Box', 90),
+                      const SizedBox(width: 12),
+                      _subLabel(context, 'Email', 200),
+                      const SizedBox(width: 12),
+                      _subLabel(context, 'Date of Birth', 110),
+                      const SizedBox(width: 12),
+                      _subLabel(context, 'Emergency Contact', 180),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _readCell(context, row.streetCtrl, 200),
+                      const SizedBox(width: 12),
+                      _readCell(context, row.poBoxCtrl, 90),
+                      const SizedBox(width: 12),
+                      _readCell(context, row.emailCtrl, 200),
+                      const SizedBox(width: 12),
+                      _readDateCell(context, row.dobCtrl, 110),
+                      const SizedBox(width: 12),
+                      _readCell(context, row.emergencyCtrl, 180),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddLink(BuildContext context) {
+    return InkWell(
+      onTap: widget.onAddNew,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        child: Row(
+          children: [
+            const SizedBox(width: _kExpandW),
+            Icon(Icons.add,
+                size: 16, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 4),
+            Text(
+              'Add member',
+              style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
+      controller: _scrollController,
       scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columnSpacing: 12,
-          headingRowHeight: 40,
-          dataRowMinHeight: 44,
-          dataRowMaxHeight: 60,
-          columns: _columnLabels
-              .asMap()
-              .entries
-              .map((e) => _col(context, e.value, e.key))
-              .toList(),
-          rows: rows.map((row) => _buildRow(context, row)).toList(),
-        ),
-      ),
-    );
-  }
-
-  DataRow _buildRow(BuildContext context, _MemberRow row) {
-    Widget cell(TextEditingController ctrl, {double width = 130}) {
-      if (!canEdit) {
-        return SizedBox(
-          width: width,
-          child: Text(ctrl.text,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall),
-        );
-      }
-      return SizedBox(
-        width: width,
-        child: TextFormField(
-          controller: ctrl,
-          style: Theme.of(context).textTheme.bodySmall,
-          decoration: const InputDecoration(
-            isDense: true,
-            border: InputBorder.none,
-            contentPadding: EdgeInsets.symmetric(vertical: 4),
-          ),
-          onChanged: (_) => onChanged(),
-        ),
-      );
-    }
-
-    final isDirty = row.isDirty;
-
-    return DataRow(
-      color: WidgetStateProperty.resolveWith((states) {
-        if (isDirty) {
-          return Theme.of(context).colorScheme.tertiaryContainer.withAlpha(60);
-        }
-        return null;
-      }),
-      cells: [
-        DataCell(
-          SizedBox(
-            width: 130,
-            child: canEdit
-                ? TextFormField(
-                    controller: row.firstNameCtrl,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 4),
-                    ),
-                    onChanged: (_) => onChanged(),
-                  )
-                : Text(row.firstNameCtrl.text,
-                    overflow: TextOverflow.ellipsis,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(context),
+            if (widget.rows.isEmpty && widget.pendingRow == null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(_kExpandW + 4, 24, 16, 24),
+                child: Text('No members yet.',
                     style: Theme.of(context).textTheme.bodySmall),
-          ),
+              ),
+            ...widget.rows.map((row) => _buildRow(context, row)),
+            if (widget.pendingRow != null)
+              _buildRow(context, widget.pendingRow!, isPending: true),
+            if (widget.canEdit && widget.pendingRow == null)
+              _buildAddLink(context),
+          ],
         ),
-        DataCell(
-          SizedBox(
-            width: 140,
-            child: canEdit
-                ? TextFormField(
-                    controller: row.lastNameCtrl,
-                    focusNode: row.lastNameFocus,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 4),
-                    ),
-                    onChanged: (_) => onChanged(),
-                  )
-                : Text(row.lastNameCtrl.text,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall),
-          ),
-        ),
-        DataCell(cell(row.dateJoinedCtrl, width: 100)),
-        DataCell(cell(row.statusCtrl, width: 80)),
-        DataCell(cell(row.streetCtrl, width: 180)),
-        DataCell(cell(row.poBoxCtrl, width: 80)),
-        DataCell(cell(row.emailCtrl, width: 180)),
-        DataCell(cell(row.phoneCtrl, width: 120)),
-        DataCell(cell(row.dobCtrl, width: 100)),
-        DataCell(cell(row.emergencyCtrl, width: 160)),
-        DataCell(cell(row.woodworkingCtrl, width: 120)),
-        DataCell(cell(row.metalworkingCtrl, width: 120)),
-        DataCell(cell(row.gymWaiverCtrl, width: 100)),
-        DataCell(
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (canEdit && isDirty)
-                IconButton(
-                  icon: Icon(Icons.save_outlined,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary),
-                  tooltip: 'Save',
-                  onPressed: () => onSave(row),
-                ),
-              if (canEdit)
-                IconButton(
-                  icon: Icon(Icons.delete_outline,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.error),
-                  tooltip: 'Delete',
-                  onPressed: () => onDelete(row),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Add Member Panel ───────────────────────────────────────────────────────
-
-class _AddMemberPanel extends StatefulWidget {
-  final bool isSaving;
-  final void Function(Map<String, dynamic>) onSave;
-  final VoidCallback onCancel;
-
-  const _AddMemberPanel({
-    required this.isSaving,
-    required this.onSave,
-    required this.onCancel,
-  });
-
-  @override
-  State<_AddMemberPanel> createState() => _AddMemberPanelState();
-}
-
-class _AddMemberPanelState extends State<_AddMemberPanel> {
-  final _lastNameCtrl = TextEditingController();
-  final _firstNameCtrl = TextEditingController();
-  final _statusCtrl = TextEditingController();
-  final _streetCtrl = TextEditingController();
-  final _poBoxCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emergencyCtrl = TextEditingController();
-  final _dateJoinedCtrl = TextEditingController();
-  final _dateOfBirthCtrl = TextEditingController();
-  final _woodworkingCtrl = TextEditingController();
-  final _metalworkingCtrl = TextEditingController();
-  final _gymWaiverCtrl = TextEditingController();
-
-  DateTime? _dateJoined;
-  DateTime? _dateOfBirth;
-  DateTime? _woodworking;
-  DateTime? _metalworking;
-  DateTime? _gymWaiver;
-
-  @override
-  void dispose() {
-    _lastNameCtrl.dispose();
-    _firstNameCtrl.dispose();
-    _statusCtrl.dispose();
-    _streetCtrl.dispose();
-    _poBoxCtrl.dispose();
-    _emailCtrl.dispose();
-    _phoneCtrl.dispose();
-    _emergencyCtrl.dispose();
-    _dateJoinedCtrl.dispose();
-    _dateOfBirthCtrl.dispose();
-    _woodworkingCtrl.dispose();
-    _metalworkingCtrl.dispose();
-    _gymWaiverCtrl.dispose();
-    super.dispose();
-  }
-
-  String _fmt(DateTime? dt) {
-    if (dt == null) return '';
-    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-  }
-
-  String? _isoDate(DateTime? dt) {
-    if (dt == null) return null;
-    return '${dt.year.toString().padLeft(4, '0')}-'
-        '${dt.month.toString().padLeft(2, '0')}-'
-        '${dt.day.toString().padLeft(2, '0')}';
-  }
-
-  void _submit() {
-    if (_lastNameCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Last name is required')),
-      );
-      return;
-    }
-    widget.onSave({
-      'lastName': _lastNameCtrl.text.trim(),
-      'firstName': _firstNameCtrl.text.trim(),
-      'dateJoined': _isoDate(_dateJoined),
-      'membershipStatus':
-          _statusCtrl.text.trim().isEmpty ? null : _statusCtrl.text.trim(),
-      'streetAddress':
-          _streetCtrl.text.trim().isEmpty ? null : _streetCtrl.text.trim(),
-      'poBox': _poBoxCtrl.text.trim().isEmpty ? null : _poBoxCtrl.text.trim(),
-      'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
-      'phone': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-      'dateOfBirth': _isoDate(_dateOfBirth),
-      'emergencyContact': _emergencyCtrl.text.trim().isEmpty
-          ? null
-          : _emergencyCtrl.text.trim(),
-      'woodworkingInduction': _isoDate(_woodworking),
-      'metalworkingInduction': _isoDate(_metalworking),
-      'gymWaiver': _isoDate(_gymWaiver),
-    });
-  }
-
-  static const _dec = InputDecoration(
-    border: OutlineInputBorder(),
-    isDense: true,
-    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    floatingLabelBehavior: FloatingLabelBehavior.always,
-  );
-
-  Widget _textField(TextEditingController ctrl, String label) {
-    return TextFormField(
-      controller: ctrl,
-      enabled: !widget.isSaving,
-      style: const TextStyle(fontSize: 13),
-      decoration: _dec.copyWith(labelText: label),
-    );
-  }
-
-  Widget _dateField(
-    String label,
-    DateTime? value,
-    TextEditingController ctrl,
-    DateTime firstDate,
-    void Function(DateTime) onPicked,
-    VoidCallback onClear,
-  ) {
-    return TextFormField(
-      controller: ctrl,
-      readOnly: true,
-      enabled: !widget.isSaving,
-      style: const TextStyle(fontSize: 13),
-      decoration: _dec.copyWith(
-        labelText: label,
-        // Remove the default 36px minimum height so the suffix icon does not
-        // inflate the field beyond the height of plain text fields.
-        suffixIconConstraints: const BoxConstraints(),
-        suffixIcon: value != null
-            ? GestureDetector(
-                onTap: widget.isSaving
-                    ? null
-                    : () => setState(() {
-                          onClear();
-                          ctrl.clear();
-                        }),
-                child: const Icon(Icons.clear, size: 16),
-              )
-            : const Icon(Icons.calendar_today, size: 16),
-      ),
-      onTap: widget.isSaving
-          ? null
-          : () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: value ?? DateTime.now(),
-                firstDate: firstDate,
-                lastDate: DateTime(2060),
-              );
-              if (picked != null) {
-                setState(() {
-                  onPicked(picked);
-                  ctrl.text = _fmt(picked);
-                });
-              }
-            },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerLowest,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Text(
-                'New Member',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                onPressed: widget.isSaving ? null : widget.onCancel,
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Row 1: First Name | Last Name | Date Joined | Status
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _textField(_firstNameCtrl, 'First Name'),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _textField(_lastNameCtrl, 'Last Name *'),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 180,
-                child: _dateField(
-                  'Date Joined',
-                  _dateJoined,
-                  _dateJoinedCtrl,
-                  DateTime(2000),
-                  (d) => _dateJoined = d,
-                  () => _dateJoined = null,
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 120,
-                child: _textField(_statusCtrl, 'Status'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Row 2: Street | PO Box | Email | Phone
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 2,
-                child: _textField(_streetCtrl, 'Street Address'),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 100,
-                child: _textField(_poBoxCtrl, 'PO Box'),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _textField(_emailCtrl, 'Email'),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 140,
-                child: _textField(_phoneCtrl, 'Phone'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Row 3: Date of Birth | Emergency Contact
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 180,
-                child: _dateField(
-                  'Date of Birth',
-                  _dateOfBirth,
-                  _dateOfBirthCtrl,
-                  DateTime(1920),
-                  (d) => _dateOfBirth = d,
-                  () => _dateOfBirth = null,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _textField(_emergencyCtrl, 'Emergency Contact'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Row 4: Woodworking | Metalworking | Gym Waiver
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 180,
-                child: _dateField(
-                  'Woodworking Induction',
-                  _woodworking,
-                  _woodworkingCtrl,
-                  DateTime(2000),
-                  (d) => _woodworking = d,
-                  () => _woodworking = null,
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 200,
-                child: _dateField(
-                  'Metalworking Induction',
-                  _metalworking,
-                  _metalworkingCtrl,
-                  DateTime(2000),
-                  (d) => _metalworking = d,
-                  () => _metalworking = null,
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 160,
-                child: _dateField(
-                  'Gym Waiver',
-                  _gymWaiver,
-                  _gymWaiverCtrl,
-                  DateTime(2000),
-                  (d) => _gymWaiver = d,
-                  () => _gymWaiver = null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Buttons
-          Row(
-            children: [
-              const Spacer(),
-              OutlinedButton(
-                onPressed: widget.isSaving ? null : widget.onCancel,
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: widget.isSaving ? null : _submit,
-                child: widget.isSaving
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Save'),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

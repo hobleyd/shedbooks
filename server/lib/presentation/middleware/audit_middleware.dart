@@ -71,6 +71,8 @@ bool _shouldAudit(String method, String path, int statusCode) {
   if (path.endsWith('/admin/users')) return false;
   // parse-import only parses a CSV in memory — no data is persisted.
   if (path.endsWith('/parse-import')) return false;
+  // CardDAV reads are high-frequency and produce no data mutations.
+  if (path.startsWith('/carddav/') && method == 'PROPFIND') return false;
   // Always audit admin operations (backup/restore are sensitive reads/writes).
   if (path.contains('/admin/')) return true;
   // Audit all mutating requests on data resources.
@@ -150,6 +152,8 @@ const _tableMap = {
   'abn-lookup': 'contacts',
   'aba-sequences': 'aba_sequences',
   'budgets': 'budgets',
+  'members': 'members',
+  'carddav': 'members',
 };
 
 String _tableName(String path) {
@@ -166,7 +170,7 @@ String? _recordId(String path) {
   if (parts.length < 2) return null;
   const nonIdSegments = {
     'merge', 'effective', 'backup', 'restore', 'audit-log', 'users', 'next',
-    'confirm-import', 'gl-mappings',
+    'confirm-import', 'gl-mappings', 'import', 'members',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

@@ -21,6 +21,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../infrastructure/auth/auth0_middleware.dart';
+import '../infrastructure/auth/carddav_auth_middleware.dart';
 import '../infrastructure/auth/jwks_client.dart';
 import '../infrastructure/database/database_connection.dart';
 import '../infrastructure/encryption/field_encryptor.dart';
@@ -28,6 +29,7 @@ import '../infrastructure/repositories/postgres_aba_sequence_repository.dart';
 import '../infrastructure/repositories/postgres_audit_repository.dart';
 import '../infrastructure/repositories/postgres_bank_import_repository.dart';
 import '../infrastructure/repositories/postgres_locked_month_repository.dart';
+import '../infrastructure/repositories/postgres_member_repository.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
@@ -78,6 +80,12 @@ import '../application/budget/parse_budget_import_use_case.dart';
 import '../application/budget/save_budget_gl_mappings_use_case.dart';
 import '../application/budget/save_budget_use_case.dart';
 import '../application/users/list_active_users_use_case.dart';
+import '../application/member/create_member_use_case.dart';
+import '../application/member/delete_member_use_case.dart';
+import '../application/member/get_member_use_case.dart';
+import '../application/member/import_members_use_case.dart';
+import '../application/member/list_members_use_case.dart';
+import '../application/member/update_member_use_case.dart';
 import '../infrastructure/repositories/postgres_budget_repository.dart';
 import '../infrastructure/repositories/postgres_user_presence_repository.dart';
 import '../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
@@ -94,6 +102,8 @@ import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/stamp_aba_batch_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
 import 'handlers/aba_sequence_handler.dart';
+import 'handlers/carddav_handler.dart';
+import 'handlers/member_handler.dart';
 import 'handlers/abn_lookup_handler.dart';
 import 'handlers/bank_reconciliation_handler.dart';
 import 'handlers/bank_imports_handler.dart';
@@ -253,6 +263,23 @@ Handler buildRouter({
     save: SaveBankImportsUseCase(PostgresBankImportRepository(pool)),
   );
 
+  final memberRepository = PostgresMemberRepository(pool, fieldEncryptor);
+  final memberHandler = MemberHandler(
+    create: CreateMemberUseCase(memberRepository),
+    get: GetMemberUseCase(memberRepository),
+    list: ListMembersUseCase(memberRepository),
+    update: UpdateMemberUseCase(memberRepository),
+    delete: DeleteMemberUseCase(memberRepository),
+    import: ImportMembersUseCase(memberRepository),
+  );
+  final cardDavHandler = CardDavHandler(
+    list: ListMembersUseCase(memberRepository),
+    get: GetMemberUseCase(memberRepository),
+    create: CreateMemberUseCase(memberRepository),
+    update: UpdateMemberUseCase(memberRepository),
+    delete: DeleteMemberUseCase(memberRepository),
+  );
+
   final authMiddleware = auth0Middleware(
     auth0Domain: auth0Domain,
     audience: audience,
@@ -267,6 +294,20 @@ Handler buildRouter({
   Handler _authed(Handler inner) => Pipeline()
       .addMiddleware(authMiddleware)
       .addMiddleware(presence)
+      .addMiddleware(audit)
+      .addHandler(inner);
+
+  final cardDavAuth = cardDavAuthMiddleware(
+    auth0Domain: auth0Domain,
+    audience: audience,
+    jwksClient: jwksClient,
+  );
+
+  // CardDAV uses its own auth middleware (accepts Bearer OR Basic with JWT as
+  // password) and does not include presence tracking — it is called by sync
+  // clients, not interactive users.
+  Handler _cardDavAuthed(Handler inner) => Pipeline()
+      .addMiddleware(cardDavAuth)
       .addMiddleware(audit)
       .addHandler(inner);
 
@@ -300,8 +341,27 @@ Handler buildRouter({
         _authed(_bankReconciliationRouter(bankReconciliationHandler)))
     ..mount('/budgets',
         _authed(_budgetRouter(budgetHandler)))
+    ..mount('/members',
+        _authed(_memberRouter(memberHandler)))
     ..mount('/admin',
-        _authed(_adminRouter(backupHandler, auditHandler, usersHandler)));
+        _authed(_adminRouter(backupHandler, auditHandler, usersHandler)))
+    // CardDAV addressbook — uses separate auth (Bearer OR Basic w/ JWT password).
+    ..add('OPTIONS', '/carddav/members', _cardDavAuthed(cardDavHandler.handleOptions))
+    ..add('OPTIONS', '/carddav/members/', _cardDavAuthed(cardDavHandler.handleOptions))
+    ..add('PROPFIND', '/carddav/members', _cardDavAuthed(cardDavHandler.handlePropfind))
+    ..add('PROPFIND', '/carddav/members/', _cardDavAuthed(cardDavHandler.handlePropfind))
+    ..get('/carddav/members/<uid>',
+        (Request req, String uid) => _cardDavAuthed(
+              (r) => cardDavHandler.handleGet(r, uid),
+            )(req))
+    ..put('/carddav/members/<uid>',
+        (Request req, String uid) => _cardDavAuthed(
+              (r) => cardDavHandler.handlePut(r, uid),
+            )(req))
+    ..delete('/carddav/members/<uid>',
+        (Request req, String uid) => _cardDavAuthed(
+              (r) => cardDavHandler.handleDelete(r, uid),
+            )(req));
 
   return Pipeline()
       .addMiddleware(errorHandlerMiddleware())
@@ -463,4 +523,16 @@ Router _budgetRouter(BudgetHandler h) {
         (r) => h.handleConfirmImport(r, year),
       )(req),
     );
+}
+
+// Viewers can read; contributors and admins can write.
+// /import must be registered before /<id> to avoid being shadowed.
+Router _memberRouter(MemberHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..post('/', _role(requireContributor(), h.handleCreate))
+    ..post('/import', _role(requireContributor(), h.handleImport))
+    ..get('/<id>', h.handleGet)
+    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
 }

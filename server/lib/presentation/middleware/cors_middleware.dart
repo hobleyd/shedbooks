@@ -27,10 +27,13 @@ Middleware corsMiddleware({String allowedOrigin = '*'}) {
 
   return (Handler inner) {
     return (Request request) async {
-      if (request.method == 'OPTIONS') {
+      final isCardDav = request.requestedUri.path.startsWith('/carddav/');
+      if (request.method == 'OPTIONS' && !isCardDav) {
         return Response.ok('', headers: corsHeaders);
       }
       final response = await inner(request);
+      // Don't inject CORS headers into CardDAV responses — they confuse DAV clients.
+      if (isCardDav) return response;
       return response.change(headers: corsHeaders);
     };
   };

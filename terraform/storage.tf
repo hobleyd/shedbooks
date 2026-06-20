@@ -1,0 +1,56 @@
+# Copyright (C) 2026 David Hobley
+#
+# This file is part of Shedbooks.
+#
+# Shedbooks is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Shedbooks is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
+
+# Bucket for entity-scoped JSON backups (downloaded via the admin backup endpoint)
+resource "oci_objectstorage_bucket" "backups" {
+  compartment_id = local.compartment_id
+  namespace      = data.oci_objectstorage_namespace.ns.namespace
+  name           = "shedbooks-backups"
+  access_type    = "NoPublicAccess"
+  storage_tier   = "Standard"
+  versioning     = "Enabled"
+  freeform_tags  = local.tags
+}
+
+# General-purpose bucket for application file storage (receipts, attachments, etc.)
+resource "oci_objectstorage_bucket" "data" {
+  compartment_id = local.compartment_id
+  namespace      = data.oci_objectstorage_namespace.ns.namespace
+  name           = "shedbooks-data"
+  access_type    = "NoPublicAccess"
+  storage_tier   = "Standard"
+  versioning     = "Enabled"
+  freeform_tags  = local.tags
+}
+
+# Lifecycle policy: move objects older than 90 days to Infrequent Access in the backups bucket
+resource "oci_objectstorage_object_lifecycle_policy" "backups" {
+  namespace = data.oci_objectstorage_namespace.ns.namespace
+  bucket    = oci_objectstorage_bucket.backups.name
+
+  rules {
+    name        = "archive-old-backups"
+    action      = "INFREQUENT_ACCESS"
+    is_enabled  = true
+    time_amount = 90
+    time_unit   = "DAYS"
+
+    object_name_filter {
+      inclusion_prefixes = ["backups/"]
+    }
+  }
+}

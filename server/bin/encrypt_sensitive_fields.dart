@@ -144,6 +144,64 @@ void main() async {
       log.info('Encrypted entity_details row $id');
     }
 
+    // 4. members
+    final mRows = await pool.execute(
+      'SELECT id, street_address, email, phone, date_of_birth, emergency_contact '
+      'FROM members WHERE deleted_at IS NULL',
+    );
+    log.info('Inspecting ${mRows.length} members rows');
+    for (final row in mRows) {
+      final map = row.toColumnMap();
+      final id = map['id'].toString();
+      final streetAddress = map['street_address'] as String?;
+      final email = map['email'] as String?;
+      final phone = map['phone'] as String?;
+      final dob = map['date_of_birth'] as String?;
+      final emergencyContact = map['emergency_contact'] as String?;
+
+      final alreadyEncrypted =
+          (streetAddress == null || streetAddress.startsWith('enc:')) &&
+          (email == null || email.startsWith('enc:')) &&
+          (phone == null || phone.startsWith('enc:')) &&
+          (dob == null || dob.startsWith('enc:')) &&
+          (emergencyContact == null || emergencyContact.startsWith('enc:'));
+
+      if (alreadyEncrypted) continue;
+
+      await pool.execute(
+        Sql.named('''
+          UPDATE members
+          SET street_address    = @streetAddress,
+              email             = @email,
+              phone             = @phone,
+              date_of_birth     = @dob,
+              emergency_contact = @emergencyContact,
+              updated_at        = NOW()
+          WHERE id = @id::uuid
+        '''),
+        parameters: {
+          'id': id,
+          'streetAddress': (streetAddress == null || streetAddress.startsWith('enc:'))
+              ? streetAddress
+              : enc.encrypt(streetAddress),
+          'email': (email == null || email.startsWith('enc:'))
+              ? email
+              : enc.encrypt(email),
+          'phone': (phone == null || phone.startsWith('enc:'))
+              ? phone
+              : enc.encrypt(phone),
+          'dob': (dob == null || dob.startsWith('enc:'))
+              ? dob
+              : enc.encrypt(dob),
+          'emergencyContact': (emergencyContact == null ||
+                  emergencyContact.startsWith('enc:'))
+              ? emergencyContact
+              : enc.encrypt(emergencyContact),
+        },
+      );
+      log.info('Encrypted members row $id');
+    }
+
     log.info('Done');
   } finally {
     await DatabaseConnection.dispose();
