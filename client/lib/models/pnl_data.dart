@@ -55,7 +55,7 @@ class PnLData {
         final GeneralLedgerEntry? gl = glMap[t.generalLedgerId];
         if (gl == null) continue;
         final GlLine line = map[gl.id] ??= GlLine(gl);
-        line.totalCents += t.totalAmount;
+        line.totalCents += credits ? t.totalAmount : (gl.gstApplicable ? t.amount : t.totalAmount);
         line.transactions.add(t);
       }
       return map.values.toList()
