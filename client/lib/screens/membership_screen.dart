@@ -1053,17 +1053,18 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
       style: const TextStyle(fontSize: 13),
       decoration: _dec.copyWith(
         labelText: label,
+        // Remove the default 36px minimum height so the suffix icon does not
+        // inflate the field beyond the height of plain text fields.
+        suffixIconConstraints: const BoxConstraints(),
         suffixIcon: value != null
-            ? IconButton(
-                icon: const Icon(Icons.clear, size: 16),
-                onPressed: widget.isSaving
+            ? GestureDetector(
+                onTap: widget.isSaving
                     ? null
                     : () => setState(() {
                           onClear();
                           ctrl.clear();
                         }),
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
+                child: const Icon(Icons.clear, size: 16),
               )
             : const Icon(Icons.calendar_today, size: 16),
       ),
