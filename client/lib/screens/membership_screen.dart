@@ -27,6 +27,29 @@ import '../models/member_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 
+// ── Date format helpers ────────────────────────────────────────────────────
+
+/// Converts ISO date (YYYY-MM-DD) to display format (DD/MM/YYYY).
+String _isoToDisplay(String iso) {
+  if (iso.isEmpty) return '';
+  final parts = iso.split('-');
+  if (parts.length == 3) return '${parts[2]}/${parts[1]}/${parts[0]}';
+  return iso;
+}
+
+/// Converts display format (DD/MM/YYYY) back to ISO (YYYY-MM-DD) for the API.
+String _displayToIso(String display) {
+  if (display.isEmpty) return '';
+  final parts = display.split('/');
+  if (parts.length == 3) return '${parts[2]}-${parts[1]}-${parts[0]}';
+  return display;
+}
+
+String _isoDate(DateTime dt) =>
+    '${dt.year.toString().padLeft(4, '0')}-'
+    '${dt.month.toString().padLeft(2, '0')}-'
+    '${dt.day.toString().padLeft(2, '0')}';
+
 /// A row in the membership table — wraps a [MemberEntry] with editing state.
 class _MemberRow {
   final String? id;
@@ -96,36 +119,40 @@ class _MemberRow {
       : id = e.id,
         lastNameCtrl = TextEditingController(text: e.lastName),
         firstNameCtrl = TextEditingController(text: e.firstName),
-        dateJoinedCtrl = TextEditingController(text: e.dateJoined ?? ''),
+        // Date controllers store DD/MM/YYYY for display; toRequestJson converts back.
+        dateJoinedCtrl =
+            TextEditingController(text: _isoToDisplay(e.dateJoined ?? '')),
         statusCtrl =
             TextEditingController(text: e.membershipStatus ?? ''),
         streetCtrl = TextEditingController(text: e.streetAddress ?? ''),
         poBoxCtrl = TextEditingController(text: e.poBox ?? ''),
         emailCtrl = TextEditingController(text: e.email ?? ''),
         phoneCtrl = TextEditingController(text: e.phone ?? ''),
-        dobCtrl = TextEditingController(text: e.dateOfBirth ?? ''),
+        dobCtrl =
+            TextEditingController(text: _isoToDisplay(e.dateOfBirth ?? '')),
         emergencyCtrl =
             TextEditingController(text: e.emergencyContact ?? ''),
-        woodworkingCtrl =
-            TextEditingController(text: e.woodworkingInduction ?? ''),
-        metalworkingCtrl =
-            TextEditingController(text: e.metalworkingInduction ?? ''),
-        gymWaiverCtrl = TextEditingController(text: e.gymWaiver ?? ''),
+        woodworkingCtrl = TextEditingController(
+            text: _isoToDisplay(e.woodworkingInduction ?? '')),
+        metalworkingCtrl = TextEditingController(
+            text: _isoToDisplay(e.metalworkingInduction ?? '')),
+        gymWaiverCtrl =
+            TextEditingController(text: _isoToDisplay(e.gymWaiver ?? '')),
         firstNameFocus = FocusNode(),
         lastNameFocus = FocusNode(),
         _origLastName = e.lastName,
         _origFirstName = e.firstName,
-        _origDateJoined = e.dateJoined ?? '',
+        _origDateJoined = _isoToDisplay(e.dateJoined ?? ''),
         _origStatus = e.membershipStatus ?? '',
         _origStreet = e.streetAddress ?? '',
         _origPoBox = e.poBox ?? '',
         _origEmail = e.email ?? '',
         _origPhone = e.phone ?? '',
-        _origDob = e.dateOfBirth ?? '',
+        _origDob = _isoToDisplay(e.dateOfBirth ?? ''),
         _origEmergency = e.emergencyContact ?? '',
-        _origWoodworking = e.woodworkingInduction ?? '',
-        _origMetalworking = e.metalworkingInduction ?? '',
-        _origGymWaiver = e.gymWaiver ?? '';
+        _origWoodworking = _isoToDisplay(e.woodworkingInduction ?? ''),
+        _origMetalworking = _isoToDisplay(e.metalworkingInduction ?? ''),
+        _origGymWaiver = _isoToDisplay(e.gymWaiver ?? '');
 
   bool get isDirty =>
       lastNameCtrl.text != _origLastName ||
@@ -147,7 +174,7 @@ class _MemberRow {
         'firstName': firstNameCtrl.text.trim(),
         'dateJoined': dateJoinedCtrl.text.trim().isEmpty
             ? null
-            : dateJoinedCtrl.text.trim(),
+            : _displayToIso(dateJoinedCtrl.text.trim()),
         'membershipStatus': statusCtrl.text.trim().isEmpty
             ? null
             : statusCtrl.text.trim(),
@@ -156,19 +183,21 @@ class _MemberRow {
         'poBox': poBoxCtrl.text.trim().isEmpty ? null : poBoxCtrl.text.trim(),
         'email': emailCtrl.text.trim().isEmpty ? null : emailCtrl.text.trim(),
         'phone': phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
-        'dateOfBirth':
-            dobCtrl.text.trim().isEmpty ? null : dobCtrl.text.trim(),
+        'dateOfBirth': dobCtrl.text.trim().isEmpty
+            ? null
+            : _displayToIso(dobCtrl.text.trim()),
         'emergencyContact': emergencyCtrl.text.trim().isEmpty
             ? null
             : emergencyCtrl.text.trim(),
         'woodworkingInduction': woodworkingCtrl.text.trim().isEmpty
             ? null
-            : woodworkingCtrl.text.trim(),
+            : _displayToIso(woodworkingCtrl.text.trim()),
         'metalworkingInduction': metalworkingCtrl.text.trim().isEmpty
             ? null
-            : metalworkingCtrl.text.trim(),
-        'gymWaiver':
-            gymWaiverCtrl.text.trim().isEmpty ? null : gymWaiverCtrl.text.trim(),
+            : _displayToIso(metalworkingCtrl.text.trim()),
+        'gymWaiver': gymWaiverCtrl.text.trim().isEmpty
+            ? null
+            : _displayToIso(gymWaiverCtrl.text.trim()),
       };
 
   void reset() {
@@ -751,6 +780,19 @@ const double _kMetalworkingW = 130;
 const double _kGymWaiverW = 100;
 const double _kActionsW = 80;
 
+// Minimum width of the edit panel — equals the sum of all column widths so the
+// panel always spans the full table regardless of content width.
+const double _kTableMinWidth = _kExpandW +
+    _kFirstNameW +
+    _kLastNameW +
+    _kDateJoinedW +
+    _kStatusW +
+    _kPhoneW +
+    _kWoodworkingW +
+    _kMetalworkingW +
+    _kGymWaiverW +
+    _kActionsW; // 1022
+
 class _MemberTable extends StatefulWidget {
   final List<_MemberRow> rows;
   final bool canEdit;
@@ -855,6 +897,46 @@ class _MemberTableState extends State<_MemberTable> {
     );
   }
 
+  /// Splits a phone field into at most two numbers for stacked display.
+  ///
+  /// Strategy: split on 2+ spaces first; if that yields two parts, done.
+  /// Otherwise count digits — ≤ 11 means a single number (spaces within it);
+  /// > 11 means two numbers, so split the space-delimited tokens in half.
+  static List<String> _splitPhone(String value) {
+    if (value.isEmpty) return [value];
+    final byDoubleSpace = value.split(RegExp(r'\s{2,}'));
+    if (byDoubleSpace.length == 2) return byDoubleSpace;
+    final digitCount = value.replaceAll(RegExp(r'\D'), '').length;
+    if (digitCount <= 11) return [value];
+    final tokens = value.split(' ');
+    final mid = tokens.length ~/ 2;
+    return [tokens.sublist(0, mid).join(' '), tokens.sublist(mid).join(' ')];
+  }
+
+  Widget _readPhoneCell(BuildContext context, TextEditingController ctrl, double width) {
+    if (ctrl.text.isEmpty) return _readCell(context, ctrl, width);
+    final numbers = _splitPhone(ctrl.text);
+    if (numbers.length == 1) return _readCell(context, ctrl, width);
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: numbers
+              .map((n) => Text(
+                    n,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
   Widget _subLabel(BuildContext context, String label, double width) {
     return SizedBox(
       width: width,
@@ -874,23 +956,18 @@ class _MemberTableState extends State<_MemberTable> {
 
   // ── Date cell helpers ──────────────────────────────────────────────────────
 
-  static String _formatDate(String iso) {
-    if (iso.isEmpty) return '';
-    final parts = iso.split('-');
-    if (parts.length == 3) return '${parts[2]}/${parts[1]}/${parts[0]}';
-    return iso;
-  }
-
-  static String _isoDate(DateTime dt) =>
-      '${dt.year.toString().padLeft(4, '0')}-'
-      '${dt.month.toString().padLeft(2, '0')}-'
-      '${dt.day.toString().padLeft(2, '0')}';
+  // Date controllers hold DD/MM/YYYY; _isoToDisplay / _displayToIso (top-level)
+  // handle conversion to/from ISO at load and save time.
 
   Future<void> _pickDate(TextEditingController ctrl) async {
     DateTime? initial;
     if (ctrl.text.isNotEmpty) {
       try {
-        initial = DateTime.parse(ctrl.text);
+        final parts = ctrl.text.split('/');
+        if (parts.length == 3) {
+          initial = DateTime(
+              int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+        }
       } catch (_) {}
     }
     final picked = await showDatePicker(
@@ -900,7 +977,7 @@ class _MemberTableState extends State<_MemberTable> {
       lastDate: DateTime(2060),
     );
     if (picked != null && mounted) {
-      ctrl.text = _isoDate(picked);
+      ctrl.text = _isoToDisplay(_isoDate(picked));
       widget.onChanged();
       setState(() {});
     }
@@ -914,13 +991,12 @@ class _MemberTableState extends State<_MemberTable> {
 
   Widget _readDateCell(
       BuildContext context, TextEditingController ctrl, double width) {
-    final formatted = _formatDate(ctrl.text);
     return SizedBox(
       width: width,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Text(
-          formatted.isEmpty ? '—' : formatted,
+          ctrl.text.isEmpty ? '—' : ctrl.text,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -932,24 +1008,34 @@ class _MemberTableState extends State<_MemberTable> {
 
   Widget _buildDateField(BuildContext context, String label,
       TextEditingController ctrl, InputDecoration baseDec) {
-    final formatted = _formatDate(ctrl.text);
     final hasValue = ctrl.text.isNotEmpty;
-    return GestureDetector(
+    return InkWell(
       onTap: () => _pickDate(ctrl),
       child: InputDecorator(
         isEmpty: !hasValue,
-        decoration: baseDec.copyWith(
-          labelText: label,
-          suffixIcon: hasValue
-              ? GestureDetector(
-                  onTap: () => _clearDate(ctrl),
-                  child: const Icon(Icons.clear, size: 18),
-                )
-              : const Icon(Icons.calendar_today_outlined, size: 18),
-        ),
-        child: Text(
-          formatted,
-          style: Theme.of(context).textTheme.bodyMedium,
+        decoration: baseDec.copyWith(labelText: label),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                ctrl.text,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: hasValue ? () => _clearDate(ctrl) : null,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Icon(
+                  hasValue ? Icons.clear : Icons.calendar_today_outlined,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -979,7 +1065,11 @@ class _MemberTableState extends State<_MemberTable> {
     Widget df(String label, TextEditingController ctrl) =>
         _buildDateField(context, label, ctrl, baseDec);
 
+    // Minimum inner width so the panel spans the full table (32px = L+R padding).
+    const double innerW = _kTableMinWidth - 32;
+
     return Container(
+      constraints: const BoxConstraints(minWidth: _kTableMinWidth),
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
@@ -996,24 +1086,24 @@ class _MemberTableState extends State<_MemberTable> {
                 child: tf('Last Name', row.lastNameCtrl,
                     focusNode: row.lastNameFocus)),
             const SizedBox(width: 8),
-            SizedBox(
-                width: _kDateJoinedW + 16,
-                child: df('Date Joined', row.dateJoinedCtrl)),
+            // 140px minimum so "DD/MM/YYYY" + icon never wraps.
+            SizedBox(width: 140, child: df('Date Joined', row.dateJoinedCtrl)),
             const SizedBox(width: 8),
             SizedBox(width: _kStatusW + 8, child: tf('Status', row.statusCtrl)),
             const SizedBox(width: 8),
             SizedBox(width: _kPhoneW + 8, child: tf('Phone', row.phoneCtrl)),
+            const SizedBox(width: 8),
+            SizedBox(width: 140, child: df('Date of Birth', row.dobCtrl)),
           ]),
           const SizedBox(height: 8),
+          // Street and Email expand to fill innerW; PO Box and Emergency stay fixed.
+          // 300 + 8 + 90 + 8 + 396 + 8 + 180 = 990 (innerW).
           Row(children: [
-            SizedBox(width: 200, child: tf('Street Address', row.streetCtrl)),
+            SizedBox(width: 300, child: tf('Street Address', row.streetCtrl)),
             const SizedBox(width: 8),
             SizedBox(width: 90, child: tf('PO Box', row.poBoxCtrl)),
             const SizedBox(width: 8),
-            SizedBox(width: 200, child: tf('Email', row.emailCtrl)),
-            const SizedBox(width: 8),
-            SizedBox(
-                width: 120, child: df('Date of Birth', row.dobCtrl)),
+            SizedBox(width: 396, child: tf('Email', row.emailCtrl)),
             const SizedBox(width: 8),
             SizedBox(
                 width: 180,
@@ -1021,47 +1111,45 @@ class _MemberTableState extends State<_MemberTable> {
           ]),
           const SizedBox(height: 8),
           Row(children: [
-            SizedBox(
-                width: _kWoodworkingW + 16,
-                child: df('Woodworking Induction', row.woodworkingCtrl)),
+            SizedBox(width: 150, child: df('Woodworking Induction', row.woodworkingCtrl)),
             const SizedBox(width: 8),
-            SizedBox(
-                width: _kMetalworkingW + 16,
-                child: df('Metalworking Induction', row.metalworkingCtrl)),
+            SizedBox(width: 150, child: df('Metalworking Induction', row.metalworkingCtrl)),
             const SizedBox(width: 8),
-            SizedBox(
-                width: _kGymWaiverW + 16,
-                child: df('Gym Waiver', row.gymWaiverCtrl)),
+            SizedBox(width: 140, child: df('Gym Waiver', row.gymWaiverCtrl)),
           ]),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              FilledButton(
-                onPressed: isPending
-                    ? () => widget.onSaveNew?.call(row)
-                    : () => _saveEdit(row, key),
-                child: const Text('Save'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: isPending
-                    ? widget.onCancelNew
-                    : () => _cancelEdit(row, key),
-                child: const Text('Cancel'),
-              ),
-              if (!isPending) ...[
-                const Spacer(),
-                TextButton.icon(
-                  icon: Icon(Icons.delete_outline,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.error),
-                  label: Text('Delete',
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
-                  onPressed: () => widget.onDelete(row),
+          // Bounded SizedBox so Spacer works inside an unbounded horizontal scroll.
+          SizedBox(
+            width: innerW,
+            child: Row(
+              children: [
+                FilledButton(
+                  onPressed: isPending
+                      ? () => widget.onSaveNew?.call(row)
+                      : () => _saveEdit(row, key),
+                  child: const Text('Save'),
                 ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: isPending
+                      ? widget.onCancelNew
+                      : () => _cancelEdit(row, key),
+                  child: const Text('Cancel'),
+                ),
+                if (!isPending) ...[
+                  const Spacer(),
+                  TextButton.icon(
+                    icon: Icon(Icons.delete_outline,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.error),
+                    label: Text('Delete',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                    onPressed: () => widget.onDelete(row),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ],
       ),
@@ -1191,7 +1279,7 @@ class _MemberTableState extends State<_MemberTable> {
                 _readCell(context, row.lastNameCtrl, _kLastNameW),
                 _readCell(context, row.dateJoinedCtrl, _kDateJoinedW),
                 _readCell(context, row.statusCtrl, _kStatusW),
-                _readCell(context, row.phoneCtrl, _kPhoneW),
+                _readPhoneCell(context, row.phoneCtrl, _kPhoneW),
                 _readDateCell(context, row.woodworkingCtrl, _kWoodworkingW),
                 _readDateCell(context, row.metalworkingCtrl, _kMetalworkingW),
                 _readDateCell(context, row.gymWaiverCtrl, _kGymWaiverW),
