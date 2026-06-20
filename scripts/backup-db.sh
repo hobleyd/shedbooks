@@ -18,12 +18,13 @@
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -ne 2 ]]; then
   echo "Usage: $0 <backup-folder>" >&2
   exit 1
 fi
 
-BACKUP_DIR="$1"
+CONTAINER="$1"
+BACKUP_DIR="$2"
 
 if [[ ! -d "$BACKUP_DIR" ]]; then
   echo "Error: '$BACKUP_DIR' is not a directory." >&2
@@ -47,7 +48,7 @@ BACKUP_FILE="$BACKUP_DIR/shedbooks-$TIMESTAMP.bak"
 
 echo "Backing up database to $BACKUP_FILE ..."
 
-docker exec shedbooks-db-1 \
+docker exec $CONTAINER \
   env PGPASSWORD="$DB_PASSWORD" \
   pg_dump -U shedbooks -d shedbooks -F c \
   > "$BACKUP_FILE"
