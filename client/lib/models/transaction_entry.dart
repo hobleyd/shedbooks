@@ -29,6 +29,7 @@ class TransactionEntry {
   final String transactionDate; // 'YYYY-MM-DD'
   final bool bankMatched;
   final bool isCash;
+  final String? abaBatchName;
 
   const TransactionEntry({
     required this.id,
@@ -43,6 +44,7 @@ class TransactionEntry {
     required this.transactionDate,
     this.bankMatched = false,
     this.isCash = false,
+    this.abaBatchName,
   });
 
   factory TransactionEntry.fromJson(Map<String, dynamic> json) => TransactionEntry(
@@ -58,6 +60,7 @@ class TransactionEntry {
         transactionDate: json['transactionDate'] as String,
         bankMatched: (json['bankMatched'] as bool?) ?? false,
         isCash: (json['isCash'] as bool?) ?? false,
+        abaBatchName: json['abaBatchName'] as String?,
       );
 
   bool get isCredit => transactionType == 'credit';
@@ -75,5 +78,6 @@ class TransactionEntry {
         transactionDate: transactionDate,
         bankMatched: bankMatched ?? this.bankMatched,
         isCash: isCash,
+        abaBatchName: abaBatchName,
       );
 }

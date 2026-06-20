@@ -314,18 +314,32 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       final sequence = seqJson['sequence'] as int;
 
       final now = DateTime.now();
+      final seq = sequence.toString().padLeft(3, '0');
+      final wmsName =
+          'WMS${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}$seq';
       final abaContent = _generateAba(selectedTxns, senderAccount, sequence);
       final bytes = utf8.encode(abaContent);
       final blob = web.Blob(<JSAny>[bytes.toJS].toJS);
       final url = web.URL.createObjectURL(blob);
-      final seq = sequence.toString().padLeft(3, '0');
       (web.document.createElement('a') as web.HTMLAnchorElement)
         ..href = url
-        ..download = 'WMS${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}$seq.aba'
+        ..download = '$wmsName.aba'
         ..click();
       web.URL.revokeObjectURL(url);
 
-      _showSnackbar('ABA file generated.');
+      // Record the batch name against each transaction for auto-matching during import.
+      final batchRes = await apiClient.post(
+        '/transactions/aba-batch',
+        jsonEncode({
+          'transactionIds': selectedTxns.map((t) => t.id).toList(),
+          'batchName': wmsName,
+        }),
+      );
+      if (batchRes.statusCode != 204) {
+        _showSnackbar('ABA file generated but batch name could not be recorded.');
+      } else {
+        _showSnackbar('ABA file generated.');
+      }
       setState(() => _selectedTransactionIds.clear());
     } catch (e) {
       _showSnackbar('Failed to generate ABA: $e');

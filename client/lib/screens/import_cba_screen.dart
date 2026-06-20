@@ -333,7 +333,27 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       return;
     }
 
-    // No P-numbers — fall back to date + amount.
+    // No P-numbers — check for a WMS ABA batch name in the description.
+    final batchName = _extractBatchName(row.description);
+    if (batchName != null) {
+      final found = _allTransactions
+          .where((t) =>
+              !t.bankMatched &&
+              !_reservedIds.contains(t.id) &&
+              t.transactionType == 'debit' &&
+              t.abaBatchName == batchName)
+          .toList();
+      if (found.isNotEmpty) {
+        final subset = findMatchingSubset(found, row.amountCents);
+        row.matched = subset ?? found;
+        row.status = subset != null
+            ? BankMatchStatus.autoMatched
+            : BankMatchStatus.amountMismatch;
+        return;
+      }
+    }
+
+    // Fall back to date + amount.
     final candidates = _allTransactions
         .where((t) =>
             !t.bankMatched &&
@@ -640,6 +660,14 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
+  static final _batchNamePattern = RegExp(r'WMS\d{9}');
+
+  /// Extracts a WMS ABA batch name (e.g. WMS260620001) from a bank statement description.
+  static String? _extractBatchName(String description) {
+    final match = _batchNamePattern.firstMatch(description);
+    return match?[0];
+  }
+
   /// Returns the YYYY-MM prefix of a YYYY-MM-DD date string.
   static String _yearMonth(String date) => date.length >= 7 ? date.substring(0, 7) : date;
 
@@ -856,7 +884,13 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
 
   Widget _actionCell(_CbaRow row) {
     if (row.status == BankMatchStatus.alreadyImported) {
-      return const SizedBox.shrink();
+      // Dedup key exists but no transaction was created — let the user create one.
+      return IconButton(
+        icon: const Icon(Icons.add_circle_outline, size: 18),
+        tooltip: 'Create missing transaction',
+        onPressed: _saving ? null : () => _openCreateTransaction(row),
+        color: Colors.teal,
+      );
     }
 
     if (row.status == BankMatchStatus.skipped) {

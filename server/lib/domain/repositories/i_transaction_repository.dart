@@ -76,4 +76,11 @@ abstract interface class ITransactionRepository {
   /// Marks all transactions in [ids] as bank-matched within [entityId].
   /// Silently ignores IDs that do not exist or are already matched.
   Future<void> bankMatch(List<String> ids, {required String entityId});
+
+  /// Stamps [batchName] on all transactions in [ids] within [entityId].
+  Future<void> stampAbaBatch(
+    List<String> ids,
+    String batchName, {
+    required String entityId,
+  });
 }

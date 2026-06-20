@@ -62,6 +62,9 @@ class Transaction {
   /// Whether this transaction was recorded as a cash payment (bypasses bank rec).
   final bool isCash;
 
+  /// The WMS ABA batch name this transaction was included in (e.g. WMS260620001), if any.
+  final String? abaBatchName;
+
   const Transaction({
     required this.id,
     required this.contactId,
@@ -77,6 +80,7 @@ class Transaction {
     this.deletedAt,
     this.bankMatched = false,
     this.isCash = false,
+    this.abaBatchName,
   });
 
   bool get isDeleted => deletedAt != null;

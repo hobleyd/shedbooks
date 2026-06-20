@@ -26,6 +26,7 @@ import '../../application/transaction/create_transaction_use_case.dart';
 import '../../application/transaction/delete_transaction_use_case.dart';
 import '../../application/transaction/get_transaction_use_case.dart';
 import '../../application/transaction/list_transactions_use_case.dart';
+import '../../application/transaction/stamp_aba_batch_use_case.dart';
 import '../../application/transaction/update_transaction_use_case.dart';
 import '../../domain/entities/transaction.dart';
 import '../../domain/exceptions/locked_month_exception.dart';
@@ -33,6 +34,7 @@ import '../../domain/exceptions/transaction_exception.dart';
 import '../audit_changes.dart';
 import '../dto/bank_match_request.dart';
 import '../dto/create_transaction_request.dart';
+import '../dto/stamp_aba_batch_request.dart';
 import '../dto/transaction_response.dart';
 import '../dto/update_transaction_request.dart';
 import 'handler_diff.dart';
@@ -45,6 +47,7 @@ class TransactionHandler {
   final UpdateTransactionUseCase _update;
   final DeleteTransactionUseCase _delete;
   final BankMatchTransactionsUseCase _bankMatch;
+  final StampAbaBatchUseCase _stampAbaBatch;
   final GetContactUseCase _getContact;
   final GetGeneralLedgerUseCase _getGeneralLedger;
 
@@ -55,6 +58,7 @@ class TransactionHandler {
     required UpdateTransactionUseCase update,
     required DeleteTransactionUseCase delete,
     required BankMatchTransactionsUseCase bankMatch,
+    required StampAbaBatchUseCase stampAbaBatch,
     required GetContactUseCase getContact,
     required GetGeneralLedgerUseCase getGeneralLedger,
   })  : _create = create,
@@ -63,6 +67,7 @@ class TransactionHandler {
         _update = update,
         _delete = delete,
         _bankMatch = bankMatch,
+        _stampAbaBatch = stampAbaBatch,
         _getContact = getContact,
         _getGeneralLedger = getGeneralLedger;
 
@@ -268,6 +273,43 @@ class TransactionHandler {
     if (matched.isNotEmpty) {
       _auditChanges(request)?.set({'matched': matched});
     }
+
+    return Response(204);
+  }
+
+  /// POST /transactions/aba-batch
+  Future<Response> handleStampAbaBatch(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final Map<String, dynamic> json;
+    try {
+      json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    final StampAbaBatchRequest dto;
+    try {
+      dto = StampAbaBatchRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    }
+
+    try {
+      await _stampAbaBatch.execute(
+        ids: dto.transactionIds,
+        batchName: dto.batchName,
+        entityId: entityId,
+      );
+    } catch (e) {
+      return _serverError('Failed to stamp ABA batch: $e');
+    }
+
+    _auditChanges(request)?.set({
+      'abaBatch': dto.batchName,
+      'transactionCount': dto.transactionIds.length,
+    });
 
     return Response(204);
   }

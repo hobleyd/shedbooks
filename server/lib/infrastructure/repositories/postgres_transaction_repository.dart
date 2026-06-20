@@ -61,7 +61,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at, bank_matched, is_cash
+            created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
         '''),
         parameters: {
           'id': id,
@@ -91,7 +91,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched, is_cash
+          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
         FROM transactions
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -111,7 +111,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched, is_cash
+          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
         FROM transactions
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -159,7 +159,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at, bank_matched, is_cash
+            created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
         '''),
         parameters: {
           'id': id,
@@ -305,6 +305,31 @@ class PostgresTransactionRepository implements ITransactionRepository {
       deletedAt: row['deleted_at'] as DateTime?,
       bankMatched: row['bank_matched'] as bool? ?? false,
       isCash: row['is_cash'] as bool? ?? false,
+      abaBatchName: row['aba_batch_name'] as String?,
     );
+  }
+
+  @override
+  Future<void> stampAbaBatch(
+    List<String> ids,
+    String batchName, {
+    required String entityId,
+  }) async {
+    if (ids.isEmpty) return;
+    await _pool.runTx((tx) async {
+      for (final id in ids) {
+        await tx.execute(
+          Sql.named('''
+            UPDATE transactions
+            SET aba_batch_name = @batchName,
+                updated_at     = NOW()
+            WHERE id = @id::uuid
+              AND entity_id = @entityId
+              AND deleted_at IS NULL
+          '''),
+          parameters: {'id': id, 'entityId': entityId, 'batchName': batchName},
+        );
+      }
+    });
   }
 }

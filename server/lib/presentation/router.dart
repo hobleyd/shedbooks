@@ -91,6 +91,7 @@ import '../application/transaction/create_transaction_use_case.dart';
 import '../application/transaction/delete_transaction_use_case.dart';
 import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
+import '../application/transaction/stamp_aba_batch_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
 import 'handlers/aba_sequence_handler.dart';
 import 'handlers/abn_lookup_handler.dart';
@@ -170,6 +171,7 @@ Handler buildRouter({
     update: UpdateTransactionUseCase(transactionRepository, lockedMonthRepository),
     delete: DeleteTransactionUseCase(transactionRepository, lockedMonthRepository),
     bankMatch: BankMatchTransactionsUseCase(transactionRepository),
+    stampAbaBatch: StampAbaBatchUseCase(transactionRepository),
     getContact: GetContactUseCase(contactRepository),
     getGeneralLedger: GetGeneralLedgerUseCase(generalLedgerRepository),
   );
@@ -331,8 +333,9 @@ Router _transactionRouter(TransactionHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireContributor(), h.handleCreate))
-    // /bank-match must be registered before /<id> to avoid being shadowed
+    // Fixed paths must be registered before /<id> to avoid being shadowed.
     ..post('/bank-match', _role(requireContributor(), h.handleBankMatch))
+    ..post('/aba-batch', _role(requireContributor(), h.handleStampAbaBatch))
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
