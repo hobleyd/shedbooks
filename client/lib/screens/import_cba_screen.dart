@@ -315,12 +315,18 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           .toList();
 
       if (found.isEmpty) {
-        final alreadyMatched = _allTransactions.any((t) =>
-            t.bankMatched &&
-            t.transactionType == 'debit' &&
-            row.parsedReceipts.contains(t.receiptNumber));
+        final alreadyMatchedList = _allTransactions
+            .where((t) =>
+                t.bankMatched &&
+                t.transactionType == 'debit' &&
+                row.parsedReceipts.contains(t.receiptNumber))
+            .toList();
+        final alreadyMatchedTotal =
+            alreadyMatchedList.fold(0, (int s, t) => s + t.totalAmount);
         row.status =
-            alreadyMatched ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched;
+            (alreadyMatchedList.isNotEmpty && alreadyMatchedTotal == row.amountCents)
+                ? BankMatchStatus.alreadyImported
+                : BankMatchStatus.unmatched;
         row.matched = [];
         return;
       }
@@ -408,11 +414,15 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       }
 
       // No un-matched transaction for receipt — check if already bank-matched.
-      final alreadyMatchedByReceipt = _allTransactions.any((t) =>
-          t.bankMatched &&
-          t.transactionType == 'credit' &&
-          row.parsedReceipts.contains(t.receiptNumber));
-      if (alreadyMatchedByReceipt) {
+      final alreadyMatchedByReceipt = _allTransactions
+          .where((t) =>
+              t.bankMatched &&
+              t.transactionType == 'credit' &&
+              row.parsedReceipts.contains(t.receiptNumber))
+          .toList();
+      final alreadyMatchedTotal =
+          alreadyMatchedByReceipt.fold(0, (int s, t) => s + t.totalAmount);
+      if (alreadyMatchedByReceipt.isNotEmpty && alreadyMatchedTotal == row.amountCents) {
         row.status = BankMatchStatus.alreadyImported;
         row.matched = [];
         return;
