@@ -19,6 +19,7 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_state.dart';
 import '../models/contact_entry.dart';
+import '../models/gl_pair_filter.dart';
 import '../screens/app_shell.dart';
 import '../screens/audit_screen.dart';
 import '../screens/backup_screen.dart';
@@ -108,9 +109,13 @@ GoRouter createRouter(AuthState authState) {
           StatefulShellBranch(routes: [
             GoRoute(
               path: '/transactions',
-              builder: (context, state) => TransactionsScreen(
-                initialContact: state.extra as ContactEntry?,
-              ),
+              builder: (context, state) {
+                final extra = state.extra;
+                return TransactionsScreen(
+                  initialContact: extra is ContactEntry ? extra : null,
+                  initialGlPair: extra is GlPairFilter ? extra : null,
+                );
+              },
             ),
           ]),
           StatefulShellBranch(routes: [

@@ -29,6 +29,7 @@ import '../models/bank_account_entry.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/gl_pair_filter.dart';
 import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
@@ -40,8 +41,9 @@ import '../widgets/transaction_receipt_pdf.dart';
 /// Entry screen for creating transactions, with a month-view list above the form.
 class TransactionsScreen extends StatefulWidget {
   final ContactEntry? initialContact;
+  final GlPairFilter? initialGlPair;
 
-  const TransactionsScreen({super.key, this.initialContact});
+  const TransactionsScreen({super.key, this.initialContact, this.initialGlPair});
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -67,8 +69,9 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   late DateTime _viewMonth;
 
-  // ── Contact search / year-view state ───────────────────────────────────────
+  // ── Contact / GL search / year-view state ─────────────────────────────────
   ContactEntry? _searchContact;
+  GlPairFilter? _searchGlPair;
   int _searchYear = DateTime.now().year;
   int _searchResetKey = 0;
 
@@ -90,6 +93,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     super.initState();
     final now = DateTime.now();
     _viewMonth = DateTime(now.year, now.month);
+    final glPair = widget.initialGlPair;
     final startOnMoneyOut = widget.initialContact != null;
     _tabController = TabController(
       length: 2,
@@ -100,6 +104,10 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       _searchContact = widget.initialContact;
       _searchYear = now.year;
     }
+    if (glPair != null) {
+      _searchGlPair = glPair;
+      _searchYear = now.year;
+    }
     _load();
   }
 
@@ -107,16 +115,27 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   void didUpdateWidget(covariant TransactionsScreen old) {
     super.didUpdateWidget(old);
     // With state retention, the existing State is reused when the user
-    // re-navigates to /transactions. If a different contact arrives via
-    // `extra`, switch the search filter to that contact and jump to the
-    // Money Out tab (matching initState's behaviour). Reference data is
-    // already loaded, so no reload is needed.
+    // re-navigates to /transactions. If a different contact or GL entry
+    // arrives via `extra`, update the filter. Reference data is already
+    // loaded, so no reload is needed.
     final newContact = widget.initialContact;
     if (newContact != null && newContact.id != old.initialContact?.id) {
       setState(() {
         _searchContact = newContact;
+        _searchGlPair = null;
         _searchYear = DateTime.now().year;
         _tabController.index = 1;
+      });
+    }
+
+    final newPair = widget.initialGlPair;
+    if (newPair != null && (newPair.incomeGl.id != old.initialGlPair?.incomeGl.id ||
+        newPair.expenseGl.id != old.initialGlPair?.expenseGl.id)) {
+      setState(() {
+        _searchGlPair = newPair;
+        _searchContact = null;
+        _searchYear = DateTime.now().year;
+        _tabController.index = 0;
       });
     }
   }
@@ -464,10 +483,18 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       .toList();
 
   bool get _isSearchMode => _searchContact != null;
+  bool get _isGlMode => _searchGlPair != null;
 
   List<TransactionEntry> get _searchResults => _allTransactions
       .where((t) =>
           t.contactId == _searchContact!.id &&
+          t.transactionDate.startsWith('$_searchYear'))
+      .toList();
+
+  List<TransactionEntry> get _searchGlResults => _allTransactions
+      .where((t) =>
+          (t.generalLedgerId == _searchGlPair!.incomeGl.id ||
+           t.generalLedgerId == _searchGlPair!.expenseGl.id) &&
           t.transactionDate.startsWith('$_searchYear'))
       .toList();
 
@@ -834,7 +861,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   // ── Month transaction list ─────────────────────────────────────────────────
 
   Widget _buildMonthSection() {
-    final txns = _isSearchMode ? _searchResults : _viewMonthTransactions;
+    final txns = _isGlMode ? _searchGlResults : _isSearchMode ? _searchResults : _viewMonthTransactions;
     final moneyIn = txns.where((t) => t.isCredit).toList();
     final moneyOut = txns.where((t) => !t.isCredit).toList();
 
@@ -845,7 +872,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           padding: const EdgeInsets.only(top: 16),
           child: Row(
             children: [
-              if (_isSearchMode) _buildYearNav() else _buildMonthNav(),
+              if (_isSearchMode || _isGlMode) _buildYearNav() else _buildMonthNav(),
               const Spacer(),
               _buildSearchBar(),
               const SizedBox(width: 8),
@@ -934,12 +961,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
               prefixIcon: const Icon(Icons.search, size: 18),
-              suffixIcon: _isSearchMode
+              suffixIcon: (_isSearchMode || _isGlMode)
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
                       tooltip: 'Clear search',
                       onPressed: () => setState(() {
                         _searchContact = null;
+                        _searchGlPair = null;
                         _searchResetKey++;
                       }),
                     )
@@ -983,13 +1011,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   Widget _buildYearNav() {
+    final title = _isGlMode
+        ? '${_searchGlPair!.incomeGl.description} — $_searchYear'
+        : '${_searchContact!.name} — $_searchYear';
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '${_searchContact!.name} — $_searchYear',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
+        Text(title, style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(width: 8),
         IconButton(
           icon: const Icon(Icons.chevron_left),
@@ -1123,7 +1151,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             ),
           ),
           const Divider(height: 1),
-          if (txns.isEmpty && !(_isSearchMode))
+          if (txns.isEmpty && !_isSearchMode && !_isGlMode)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
               child: Text('No transactions for this month.',
@@ -1136,6 +1164,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                   'No transactions for ${_searchContact!.name} in $_searchYear.',
                   style: const TextStyle(color: Colors.black54)),
             ),
+          if (txns.isEmpty && _isGlMode)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 4),
+              child: Text(
+                  'No transactions for ${_searchGlPair!.incomeGl.description} in $_searchYear.',
+                  style: const TextStyle(color: Colors.black54)),
+            ),
           ...txns.map((t) => _buildTransactionRow(t, isMoneyOut)),
           _buildAddSection(isMoneyOut),
         ],
@@ -1145,7 +1180,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   Widget _buildAddSection(bool isMoneyOut) {
     final bool canEdit = context.read<AuthState>().canEdit;
-    if (!canEdit || _isSearchMode) return const SizedBox.shrink();
+    if (!canEdit || _isSearchMode || _isGlMode) return const SizedBox.shrink();
 
     final isAdding = isMoneyOut ? _addingMoneyOut : _addingMoneyIn;
 

@@ -24,6 +24,7 @@ import 'package:provider/provider.dart';
 import '../models/bank_account_entry.dart';
 import '../models/closing_bank_balance_entry.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/gl_pair_filter.dart';
 import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
@@ -752,10 +753,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             size: 14, color: Colors.green.shade700),
                         const SizedBox(width: 4),
                         Expanded(
-                          child: Text(
-                            s.incomeGl.description,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium,
+                          child: InkWell(
+                            mouseCursor: SystemMouseCursors.click,
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () => context.go('/transactions',
+                                extra: GlPairFilter(incomeGl: s.incomeGl, expenseGl: s.expenseGl)),
+                            child: Text(
+                              s.incomeGl.description,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
                           ),
                         ),
                       ],
