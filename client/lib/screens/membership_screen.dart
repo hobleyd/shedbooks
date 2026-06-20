@@ -531,8 +531,8 @@ class _MembershipScreenState extends State<MembershipScreen> {
     _rows.sort((a, b) {
       String valueOf(_MemberRow r) {
         return switch (_sortColumn) {
-          0 => r.lastNameCtrl.text,
-          1 => r.firstNameCtrl.text,
+          0 => r.firstNameCtrl.text,
+          1 => r.lastNameCtrl.text,
           2 => r.dateJoinedCtrl.text,
           3 => r.statusCtrl.text,
           4 => r.streetCtrl.text,
@@ -738,8 +738,8 @@ class _MemberTable extends StatelessWidget {
   static const _sortableCount = 13;
 
   static const _columnLabels = [
-    'Last Name',
     'First Name',
+    'Last Name',
     'Date Joined',
     'Status',
     'Street Address',
@@ -850,6 +850,25 @@ class _MemberTable extends StatelessWidget {
       cells: [
         DataCell(
           SizedBox(
+            width: 130,
+            child: canEdit
+                ? TextFormField(
+                    controller: row.firstNameCtrl,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 4),
+                    ),
+                    onChanged: (_) => onChanged(),
+                  )
+                : Text(row.firstNameCtrl.text,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall),
+          ),
+        ),
+        DataCell(
+          SizedBox(
             width: 140,
             child: canEdit
                 ? TextFormField(
@@ -864,25 +883,6 @@ class _MemberTable extends StatelessWidget {
                     onChanged: (_) => onChanged(),
                   )
                 : Text(row.lastNameCtrl.text,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall),
-          ),
-        ),
-        DataCell(
-          SizedBox(
-            width: 130,
-            child: canEdit
-                ? TextFormField(
-                    controller: row.firstNameCtrl,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 4),
-                    ),
-                    onChanged: (_) => onChanged(),
-                  )
-                : Text(row.firstNameCtrl.text,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall),
           ),
@@ -952,6 +952,11 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _emergencyCtrl = TextEditingController();
+  final _dateJoinedCtrl = TextEditingController();
+  final _dateOfBirthCtrl = TextEditingController();
+  final _woodworkingCtrl = TextEditingController();
+  final _metalworkingCtrl = TextEditingController();
+  final _gymWaiverCtrl = TextEditingController();
 
   DateTime? _dateJoined;
   DateTime? _dateOfBirth;
@@ -969,6 +974,11 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _emergencyCtrl.dispose();
+    _dateJoinedCtrl.dispose();
+    _dateOfBirthCtrl.dispose();
+    _woodworkingCtrl.dispose();
+    _metalworkingCtrl.dispose();
+    _gymWaiverCtrl.dispose();
     super.dispose();
   }
 
@@ -1031,11 +1041,32 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
   Widget _dateField(
     String label,
     DateTime? value,
+    TextEditingController ctrl,
     DateTime firstDate,
     void Function(DateTime) onPicked,
     VoidCallback onClear,
   ) {
-    return InkWell(
+    return TextFormField(
+      controller: ctrl,
+      readOnly: true,
+      enabled: !widget.isSaving,
+      style: const TextStyle(fontSize: 13),
+      decoration: _dec.copyWith(
+        labelText: label,
+        suffixIcon: value != null
+            ? IconButton(
+                icon: const Icon(Icons.clear, size: 16),
+                onPressed: widget.isSaving
+                    ? null
+                    : () => setState(() {
+                          onClear();
+                          ctrl.clear();
+                        }),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              )
+            : const Icon(Icons.calendar_today, size: 16),
+      ),
       onTap: widget.isSaving
           ? null
           : () async {
@@ -1045,26 +1076,13 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
                 firstDate: firstDate,
                 lastDate: DateTime(2060),
               );
-              if (picked != null) setState(() => onPicked(picked));
+              if (picked != null) {
+                setState(() {
+                  onPicked(picked);
+                  ctrl.text = _fmt(picked);
+                });
+              }
             },
-      child: InputDecorator(
-        decoration: _dec.copyWith(
-          labelText: label,
-          floatingLabelBehavior: FloatingLabelBehavior.always,
-          suffixIcon: value != null
-              ? IconButton(
-                  icon: const Icon(Icons.clear, size: 16),
-                  onPressed: widget.isSaving
-                      ? null
-                      : () => setState(onClear),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                )
-              : const Icon(Icons.calendar_today, size: 16),
-        ),
-        isEmpty: value == null,
-        child: Text(_fmt(value), style: const TextStyle(fontSize: 13)),
-      ),
     );
   }
 
@@ -1095,16 +1113,16 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
             ],
           ),
           const SizedBox(height: 12),
-          // Row 1: Last Name | First Name | Date Joined | Status
+          // Row 1: First Name | Last Name | Date Joined | Status
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: _textField(_lastNameCtrl, 'Last Name *'),
+                child: _textField(_firstNameCtrl, 'First Name'),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _textField(_firstNameCtrl, 'First Name'),
+                child: _textField(_lastNameCtrl, 'Last Name *'),
               ),
               const SizedBox(width: 12),
               SizedBox(
@@ -1112,6 +1130,7 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
                 child: _dateField(
                   'Date Joined',
                   _dateJoined,
+                  _dateJoinedCtrl,
                   DateTime(2000),
                   (d) => _dateJoined = d,
                   () => _dateJoined = null,
@@ -1159,6 +1178,7 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
                 child: _dateField(
                   'Date of Birth',
                   _dateOfBirth,
+                  _dateOfBirthCtrl,
                   DateTime(1920),
                   (d) => _dateOfBirth = d,
                   () => _dateOfBirth = null,
@@ -1180,6 +1200,7 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
                 child: _dateField(
                   'Woodworking Induction',
                   _woodworking,
+                  _woodworkingCtrl,
                   DateTime(2000),
                   (d) => _woodworking = d,
                   () => _woodworking = null,
@@ -1191,6 +1212,7 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
                 child: _dateField(
                   'Metalworking Induction',
                   _metalworking,
+                  _metalworkingCtrl,
                   DateTime(2000),
                   (d) => _metalworking = d,
                   () => _metalworking = null,
@@ -1202,6 +1224,7 @@ class _AddMemberPanelState extends State<_AddMemberPanel> {
                 child: _dateField(
                   'Gym Waiver',
                   _gymWaiver,
+                  _gymWaiverCtrl,
                   DateTime(2000),
                   (d) => _gymWaiver = d,
                   () => _gymWaiver = null,
