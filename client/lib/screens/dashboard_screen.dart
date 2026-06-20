@@ -714,8 +714,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           const Divider(height: 1),
-          ...summaries.asMap().entries.map(
-              (e) => _buildGlRow(e.value, e.key, colWidth, labelWidth)),
+          ...(summaries.asMap().entries.toList()
+                ..sort((a, b) => b.value.netCents.compareTo(a.value.netCents)))
+              .map((e) => _buildGlRow(e.value, e.key, colWidth, labelWidth)),
           const SizedBox(height: 16),
         ],
         _buildGlPicker(),
