@@ -1003,11 +1003,11 @@ class _AssetTableState extends State<_AssetTable> {
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(children: [
             SizedBox(
-              width: _kAssetNoW + 8,
+              width: _kTypeW,
               child: tf('Asset No', row.assetNoCtrl,
                   focusNode: row.assetNoFocus,
                   extraOnChanged: isPending
@@ -1025,8 +1025,7 @@ class _AssetTableState extends State<_AssetTable> {
                       : null),
             ),
             const SizedBox(width: 8),
-            SizedBox(
-              width: _kDescW + 8,
+            Expanded(
               child: tf('Description', row.descriptionCtrl),
             ),
           ]),
