@@ -146,12 +146,13 @@ class _AppSidebarState extends State<AppSidebar> {
                     path: '/transactions',
                     currentPath: currentPath,
                   ),
-                  _NavItem(
-                    label: 'Bank Reconciliation',
-                    icon: Icons.account_balance_outlined,
-                    path: '/bank-reconciliation',
-                    currentPath: currentPath,
-                  ),
+                  if (authState.isAdmin)
+                    _NavItem(
+                      label: 'Bank Reconciliation',
+                      icon: Icons.account_balance_outlined,
+                      path: '/bank-reconciliation',
+                      currentPath: currentPath,
+                    ),
                   _NavItem(
                     label: 'Invoices',
                     icon: Icons.description_outlined,

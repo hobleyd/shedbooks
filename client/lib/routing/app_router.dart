@@ -56,6 +56,7 @@ const _contributorBlockedPaths = {
 /// Routes restricted to administrators only (viewers and contributors are redirected).
 const _administratorOnlyPaths = {
   '/admin/users',
+  '/bank-reconciliation',
 };
 
 /// Creates the application router with auth-based redirect guards.

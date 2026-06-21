@@ -509,11 +509,11 @@ Router _closingBankBalanceRouter(ClosingBankBalanceHandler h) {
     ..post('/', _role(requireContributor(), h.handleSave));
 }
 
-// Contributors can post; bank-accounts list accessible to all authenticated users.
+// Administrators only; bank-accounts list accessible to all authenticated users.
 Router _bankReconciliationRouter(BankReconciliationHandler h) {
   return Router()
     ..get('/bank-accounts', h.handleListBankAccounts)
-    ..post('/parse-statement', _role(requireContributor(), h.handleParseStatement));
+    ..post('/parse-statement', _role(requireAdministrator(), h.handleParseStatement));
 }
 
 // Administrators only.

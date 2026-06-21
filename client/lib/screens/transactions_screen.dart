@@ -891,8 +891,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               _buildSearchBar(),
               const SizedBox(width: 8),
               Builder(builder: (context) {
-                final canEdit = context.watch<AuthState>().canEdit;
-                if (!canEdit) return const SizedBox.shrink();
+                final canImport = context.watch<AuthState>().isAdmin;
+                if (!canImport) return const SizedBox.shrink();
                 return MenuAnchor(
                   builder: (context, controller, _) => IconButton(
                     icon: const Icon(Icons.upload_file_outlined),
