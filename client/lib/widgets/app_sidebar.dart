@@ -164,6 +164,12 @@ class _AppSidebarState extends State<AppSidebar> {
                     path: '/members',
                     currentPath: currentPath,
                   ),
+                  _NavItem(
+                    label: 'Asset Register',
+                    icon: Icons.inventory_2_outlined,
+                    path: '/assets',
+                    currentPath: currentPath,
+                  ),
                   _ReportsNavGroup(
                     currentPath: currentPath,
                     expanded: _reportsExpanded,

@@ -35,6 +35,7 @@ import '../screens/dashboard_screen.dart';
 import '../screens/general_ledger_screen.dart';
 import '../screens/gst_management_screen.dart';
 import '../screens/invoices_screen.dart';
+import '../screens/asset_register_screen.dart';
 import '../screens/membership_screen.dart';
 import '../screens/bank_reconciliation_screen.dart';
 import '../screens/locked_months_screen.dart';
@@ -135,6 +136,12 @@ GoRouter createRouter(AuthState authState) {
             GoRoute(
               path: '/members',
               builder: (context, state) => const MembershipScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/assets',
+              builder: (context, state) => const AssetRegisterScreen(),
             ),
           ]),
           StatefulShellBranch(routes: [
