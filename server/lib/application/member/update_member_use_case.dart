@@ -38,7 +38,8 @@ class UpdateMemberUseCase {
     String? email,
     String? phone,
     DateTime? dateOfBirth,
-    String? emergencyContact,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
     DateTime? woodworkingInduction,
     DateTime? metalworkingInduction,
     DateTime? gymWaiver,
@@ -61,9 +62,12 @@ class UpdateMemberUseCase {
       email: email?.trim().isEmpty == true ? null : email?.trim(),
       phone: phone?.trim().isEmpty == true ? null : phone?.trim(),
       dateOfBirth: dateOfBirth,
-      emergencyContact: emergencyContact?.trim().isEmpty == true
+      emergencyContactName: emergencyContactName?.trim().isEmpty == true
           ? null
-          : emergencyContact?.trim(),
+          : emergencyContactName?.trim(),
+      emergencyContactPhone: emergencyContactPhone?.trim().isEmpty == true
+          ? null
+          : emergencyContactPhone?.trim(),
       woodworkingInduction: woodworkingInduction,
       metalworkingInduction: metalworkingInduction,
       gymWaiver: gymWaiver,

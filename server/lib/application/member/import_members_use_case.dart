@@ -58,9 +58,12 @@ class ImportMembersUseCase {
               phone:
                   m.phone?.trim().isEmpty == true ? null : m.phone?.trim(),
               dateOfBirth: m.dateOfBirth,
-              emergencyContact: m.emergencyContact?.trim().isEmpty == true
+              emergencyContactName: m.emergencyContactName?.trim().isEmpty == true
                   ? null
-                  : m.emergencyContact?.trim(),
+                  : m.emergencyContactName?.trim(),
+              emergencyContactPhone: m.emergencyContactPhone?.trim().isEmpty == true
+                  ? null
+                  : m.emergencyContactPhone?.trim(),
             ))
         .toList();
     return _repository.importMany(entityId: entityId, members: normalised);

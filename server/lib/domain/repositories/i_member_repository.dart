@@ -31,7 +31,8 @@ abstract interface class IMemberRepository {
     String? email,
     String? phone,
     DateTime? dateOfBirth,
-    String? emergencyContact,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
     DateTime? woodworkingInduction,
     DateTime? metalworkingInduction,
     DateTime? gymWaiver,
@@ -58,7 +59,8 @@ abstract interface class IMemberRepository {
     String? email,
     String? phone,
     DateTime? dateOfBirth,
-    String? emergencyContact,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
     DateTime? woodworkingInduction,
     DateTime? metalworkingInduction,
     DateTime? gymWaiver,
@@ -89,7 +91,8 @@ class MemberImportData {
   final String? email;
   final String? phone;
   final DateTime? dateOfBirth;
-  final String? emergencyContact;
+  final String? emergencyContactName;
+  final String? emergencyContactPhone;
   final DateTime? woodworkingInduction;
   final DateTime? metalworkingInduction;
   final DateTime? gymWaiver;
@@ -104,7 +107,8 @@ class MemberImportData {
     this.email,
     this.phone,
     this.dateOfBirth,
-    this.emergencyContact,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
     this.woodworkingInduction,
     this.metalworkingInduction,
     this.gymWaiver,

@@ -56,8 +56,11 @@ class Member {
   /// Date of birth.
   final DateTime? dateOfBirth;
 
-  /// Emergency contact name and/or phone.
-  final String? emergencyContact;
+  /// Emergency contact person's name.
+  final String? emergencyContactName;
+
+  /// Emergency contact phone number.
+  final String? emergencyContactPhone;
 
   /// Date of woodworking induction.
   final DateTime? woodworkingInduction;
@@ -92,7 +95,8 @@ class Member {
     this.email,
     this.phone,
     this.dateOfBirth,
-    this.emergencyContact,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
     this.woodworkingInduction,
     this.metalworkingInduction,
     this.gymWaiver,

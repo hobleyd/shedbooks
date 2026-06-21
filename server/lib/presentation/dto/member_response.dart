@@ -31,7 +31,8 @@ class MemberResponse {
   final String? email;
   final String? phone;
   final String? dateOfBirth;
-  final String? emergencyContact;
+  final String? emergencyContactName;
+  final String? emergencyContactPhone;
   final String? woodworkingInduction;
   final String? metalworkingInduction;
   final String? gymWaiver;
@@ -50,7 +51,8 @@ class MemberResponse {
     this.email,
     this.phone,
     this.dateOfBirth,
-    this.emergencyContact,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
     this.woodworkingInduction,
     this.metalworkingInduction,
     this.gymWaiver,
@@ -71,7 +73,8 @@ class MemberResponse {
       email: entity.email,
       phone: entity.phone,
       dateOfBirth: entity.dateOfBirth?.toIso8601String().substring(0, 10),
-      emergencyContact: entity.emergencyContact,
+      emergencyContactName: entity.emergencyContactName,
+      emergencyContactPhone: entity.emergencyContactPhone,
       woodworkingInduction:
           entity.woodworkingInduction?.toIso8601String().substring(0, 10),
       metalworkingInduction:
@@ -94,7 +97,8 @@ class MemberResponse {
         'email': email,
         'phone': phone,
         'dateOfBirth': dateOfBirth,
-        'emergencyContact': emergencyContact,
+        'emergencyContactName': emergencyContactName,
+        'emergencyContactPhone': emergencyContactPhone,
         'woodworkingInduction': woodworkingInduction,
         'metalworkingInduction': metalworkingInduction,
         'gymWaiver': gymWaiver,

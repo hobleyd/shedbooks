@@ -58,7 +58,8 @@ void main() {
         email: any(named: 'email'),
         phone: any(named: 'phone'),
         dateOfBirth: any(named: 'dateOfBirth'),
-        emergencyContact: any(named: 'emergencyContact'),
+        emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
       ),
     ).thenAnswer((_) async => tMember);
   });
@@ -82,7 +83,8 @@ void main() {
           email: any(named: 'email'),
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: any(named: 'emergencyContact'),
+          emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       ).called(1);
     });
@@ -107,7 +109,8 @@ void main() {
           email: any(named: 'email'),
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: any(named: 'emergencyContact'),
+          emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       ).called(1);
     });
@@ -130,7 +133,8 @@ void main() {
             email: any(named: 'email'),
             phone: any(named: 'phone'),
             dateOfBirth: any(named: 'dateOfBirth'),
-            emergencyContact: any(named: 'emergencyContact'),
+            emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
           ));
     });
 
@@ -148,7 +152,8 @@ void main() {
           email: any(named: 'email'),
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: any(named: 'emergencyContact'),
+          emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       ).thenThrow(MemberNotFoundException(tId));
 

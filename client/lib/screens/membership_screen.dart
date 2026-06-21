@@ -62,7 +62,8 @@ class _MemberRow {
   final TextEditingController emailCtrl;
   final TextEditingController phoneCtrl;
   final TextEditingController dobCtrl;
-  final TextEditingController emergencyCtrl;
+  final TextEditingController emergencyNameCtrl;
+  final TextEditingController emergencyPhoneCtrl;
   final TextEditingController woodworkingCtrl;
   final TextEditingController metalworkingCtrl;
   final TextEditingController gymWaiverCtrl;
@@ -79,7 +80,8 @@ class _MemberRow {
   final String _origEmail;
   final String _origPhone;
   final String _origDob;
-  final String _origEmergency;
+  final String _origEmergencyName;
+  final String _origEmergencyPhone;
   final String _origWoodworking;
   final String _origMetalworking;
   final String _origGymWaiver;
@@ -95,7 +97,8 @@ class _MemberRow {
         emailCtrl = TextEditingController(),
         phoneCtrl = TextEditingController(),
         dobCtrl = TextEditingController(),
-        emergencyCtrl = TextEditingController(),
+        emergencyNameCtrl = TextEditingController(),
+        emergencyPhoneCtrl = TextEditingController(),
         woodworkingCtrl = TextEditingController(),
         metalworkingCtrl = TextEditingController(),
         gymWaiverCtrl = TextEditingController(),
@@ -110,7 +113,8 @@ class _MemberRow {
         _origEmail = '',
         _origPhone = '',
         _origDob = '',
-        _origEmergency = '',
+        _origEmergencyName = '',
+        _origEmergencyPhone = '',
         _origWoodworking = '',
         _origMetalworking = '',
         _origGymWaiver = '';
@@ -130,8 +134,10 @@ class _MemberRow {
         phoneCtrl = TextEditingController(text: e.phone ?? ''),
         dobCtrl =
             TextEditingController(text: _isoToDisplay(e.dateOfBirth ?? '')),
-        emergencyCtrl =
-            TextEditingController(text: e.emergencyContact ?? ''),
+        emergencyNameCtrl =
+            TextEditingController(text: e.emergencyContactName ?? ''),
+        emergencyPhoneCtrl =
+            TextEditingController(text: e.emergencyContactPhone ?? ''),
         woodworkingCtrl = TextEditingController(
             text: _isoToDisplay(e.woodworkingInduction ?? '')),
         metalworkingCtrl = TextEditingController(
@@ -149,7 +155,8 @@ class _MemberRow {
         _origEmail = e.email ?? '',
         _origPhone = e.phone ?? '',
         _origDob = _isoToDisplay(e.dateOfBirth ?? ''),
-        _origEmergency = e.emergencyContact ?? '',
+        _origEmergencyName = e.emergencyContactName ?? '',
+        _origEmergencyPhone = e.emergencyContactPhone ?? '',
         _origWoodworking = _isoToDisplay(e.woodworkingInduction ?? ''),
         _origMetalworking = _isoToDisplay(e.metalworkingInduction ?? ''),
         _origGymWaiver = _isoToDisplay(e.gymWaiver ?? '');
@@ -164,7 +171,8 @@ class _MemberRow {
       emailCtrl.text != _origEmail ||
       phoneCtrl.text != _origPhone ||
       dobCtrl.text != _origDob ||
-      emergencyCtrl.text != _origEmergency ||
+      emergencyNameCtrl.text != _origEmergencyName ||
+      emergencyPhoneCtrl.text != _origEmergencyPhone ||
       woodworkingCtrl.text != _origWoodworking ||
       metalworkingCtrl.text != _origMetalworking ||
       gymWaiverCtrl.text != _origGymWaiver;
@@ -186,9 +194,12 @@ class _MemberRow {
         'dateOfBirth': dobCtrl.text.trim().isEmpty
             ? null
             : _displayToIso(dobCtrl.text.trim()),
-        'emergencyContact': emergencyCtrl.text.trim().isEmpty
+        'emergencyContactName': emergencyNameCtrl.text.trim().isEmpty
             ? null
-            : emergencyCtrl.text.trim(),
+            : emergencyNameCtrl.text.trim(),
+        'emergencyContactPhone': emergencyPhoneCtrl.text.trim().isEmpty
+            ? null
+            : emergencyPhoneCtrl.text.trim(),
         'woodworkingInduction': woodworkingCtrl.text.trim().isEmpty
             ? null
             : _displayToIso(woodworkingCtrl.text.trim()),
@@ -210,7 +221,8 @@ class _MemberRow {
     emailCtrl.text = _origEmail;
     phoneCtrl.text = _origPhone;
     dobCtrl.text = _origDob;
-    emergencyCtrl.text = _origEmergency;
+    emergencyNameCtrl.text = _origEmergencyName;
+    emergencyPhoneCtrl.text = _origEmergencyPhone;
     woodworkingCtrl.text = _origWoodworking;
     metalworkingCtrl.text = _origMetalworking;
     gymWaiverCtrl.text = _origGymWaiver;
@@ -226,7 +238,8 @@ class _MemberRow {
     emailCtrl.dispose();
     phoneCtrl.dispose();
     dobCtrl.dispose();
-    emergencyCtrl.dispose();
+    emergencyNameCtrl.dispose();
+    emergencyPhoneCtrl.dispose();
     woodworkingCtrl.dispose();
     metalworkingCtrl.dispose();
     gymWaiverCtrl.dispose();
@@ -636,7 +649,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
           6 => r.emailCtrl.text,
           7 => r.phoneCtrl.text,
           8 => r.dobCtrl.text,
-          9 => r.emergencyCtrl.text,
+          9 => r.emergencyNameCtrl.text,
           10 => r.woodworkingCtrl.text,
           11 => r.metalworkingCtrl.text,
           12 => r.gymWaiverCtrl.text,
@@ -1096,18 +1109,25 @@ class _MemberTableState extends State<_MemberTable> {
             SizedBox(width: 140, child: df('Date of Birth', row.dobCtrl)),
           ]),
           const SizedBox(height: 8),
-          // Street and Email expand to fill innerW; PO Box and Emergency stay fixed.
-          // 300 + 8 + 90 + 8 + 396 + 8 + 180 = 990 (innerW).
+          // Street and Email expand to fill innerW.
+          // 300 + 8 + 90 + 8 + 584 = 990 (innerW).
           Row(children: [
             SizedBox(width: 300, child: tf('Street Address', row.streetCtrl)),
             const SizedBox(width: 8),
             SizedBox(width: 90, child: tf('PO Box', row.poBoxCtrl)),
             const SizedBox(width: 8),
-            SizedBox(width: 396, child: tf('Email', row.emailCtrl)),
+            SizedBox(width: 584, child: tf('Email', row.emailCtrl)),
+          ]),
+          const SizedBox(height: 8),
+          // 180 + 8 + 180 = 368 (name and phone side by side).
+          Row(children: [
+            SizedBox(
+                width: 180,
+                child: tf('Emergency Contact Name', row.emergencyNameCtrl)),
             const SizedBox(width: 8),
             SizedBox(
                 width: 180,
-                child: tf('Emergency Contact', row.emergencyCtrl)),
+                child: tf('Emergency Contact Phone', row.emergencyPhoneCtrl)),
           ]),
           const SizedBox(height: 8),
           Row(children: [
@@ -1350,7 +1370,31 @@ class _MemberTableState extends State<_MemberTable> {
                       const SizedBox(width: 12),
                       _readDateCell(context, row.dobCtrl, 110),
                       const SizedBox(width: 12),
-                      _readCell(context, row.emergencyCtrl, 180),
+                      SizedBox(
+                        width: 180,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                row.emergencyNameCtrl.text.isEmpty
+                                    ? '—'
+                                    : row.emergencyNameCtrl.text,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              if (row.emergencyPhoneCtrl.text.isNotEmpty)
+                                Text(
+                                  row.emergencyPhoneCtrl.text,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],

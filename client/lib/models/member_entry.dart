@@ -35,7 +35,8 @@ class MemberEntry {
   /// Date of birth in ISO 8601 date format (YYYY-MM-DD), or null.
   final String? dateOfBirth;
 
-  final String? emergencyContact;
+  final String? emergencyContactName;
+  final String? emergencyContactPhone;
   final String? woodworkingInduction;
   final String? metalworkingInduction;
   final String? gymWaiver;
@@ -54,7 +55,8 @@ class MemberEntry {
     this.email,
     this.phone,
     this.dateOfBirth,
-    this.emergencyContact,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
     this.woodworkingInduction,
     this.metalworkingInduction,
     this.gymWaiver,
@@ -79,7 +81,8 @@ class MemberEntry {
       email: json['email'] as String?,
       phone: json['phone'] as String?,
       dateOfBirth: json['dateOfBirth'] as String?,
-      emergencyContact: json['emergencyContact'] as String?,
+      emergencyContactName: json['emergencyContactName'] as String?,
+      emergencyContactPhone: json['emergencyContactPhone'] as String?,
       woodworkingInduction: json['woodworkingInduction'] as String?,
       metalworkingInduction: json['metalworkingInduction'] as String?,
       gymWaiver: json['gymWaiver'] as String?,
@@ -97,7 +100,8 @@ class MemberEntry {
         'email': email,
         'phone': phone,
         'dateOfBirth': dateOfBirth,
-        'emergencyContact': emergencyContact,
+        'emergencyContactName': emergencyContactName,
+        'emergencyContactPhone': emergencyContactPhone,
         'woodworkingInduction': woodworkingInduction,
         'metalworkingInduction': metalworkingInduction,
         'gymWaiver': gymWaiver,

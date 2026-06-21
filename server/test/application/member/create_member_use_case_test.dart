@@ -45,7 +45,7 @@ void main() {
     email: 'ron@example.com',
     phone: '0429879483',
     dateOfBirth: tDob,
-    emergencyContact: 'Fay',
+    emergencyContactName: 'Fay',
     etag: 'etag-1',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
@@ -67,7 +67,8 @@ void main() {
         email: any(named: 'email'),
         phone: any(named: 'phone'),
         dateOfBirth: any(named: 'dateOfBirth'),
-        emergencyContact: any(named: 'emergencyContact'),
+        emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
       ),
     ).thenAnswer((_) async => tMember);
   });
@@ -85,7 +86,7 @@ void main() {
         email: 'ron@example.com',
         phone: '0429879483',
         dateOfBirth: tDob,
-        emergencyContact: 'Fay',
+        emergencyContactName: 'Fay',
       );
 
       expect(result, equals(tMember));
@@ -101,7 +102,7 @@ void main() {
           email: 'ron@example.com',
           phone: '0429879483',
           dateOfBirth: tDob,
-          emergencyContact: 'Fay',
+          emergencyContactName: 'Fay',
         ),
       ).called(1);
     });
@@ -123,7 +124,8 @@ void main() {
           email: any(named: 'email'),
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: any(named: 'emergencyContact'),
+          emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       ).called(1);
     });
@@ -136,7 +138,7 @@ void main() {
         membershipStatus: '   ',
         streetAddress: '',
         email: '  ',
-        emergencyContact: '',
+        emergencyContactName: '',
       );
 
       verify(
@@ -151,7 +153,8 @@ void main() {
           email: null,
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: null,
+          emergencyContactName: null,
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       ).called(1);
     });
@@ -173,7 +176,8 @@ void main() {
           email: any(named: 'email'),
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: any(named: 'emergencyContact'),
+          emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       );
     });
@@ -206,7 +210,8 @@ void main() {
           email: any(named: 'email'),
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: any(named: 'emergencyContact'),
+          emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       ).called(1);
     });
@@ -230,7 +235,8 @@ void main() {
           email: any(named: 'email'),
           phone: any(named: 'phone'),
           dateOfBirth: any(named: 'dateOfBirth'),
-          emergencyContact: any(named: 'emergencyContact'),
+          emergencyContactName: any(named: 'emergencyContactName'),
+        emergencyContactPhone: any(named: 'emergencyContactPhone'),
         ),
       ).called(1);
     });

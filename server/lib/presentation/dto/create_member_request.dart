@@ -26,7 +26,8 @@ class CreateMemberRequest {
   final String? email;
   final String? phone;
   final DateTime? dateOfBirth;
-  final String? emergencyContact;
+  final String? emergencyContactName;
+  final String? emergencyContactPhone;
   final DateTime? woodworkingInduction;
   final DateTime? metalworkingInduction;
   final DateTime? gymWaiver;
@@ -41,7 +42,8 @@ class CreateMemberRequest {
     this.email,
     this.phone,
     this.dateOfBirth,
-    this.emergencyContact,
+    this.emergencyContactName,
+    this.emergencyContactPhone,
     this.woodworkingInduction,
     this.metalworkingInduction,
     this.gymWaiver,
@@ -58,7 +60,8 @@ class CreateMemberRequest {
       email: _optionalString(json, 'email'),
       phone: _optionalString(json, 'phone'),
       dateOfBirth: _optionalDate(json, 'dateOfBirth'),
-      emergencyContact: _optionalString(json, 'emergencyContact'),
+      emergencyContactName: _optionalString(json, 'emergencyContactName'),
+      emergencyContactPhone: _optionalString(json, 'emergencyContactPhone'),
       woodworkingInduction: _optionalDate(json, 'woodworkingInduction'),
       metalworkingInduction: _optionalDate(json, 'metalworkingInduction'),
       gymWaiver: _optionalDate(json, 'gymWaiver'),

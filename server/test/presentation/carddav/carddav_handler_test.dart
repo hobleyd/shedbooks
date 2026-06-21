@@ -86,7 +86,7 @@ void main() {
     email: 'ron@example.com',
     phone: '0429879483',
     dateOfBirth: DateTime.utc(1945, 6, 1),
-    emergencyContact: 'Fay',
+    emergencyContactName: 'Fay',
     woodworkingInduction: DateTime.utc(2022, 3, 5),
     metalworkingInduction: DateTime.utc(2022, 4, 10),
     gymWaiver: DateTime.utc(2022, 5, 20),
@@ -255,7 +255,7 @@ void main() {
       final body = await res.readAsString();
 
       expect(body, contains('BDAY:19450601'));
-      expect(body, contains('X-EMERGENCY-CONTACT:Fay'));
+      expect(body, contains('X-EMERGENCY-CONTACT-NAME:Fay'));
     });
 
     test('strips .vcf suffix when looking up by ID', () async {
@@ -308,7 +308,8 @@ void main() {
       expect(body, isNot(contains('BDAY')));
       expect(body, isNot(contains('X-MEMBERSHIP-STATUS')));
       expect(body, isNot(contains('X-DATE-JOINED')));
-      expect(body, isNot(contains('X-EMERGENCY-CONTACT')));
+      expect(body, isNot(contains('X-EMERGENCY-CONTACT-NAME')));
+      expect(body, isNot(contains('X-EMERGENCY-CONTACT-PHONE')));
       expect(body, isNot(contains('X-WOODWORKING-INDUCTION')));
       expect(body, isNot(contains('X-METALWORKING-INDUCTION')));
       expect(body, isNot(contains('X-GYM-WAIVER')));
@@ -343,7 +344,7 @@ ADR;TYPE=HOME:560 WG;;6 Curlew St Woodgate;;;;
 BDAY:19450601
 X-DATE-JOINED:20210213
 X-MEMBERSHIP-STATUS:2026
-X-EMERGENCY-CONTACT:Fay
+X-EMERGENCY-CONTACT-NAME:Fay
 X-WOODWORKING-INDUCTION:20220305
 X-METALWORKING-INDUCTION:20220410
 X-GYM-WAIVER:20220520
@@ -364,7 +365,8 @@ END:VCARD''';
             email: any(named: 'email'),
             phone: any(named: 'phone'),
             dateOfBirth: any(named: 'dateOfBirth'),
-            emergencyContact: any(named: 'emergencyContact'),
+            emergencyContactName: any(named: 'emergencyContactName'),
+            emergencyContactPhone: any(named: 'emergencyContactPhone'),
             woodworkingInduction: any(named: 'woodworkingInduction'),
             metalworkingInduction: any(named: 'metalworkingInduction'),
             gymWaiver: any(named: 'gymWaiver'),
@@ -392,7 +394,8 @@ END:VCARD''';
             email: any(named: 'email'),
             phone: any(named: 'phone'),
             dateOfBirth: any(named: 'dateOfBirth'),
-            emergencyContact: any(named: 'emergencyContact'),
+            emergencyContactName: any(named: 'emergencyContactName'),
+            emergencyContactPhone: any(named: 'emergencyContactPhone'),
             woodworkingInduction: any(named: 'woodworkingInduction'),
             metalworkingInduction: any(named: 'metalworkingInduction'),
             gymWaiver: any(named: 'gymWaiver'),
@@ -413,7 +416,8 @@ END:VCARD''';
             email: captureAny(named: 'email'),
             phone: captureAny(named: 'phone'),
             dateOfBirth: captureAny(named: 'dateOfBirth'),
-            emergencyContact: captureAny(named: 'emergencyContact'),
+            emergencyContactName: captureAny(named: 'emergencyContactName'),
+            emergencyContactPhone: captureAny(named: 'emergencyContactPhone'),
             woodworkingInduction: captureAny(named: 'woodworkingInduction'),
             metalworkingInduction: captureAny(named: 'metalworkingInduction'),
             gymWaiver: captureAny(named: 'gymWaiver'),
@@ -429,10 +433,11 @@ END:VCARD''';
       expect(captured[6], equals('ron@example.com'));             // email
       expect(captured[7], equals('0429879483'));                  // phone
       expect(captured[8], equals(DateTime.utc(1945, 6, 1)));     // dateOfBirth
-      expect(captured[9], equals('Fay'));                         // emergencyContact
-      expect(captured[10], equals(DateTime.utc(2022, 3, 5)));    // woodworkingInduction
-      expect(captured[11], equals(DateTime.utc(2022, 4, 10)));   // metalworkingInduction
-      expect(captured[12], equals(DateTime.utc(2022, 5, 20)));   // gymWaiver
+      expect(captured[9], equals('Fay'));                         // emergencyContactName
+      expect(captured[10], isNull);                               // emergencyContactPhone
+      expect(captured[11], equals(DateTime.utc(2022, 3, 5)));    // woodworkingInduction
+      expect(captured[12], equals(DateTime.utc(2022, 4, 10)));   // metalworkingInduction
+      expect(captured[13], equals(DateTime.utc(2022, 5, 20)));   // gymWaiver
     });
 
     test('creates member when not found and returns 201', () async {
@@ -449,7 +454,8 @@ END:VCARD''';
             email: any(named: 'email'),
             phone: any(named: 'phone'),
             dateOfBirth: any(named: 'dateOfBirth'),
-            emergencyContact: any(named: 'emergencyContact'),
+            emergencyContactName: any(named: 'emergencyContactName'),
+            emergencyContactPhone: any(named: 'emergencyContactPhone'),
             woodworkingInduction: any(named: 'woodworkingInduction'),
             metalworkingInduction: any(named: 'metalworkingInduction'),
             gymWaiver: any(named: 'gymWaiver'),
@@ -482,7 +488,8 @@ END:VCARD''';
             email: any(named: 'email'),
             phone: any(named: 'phone'),
             dateOfBirth: any(named: 'dateOfBirth'),
-            emergencyContact: any(named: 'emergencyContact'),
+            emergencyContactName: any(named: 'emergencyContactName'),
+            emergencyContactPhone: any(named: 'emergencyContactPhone'),
             woodworkingInduction: any(named: 'woodworkingInduction'),
             metalworkingInduction: any(named: 'metalworkingInduction'),
             gymWaiver: any(named: 'gymWaiver'),
@@ -531,7 +538,8 @@ END:VCARD''';
             email: any(named: 'email'),
             phone: any(named: 'phone'),
             dateOfBirth: any(named: 'dateOfBirth'),
-            emergencyContact: any(named: 'emergencyContact'),
+            emergencyContactName: any(named: 'emergencyContactName'),
+            emergencyContactPhone: any(named: 'emergencyContactPhone'),
             woodworkingInduction: any(named: 'woodworkingInduction'),
             metalworkingInduction: any(named: 'metalworkingInduction'),
             gymWaiver: any(named: 'gymWaiver'),
@@ -563,7 +571,8 @@ END:VCARD''';
             email: captureAny(named: 'email'),
             phone: captureAny(named: 'phone'),
             dateOfBirth: captureAny(named: 'dateOfBirth'),
-            emergencyContact: captureAny(named: 'emergencyContact'),
+            emergencyContactName: captureAny(named: 'emergencyContactName'),
+            emergencyContactPhone: captureAny(named: 'emergencyContactPhone'),
             woodworkingInduction: captureAny(named: 'woodworkingInduction'),
             metalworkingInduction: captureAny(named: 'metalworkingInduction'),
             gymWaiver: captureAny(named: 'gymWaiver'),
@@ -578,10 +587,11 @@ END:VCARD''';
       expect(captured[6], equals(tMember.email));
       expect(captured[7], equals(tMember.phone));
       expect(captured[8], equals(tMember.dateOfBirth));
-      expect(captured[9], equals(tMember.emergencyContact));
-      expect(captured[10], equals(tMember.woodworkingInduction));
-      expect(captured[11], equals(tMember.metalworkingInduction));
-      expect(captured[12], equals(tMember.gymWaiver));
+      expect(captured[9], equals(tMember.emergencyContactName));
+      expect(captured[10], equals(tMember.emergencyContactPhone));
+      expect(captured[11], equals(tMember.woodworkingInduction));
+      expect(captured[12], equals(tMember.metalworkingInduction));
+      expect(captured[13], equals(tMember.gymWaiver));
     });
   });
 

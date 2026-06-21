@@ -25,10 +25,10 @@ import '../encryption/field_encryptor.dart';
 
 /// PostgreSQL implementation of [IMemberRepository].
 ///
-/// The fields [streetAddress], [email], [phone], [dateOfBirth], and
-/// [emergencyContact] are stored encrypted with AES-256-GCM via
-/// [FieldEncryptor]. Legacy plaintext rows (written before encryption was
-/// introduced) are returned as-is and re-encrypted on the next write.
+/// The fields [streetAddress], [email], [phone], [dateOfBirth],
+/// [emergencyContactName], and [emergencyContactPhone] are stored encrypted
+/// with AES-256-GCM via [FieldEncryptor]. Legacy plaintext rows are returned
+/// as-is and re-encrypted on the next write.
 class PostgresMemberRepository implements IMemberRepository {
   final Pool _pool;
   final Uuid _uuid;
@@ -41,7 +41,8 @@ class PostgresMemberRepository implements IMemberRepository {
   static const _columns = '''
     id, entity_id, first_name, last_name, date_joined, membership_status,
     street_address, po_box, email, phone, date_of_birth,
-    emergency_contact, woodworking_induction, metalworking_induction, gym_waiver,
+    emergency_contact_name, emergency_contact_phone,
+    woodworking_induction, metalworking_induction, gym_waiver,
     etag, created_at, updated_at, deleted_at
   ''';
 
@@ -57,7 +58,8 @@ class PostgresMemberRepository implements IMemberRepository {
     String? email,
     String? phone,
     DateTime? dateOfBirth,
-    String? emergencyContact,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
     DateTime? woodworkingInduction,
     DateTime? metalworkingInduction,
     DateTime? gymWaiver,
@@ -68,11 +70,13 @@ class PostgresMemberRepository implements IMemberRepository {
         INSERT INTO members (
           id, entity_id, first_name, last_name, date_joined, membership_status,
           street_address, po_box, email, phone, date_of_birth,
-          emergency_contact, woodworking_induction, metalworking_induction, gym_waiver
+          emergency_contact_name, emergency_contact_phone,
+          woodworking_induction, metalworking_induction, gym_waiver
         ) VALUES (
           @id::uuid, @entityId, @firstName, @lastName, @dateJoined, @membershipStatus,
           @streetAddress, @poBox, @email, @phone, @dateOfBirth,
-          @emergencyContact, @woodworkingInduction, @metalworkingInduction, @gymWaiver
+          @emergencyContactName, @emergencyContactPhone,
+          @woodworkingInduction, @metalworkingInduction, @gymWaiver
         )
         RETURNING $_columns
       '''),
@@ -88,7 +92,8 @@ class PostgresMemberRepository implements IMemberRepository {
         'email': _encStr(email),
         'phone': _encStr(phone),
         'dateOfBirth': _encDate(dateOfBirth),
-        'emergencyContact': _encStr(emergencyContact),
+        'emergencyContactName': _encStr(emergencyContactName),
+        'emergencyContactPhone': _encStr(emergencyContactPhone),
         'woodworkingInduction': woodworkingInduction,
         'metalworkingInduction': metalworkingInduction,
         'gymWaiver': gymWaiver,
@@ -141,7 +146,8 @@ class PostgresMemberRepository implements IMemberRepository {
     String? email,
     String? phone,
     DateTime? dateOfBirth,
-    String? emergencyContact,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
     DateTime? woodworkingInduction,
     DateTime? metalworkingInduction,
     DateTime? gymWaiver,
@@ -149,21 +155,22 @@ class PostgresMemberRepository implements IMemberRepository {
     final result = await _pool.execute(
       Sql.named('''
         UPDATE members
-        SET first_name              = @firstName,
-            last_name               = @lastName,
-            date_joined             = @dateJoined,
-            membership_status       = @membershipStatus,
-            street_address          = @streetAddress,
-            po_box                  = @poBox,
-            email                   = @email,
-            phone                   = @phone,
-            date_of_birth           = @dateOfBirth,
-            emergency_contact       = @emergencyContact,
-            woodworking_induction   = @woodworkingInduction,
-            metalworking_induction  = @metalworkingInduction,
-            gym_waiver              = @gymWaiver,
-            etag                    = uuid_generate_v4()::text,
-            updated_at              = NOW()
+        SET first_name               = @firstName,
+            last_name                = @lastName,
+            date_joined              = @dateJoined,
+            membership_status        = @membershipStatus,
+            street_address           = @streetAddress,
+            po_box                   = @poBox,
+            email                    = @email,
+            phone                    = @phone,
+            date_of_birth            = @dateOfBirth,
+            emergency_contact_name   = @emergencyContactName,
+            emergency_contact_phone  = @emergencyContactPhone,
+            woodworking_induction    = @woodworkingInduction,
+            metalworking_induction   = @metalworkingInduction,
+            gym_waiver               = @gymWaiver,
+            etag                     = uuid_generate_v4()::text,
+            updated_at               = NOW()
         WHERE id = @id::uuid
           AND entity_id = @entityId
           AND deleted_at IS NULL
@@ -181,7 +188,8 @@ class PostgresMemberRepository implements IMemberRepository {
         'email': _encStr(email),
         'phone': _encStr(phone),
         'dateOfBirth': _encDate(dateOfBirth),
-        'emergencyContact': _encStr(emergencyContact),
+        'emergencyContactName': _encStr(emergencyContactName),
+        'emergencyContactPhone': _encStr(emergencyContactPhone),
         'woodworkingInduction': woodworkingInduction,
         'metalworkingInduction': metalworkingInduction,
         'gymWaiver': gymWaiver,
@@ -221,11 +229,13 @@ class PostgresMemberRepository implements IMemberRepository {
             INSERT INTO members (
               id, entity_id, first_name, last_name, date_joined, membership_status,
               street_address, po_box, email, phone, date_of_birth,
-              emergency_contact, woodworking_induction, metalworking_induction, gym_waiver
+              emergency_contact_name, emergency_contact_phone,
+              woodworking_induction, metalworking_induction, gym_waiver
             ) VALUES (
               @id::uuid, @entityId, @firstName, @lastName, @dateJoined, @membershipStatus,
               @streetAddress, @poBox, @email, @phone, @dateOfBirth,
-              @emergencyContact, @woodworkingInduction, @metalworkingInduction, @gymWaiver
+              @emergencyContactName, @emergencyContactPhone,
+              @woodworkingInduction, @metalworkingInduction, @gymWaiver
             )
             RETURNING $_columns
           '''),
@@ -241,7 +251,8 @@ class PostgresMemberRepository implements IMemberRepository {
             'email': _encStr(m.email),
             'phone': _encStr(m.phone),
             'dateOfBirth': _encDate(m.dateOfBirth),
-            'emergencyContact': _encStr(m.emergencyContact),
+            'emergencyContactName': _encStr(m.emergencyContactName),
+            'emergencyContactPhone': _encStr(m.emergencyContactPhone),
             'woodworkingInduction': m.woodworkingInduction,
             'metalworkingInduction': m.metalworkingInduction,
             'gymWaiver': m.gymWaiver,
@@ -272,7 +283,8 @@ class PostgresMemberRepository implements IMemberRepository {
       email: _decStr(row['email']),
       phone: _decStr(row['phone']),
       dateOfBirth: _decDate(row['date_of_birth']),
-      emergencyContact: _decStr(row['emergency_contact']),
+      emergencyContactName: _decStr(row['emergency_contact_name']),
+      emergencyContactPhone: _decStr(row['emergency_contact_phone']),
       woodworkingInduction: _date(row['woodworking_induction']),
       metalworkingInduction: _date(row['metalworking_induction']),
       gymWaiver: _date(row['gym_waiver']),

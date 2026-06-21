@@ -149,7 +149,8 @@ class CardDavHandler {
         email: fields['email'],
         phone: fields['tel'],
         dateOfBirth: _parseDate(fields['bday']),
-        emergencyContact: fields['x-emergency-contact'],
+        emergencyContactName: fields['x-emergency-contact-name'],
+        emergencyContactPhone: fields['x-emergency-contact-phone'],
         woodworkingInduction: _parseDate(fields['x-woodworking-induction']),
         metalworkingInduction: _parseDate(fields['x-metalworking-induction']),
         gymWaiver: _parseDate(fields['x-gym-waiver']),
@@ -171,7 +172,8 @@ class CardDavHandler {
         email: fields['email'],
         phone: fields['tel'],
         dateOfBirth: _parseDate(fields['bday']),
-        emergencyContact: fields['x-emergency-contact'],
+        emergencyContactName: fields['x-emergency-contact-name'],
+        emergencyContactPhone: fields['x-emergency-contact-phone'],
         woodworkingInduction: _parseDate(fields['x-woodworking-induction']),
         metalworkingInduction: _parseDate(fields['x-metalworking-induction']),
         gymWaiver: _parseDate(fields['x-gym-waiver']),
@@ -222,8 +224,11 @@ class CardDavHandler {
     if (m.membershipStatus != null) {
       buf.writeln('X-MEMBERSHIP-STATUS:${m.membershipStatus}');
     }
-    if (m.emergencyContact != null) {
-      buf.writeln('X-EMERGENCY-CONTACT:${_fold(m.emergencyContact!)}');
+    if (m.emergencyContactName != null) {
+      buf.writeln('X-EMERGENCY-CONTACT-NAME:${_fold(m.emergencyContactName!)}');
+    }
+    if (m.emergencyContactPhone != null) {
+      buf.writeln('X-EMERGENCY-CONTACT-PHONE:${_fold(m.emergencyContactPhone!)}');
     }
     if (m.woodworkingInduction != null) {
       buf.writeln('X-WOODWORKING-INDUCTION:${_formatDate(m.woodworkingInduction!)}');

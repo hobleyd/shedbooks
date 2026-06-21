@@ -78,11 +78,33 @@ class ImportMembersRequest {
       email: _optionalString(json, 'email'),
       phone: _optionalString(json, 'phone'),
       dateOfBirth: _optionalDate(json, 'dateOfBirth', index),
-      emergencyContact: _optionalString(json, 'emergencyContact'),
+      emergencyContactName: _optionalString(json, 'emergencyContactName') ??
+          _splitEmergency(_optionalString(json, 'emergencyContact')).$1,
+      emergencyContactPhone: _optionalString(json, 'emergencyContactPhone') ??
+          _splitEmergency(_optionalString(json, 'emergencyContact')).$2,
       woodworkingInduction: _optionalDate(json, 'woodworkingInduction', index),
       metalworkingInduction: _optionalDate(json, 'metalworkingInduction', index),
       gymWaiver: _optionalDate(json, 'gymWaiver', index),
     );
+  }
+
+  /// Splits a legacy combined emergency-contact string into (name, phone).
+  ///
+  /// Detects a 10-digit Australian phone number (\b0\d{9}\b) and extracts it;
+  /// the remainder (whitespace collapsed) becomes the name.
+  static (String?, String?) _splitEmergency(String? value) {
+    if (value == null) return (null, null);
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return (null, null);
+    final match = RegExp(r'\b0\d{9}\b').firstMatch(trimmed);
+    if (match == null) return (trimmed, null);
+    final phone = match.group(0)!;
+    final rest = (trimmed.substring(0, match.start).trim() +
+            ' ' +
+            trimmed.substring(match.end).trim())
+        .trim()
+        .replaceAll(RegExp(r'\s{2,}'), ' ');
+    return (rest.isEmpty ? null : rest, phone);
   }
 
   static String? _optionalString(Map<String, dynamic> json, String key) {

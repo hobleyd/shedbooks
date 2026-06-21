@@ -42,7 +42,7 @@ void main() {
       email: 'ron@example.com',
       phone: '0429879483',
       dateOfBirth: DateTime.utc(1945, 6, 1),
-      emergencyContact: 'Fay',
+      emergencyContactName: 'Fay',
     ),
     MemberImportData(
       firstName: 'Lynn',
