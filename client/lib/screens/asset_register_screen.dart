@@ -170,7 +170,7 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
   String? _error;
   int? _sortColumn;
   bool _sortAscending = true;
-  Set<String> _sectionFilter = {};
+  Set<String>? _sectionFilter;
 
   @override
   void initState() {
@@ -250,8 +250,8 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
 
   void _addRow() {
     final row = _AssetRow.blank();
-    if (_sectionFilter.length == 1) {
-      final section = _sectionFilter.first;
+    if (_sectionFilter?.length == 1) {
+      final section = _sectionFilter!.first;
       row.assetTypeCtrl.text = section;
       final autoNo = _nextAssetNoForSection(section);
       if (autoNo != null) {
@@ -615,8 +615,8 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback? onImport;
   final VoidCallback? onRefresh;
   final List<String> allTypes;
-  final Set<String> sectionFilter;
-  final ValueChanged<Set<String>> onSectionFilterChanged;
+  final Set<String>? sectionFilter;
+  final ValueChanged<Set<String>?> onSectionFilterChanged;
 
   const _Toolbar({
     this.onImport,
@@ -668,8 +668,9 @@ class _Toolbar extends StatelessWidget {
 
 class _SectionFilterDropdown extends StatefulWidget {
   final List<String> allSections;
-  final Set<String> selected;
-  final ValueChanged<Set<String>> onChanged;
+  // null = all visible; {} = none visible; non-empty = only those visible.
+  final Set<String>? selected;
+  final ValueChanged<Set<String>?> onChanged;
 
   const _SectionFilterDropdown({
     required this.allSections,
@@ -682,10 +683,10 @@ class _SectionFilterDropdown extends StatefulWidget {
 }
 
 class _SectionFilterDropdownState extends State<_SectionFilterDropdown> {
-  final GlobalKey _key = GlobalKey();
+  final LayerLink _layerLink = LayerLink();
   OverlayEntry? _overlay;
-  // Local copy for the open panel; kept in sync via toggle.
-  Set<String> _local = {};
+  // null = all visible; {} = none visible; non-empty = only those visible.
+  Set<String>? _local;
 
   @override
   void dispose() {
@@ -698,19 +699,13 @@ class _SectionFilterDropdownState extends State<_SectionFilterDropdown> {
       _close();
       return;
     }
-    _local = Set.from(widget.selected);
-    final RenderBox box =
-        _key.currentContext!.findRenderObject() as RenderBox;
-    final Offset pos = box.localToGlobal(Offset.zero);
-    final double buttonH = box.size.height;
-    final double buttonW = box.size.width;
-
-    _overlay = OverlayEntry(builder: (_) => _buildOverlay(pos, buttonH, buttonW));
+    _local = widget.selected != null ? Set.from(widget.selected!) : null;
+    _overlay = OverlayEntry(builder: (_) => _buildOverlay());
     Overlay.of(context).insert(_overlay!);
     setState(() {});
   }
 
-  Widget _buildOverlay(Offset pos, double buttonH, double buttonW) {
+  Widget _buildOverlay() {
     return Stack(children: [
       Positioned.fill(
         child: GestureDetector(
@@ -718,43 +713,69 @@ class _SectionFilterDropdownState extends State<_SectionFilterDropdown> {
           onTap: _close,
         ),
       ),
-      Positioned(
-        left: pos.dx,
-        top: pos.dy + buttonH + 4,
-        width: (buttonW < 200) ? 200 : buttonW,
+      CompositedTransformFollower(
+        link: _layerLink,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.bottomLeft,
+        followerAnchor: Alignment.topLeft,
+        offset: const Offset(0, 4),
         child: Material(
           elevation: 4,
           borderRadius: BorderRadius.circular(8),
           clipBehavior: Clip.antiAlias,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: widget.allSections.map((s) {
-              final checked = _local.isEmpty || _local.contains(s);
-              return CheckboxListTile(
-                title: Text(s, style: const TextStyle(fontSize: 13)),
-                value: checked,
-                dense: true,
-                controlAffinity: ListTileControlAffinity.leading,
-                onChanged: (_) => _toggle(s),
-              );
-            }).toList(),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 200),
+            child: IntrinsicWidth(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CheckboxListTile(
+                    title: const Text('All Sections',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                    value: _local == null,
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (_) => _selectAll(),
+                  ),
+                  const Divider(height: 1),
+                  ...widget.allSections.map((s) {
+                    final checked = _local == null || _local!.contains(s);
+                    return CheckboxListTile(
+                      title: Text(s, style: const TextStyle(fontSize: 13)),
+                      value: checked,
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (_) => _toggle(s),
+                    );
+                  }),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     ]);
   }
 
+  void _selectAll() {
+    // Toggle: null (all) ↔ {} (none).
+    _local = _local == null ? {} : null;
+    widget.onChanged(_local != null ? Set.from(_local!) : null);
+    _overlay?.markNeedsBuild();
+  }
+
   void _toggle(String section) {
-    if (_local.isEmpty) {
+    if (_local == null) {
       // Was "all shown" — uncheck one → show all except this one.
       _local = Set.from(widget.allSections)..remove(section);
-    } else if (_local.contains(section)) {
-      _local = Set.from(_local)..remove(section);
+    } else if (_local!.contains(section)) {
+      _local = Set.from(_local!)..remove(section);
     } else {
-      _local = Set.from(_local)..add(section);
-      if (_local.length == widget.allSections.length) _local = {};
+      _local = Set.from(_local!)..add(section);
+      if (_local!.length == widget.allSections.length) _local = null;
     }
-    widget.onChanged(Set.from(_local));
+    widget.onChanged(_local != null ? Set.from(_local!) : null);
     _overlay?.markNeedsBuild();
   }
 
@@ -766,41 +787,44 @@ class _SectionFilterDropdownState extends State<_SectionFilterDropdown> {
 
   @override
   Widget build(BuildContext context) {
-    final count = widget.selected.length;
-    final label = count == 0
+    final sel = widget.selected;
+    final label = sel == null
         ? 'All sections'
-        : count == 1
-            ? widget.selected.first
-            : '$count sections';
+        : sel.isEmpty
+            ? 'No sections'
+            : sel.length == 1
+                ? sel.first
+                : '${sel.length} sections';
     final colorScheme = Theme.of(context).colorScheme;
-    final isFiltered = count > 0;
+    final isFiltered = sel != null;
 
-    return InkWell(
-      key: _key,
-      onTap: _open,
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          border: Border.all(
-            color:
-                isFiltered ? colorScheme.primary : colorScheme.outline,
-          ),
-          borderRadius: BorderRadius.circular(4),
-          color: isFiltered
-              ? colorScheme.primaryContainer.withAlpha(80)
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(width: 4),
-            Icon(
-              _overlay != null ? Icons.arrow_drop_up : Icons.arrow_drop_down,
-              size: 20,
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: InkWell(
+        onTap: _open,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isFiltered ? colorScheme.primary : colorScheme.outline,
             ),
-          ],
+            borderRadius: BorderRadius.circular(4),
+            color: isFiltered
+                ? colorScheme.primaryContainer.withAlpha(80)
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(width: 4),
+              Icon(
+                _overlay != null ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                size: 20,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -850,7 +874,7 @@ class _AssetTable extends StatefulWidget {
   final VoidCallback? onAddNew;
   final Future<void> Function(_AssetRow)? onSaveNew;
   final VoidCallback? onCancelNew;
-  final Set<String> sectionFilter;
+  final Set<String>? sectionFilter;
   final String? Function(String section)? onNextAssetNo;
 
   const _AssetTable({
@@ -1124,11 +1148,13 @@ class _AssetTableState extends State<_AssetTable> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredRows = widget.sectionFilter.isEmpty
+    final filteredRows = widget.sectionFilter == null
         ? widget.rows
-        : widget.rows
-            .where((r) => widget.sectionFilter.contains(r.assetTypeCtrl.text))
-            .toList();
+        : widget.sectionFilter!.isEmpty
+            ? const <_AssetRow>[]
+            : widget.rows
+                .where((r) => widget.sectionFilter!.contains(r.assetTypeCtrl.text))
+                .toList();
 
     return SingleChildScrollView(
       controller: _scrollController,
