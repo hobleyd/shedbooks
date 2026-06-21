@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:postgres/postgres.dart';
 import '../lib/infrastructure/encryption/field_encryptor.dart';
 import '../lib/infrastructure/database/database_connection.dart';
 
