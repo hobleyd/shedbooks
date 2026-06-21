@@ -27,6 +27,7 @@ import '../models/general_ledger_entry.dart';
 import '../models/gl_pair_filter.dart';
 import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
+import '../auth/auth_state.dart';
 import '../services/api_client.dart';
 
 class _MonthSummary {
@@ -382,11 +383,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const Spacer(),
         if (!_loading) ...[
-          IconButton(
-            icon: const Icon(Icons.assignment_outlined),
-            onPressed: () => context.go('/reports/monthly'),
-            tooltip: 'Generate Monthly Report',
-          ),
+          if (context.watch<AuthState>().isAdmin)
+            IconButton(
+              icon: const Icon(Icons.assignment_outlined),
+              onPressed: () => context.go('/reports/monthly'),
+              tooltip: 'Generate Monthly Report',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
