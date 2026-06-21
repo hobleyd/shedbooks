@@ -112,8 +112,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ]);
       if (!mounted) return;
 
-      if (results.any((r) => r.statusCode != 200)) {
-        final bad = results.firstWhere((r) => r.statusCode != 200);
+      // Bank accounts (index 5) are admin-only; a 403 is expected for other roles.
+      if (results.sublist(0, 5).any((r) => r.statusCode != 200)) {
+        final bad = results.sublist(0, 5).firstWhere((r) => r.statusCode != 200);
         setState(() {
           _loadError = 'Failed to load (${bad.statusCode})';
           _loading = false;
@@ -152,9 +153,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      final bankAccounts = (jsonDecode(results[5].body) as List)
-          .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final bankAccounts = results[5].statusCode == 200
+          ? (jsonDecode(results[5].body) as List)
+              .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <BankAccountEntry>[];
 
       setState(() {
         _allTransactions = transactions;
