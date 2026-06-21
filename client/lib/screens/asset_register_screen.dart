@@ -42,6 +42,8 @@ class _AssetRow {
   final TextEditingController manufactureYearCtrl;
   final TextEditingController valueCtrl;
   final FocusNode assetNoFocus;
+  // true while assetNoCtrl holds an auto-generated value (cleared on manual edit).
+  bool assetNoAutoSet = false;
 
   // Originals for dirty-check and reset.
   final String _origAssetNo;
@@ -226,8 +228,38 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
     }
   }
 
+  String? _nextAssetNoForSection(String section) {
+    final sectionRows = _rows.where((r) => r.assetTypeCtrl.text == section);
+    final pattern = RegExp(r'^(.*?)(\d+)$');
+    String? bestPrefix;
+    int bestNum = -1;
+    int bestPadLen = 1;
+    for (final r in sectionRows) {
+      final m = pattern.firstMatch(r.assetNoCtrl.text.trim());
+      if (m == null) continue;
+      final num = int.parse(m.group(2)!);
+      if (num > bestNum) {
+        bestNum = num;
+        bestPrefix = m.group(1)!;
+        bestPadLen = m.group(2)!.length;
+      }
+    }
+    if (bestPrefix == null) return null;
+    return '$bestPrefix${(bestNum + 1).toString().padLeft(bestPadLen, '0')}';
+  }
+
   void _addRow() {
-    setState(() => _pendingNewRow = _AssetRow.blank());
+    final row = _AssetRow.blank();
+    if (_sectionFilter.length == 1) {
+      final section = _sectionFilter.first;
+      row.assetTypeCtrl.text = section;
+      final autoNo = _nextAssetNoForSection(section);
+      if (autoNo != null) {
+        row.assetNoCtrl.text = autoNo;
+        row.assetNoAutoSet = true;
+      }
+    }
+    setState(() => _pendingNewRow = row);
     _updateDirty();
   }
 
@@ -568,6 +600,7 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
                       onSaveNew: _saveNewAsset,
                       onCancelNew: _cancelNew,
                       sectionFilter: _sectionFilter,
+                      onNextAssetNo: _nextAssetNoForSection,
                     ),
             ),
         ],
@@ -810,6 +843,7 @@ class _AssetTable extends StatefulWidget {
   final Future<void> Function(_AssetRow)? onSaveNew;
   final VoidCallback? onCancelNew;
   final Set<String> sectionFilter;
+  final String? Function(String section)? onNextAssetNo;
 
   const _AssetTable({
     required this.rows,
@@ -825,6 +859,7 @@ class _AssetTable extends StatefulWidget {
     this.onSaveNew,
     this.onCancelNew,
     required this.sectionFilter,
+    this.onNextAssetNo,
   });
 
   @override
@@ -857,6 +892,19 @@ class _AssetTableState extends State<_AssetTable> {
         }
         row.assetNoFocus.requestFocus();
       });
+    }
+  }
+
+  void _onSectionChangedForPending(_AssetRow row) {
+    final section = row.assetTypeCtrl.text.trim();
+    if (section.isEmpty) return;
+    if (row.assetNoCtrl.text.isNotEmpty && !row.assetNoAutoSet) return;
+    final autoNo = widget.onNextAssetNo?.call(section);
+    if (autoNo != null) {
+      row.assetNoCtrl.text = autoNo;
+      row.assetNoAutoSet = true;
+      setState(() {});
+      widget.onChanged();
     }
   }
 
@@ -936,14 +984,18 @@ class _AssetTableState extends State<_AssetTable> {
     Widget tf(String label, TextEditingController ctrl,
         {FocusNode? focusNode,
         List<TextInputFormatter>? inputFormatters,
-        TextInputType? keyboardType}) =>
+        TextInputType? keyboardType,
+        VoidCallback? extraOnChanged}) =>
         TextFormField(
           controller: ctrl,
           focusNode: focusNode,
           decoration: baseDec.copyWith(labelText: label),
           inputFormatters: inputFormatters,
           keyboardType: keyboardType,
-          onChanged: (_) => widget.onChanged(),
+          onChanged: (_) {
+            widget.onChanged();
+            extraOnChanged?.call();
+          },
         );
 
     return Container(
@@ -957,12 +1009,20 @@ class _AssetTableState extends State<_AssetTable> {
             SizedBox(
               width: _kAssetNoW + 8,
               child: tf('Asset No', row.assetNoCtrl,
-                  focusNode: row.assetNoFocus),
+                  focusNode: row.assetNoFocus,
+                  extraOnChanged: isPending
+                      ? () {
+                          row.assetNoAutoSet = false;
+                        }
+                      : null),
             ),
             const SizedBox(width: 8),
             SizedBox(
               width: _kTypeW + 8,
-              child: tf('Section', row.assetTypeCtrl),
+              child: tf('Section', row.assetTypeCtrl,
+                  extraOnChanged: isPending
+                      ? () => _onSectionChangedForPending(row)
+                      : null),
             ),
             const SizedBox(width: 8),
             SizedBox(
