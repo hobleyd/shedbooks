@@ -1040,7 +1040,7 @@ class _MemberTableState extends State<_MemberTable> {
               behavior: HitTestBehavior.opaque,
               onTap: hasValue ? () => _clearDate(ctrl) : null,
               child: Padding(
-                padding: const EdgeInsets.only(left: 4),
+                padding: const EdgeInsets.only(left: 4, right: 6),
                 child: Icon(
                   hasValue ? Icons.clear : Icons.calendar_today_outlined,
                   size: 16,
