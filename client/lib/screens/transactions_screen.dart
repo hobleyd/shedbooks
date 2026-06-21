@@ -194,19 +194,25 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           : <BankAccountEntry>[];
 
       // A month is locked only when every bank account has it locked.
+      // When bank accounts are unavailable (non-admin role), treat any entry
+      // in the locked-months list as locked to prevent edits to locked months.
       Set<String> lockedMonths = {};
-      if (results[3].statusCode == 200 && bankAccounts.isNotEmpty) {
+      if (results[3].statusCode == 200) {
         final allLocked = (jsonDecode(results[3].body) as List)
             .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
             .toList();
-        final Map<String, Set<String>> accountsByMonth = {};
-        for (final entry in allLocked) {
-          accountsByMonth.putIfAbsent(entry.monthYear, () => {}).add(entry.bankAccountId);
+        if (bankAccounts.isNotEmpty) {
+          final Map<String, Set<String>> accountsByMonth = {};
+          for (final entry in allLocked) {
+            accountsByMonth.putIfAbsent(entry.monthYear, () => {}).add(entry.bankAccountId);
+          }
+          lockedMonths = accountsByMonth.entries
+              .where((e) => e.value.length >= bankAccounts.length)
+              .map((e) => e.key)
+              .toSet();
+        } else {
+          lockedMonths = allLocked.map((e) => e.monthYear).toSet();
         }
-        lockedMonths = accountsByMonth.entries
-            .where((e) => e.value.length >= bankAccounts.length)
-            .map((e) => e.key)
-            .toSet();
       }
 
       final entityDetails = results[5].statusCode == 200
