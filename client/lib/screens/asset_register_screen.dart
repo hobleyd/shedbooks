@@ -829,6 +829,14 @@ const double _kTableMinWidth = _kAssetNoW +
     _kValueW +
     _kActionsW;
 
+// Edit panel inner width constants (panel has 16px padding each side).
+// Asset No is widened to _kTypeW so longer numbers aren't truncated.
+// Description fills the rest of row 1.
+const double _kEditPanelPadding = 32; // 16 × 2
+const double _kEditAssetNoW = _kTypeW;
+const double _kEditDescW =
+    _kTableMinWidth - _kEditPanelPadding - _kEditAssetNoW - 8 - (_kTypeW + 8) - 8;
+
 class _AssetTable extends StatefulWidget {
   final List<_AssetRow> rows;
   final bool canEdit;
@@ -1003,11 +1011,11 @@ class _AssetTableState extends State<_AssetTable> {
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
             SizedBox(
-              width: _kTypeW,
+              width: _kEditAssetNoW,
               child: tf('Asset No', row.assetNoCtrl,
                   focusNode: row.assetNoFocus,
                   extraOnChanged: isPending
@@ -1025,7 +1033,8 @@ class _AssetTableState extends State<_AssetTable> {
                       : null),
             ),
             const SizedBox(width: 8),
-            Expanded(
+            SizedBox(
+              width: _kEditDescW,
               child: tf('Description', row.descriptionCtrl),
             ),
           ]),
