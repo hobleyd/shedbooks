@@ -26,6 +26,8 @@ import '../../application/member/list_members_use_case.dart';
 import '../../application/member/update_member_use_case.dart';
 import '../../domain/entities/member.dart';
 import '../../domain/exceptions/member_exception.dart';
+import '../audit_changes.dart';
+import 'handler_diff.dart';
 
 /// Shelf handlers implementing the CardDAV addressbook protocol (RFC 6352).
 ///
@@ -155,6 +157,8 @@ class CardDavHandler {
         metalworkingInduction: _parseDate(fields['x-metalworking-induction']),
         gymWaiver: _parseDate(fields['x-gym-waiver']),
       );
+      final diff = diffMaps(_snapshot(existing), _snapshot(member));
+      if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
       return Response.ok('', headers: {'ETag': '"${member.etag}"'});
     } on MemberNotFoundException {
       // Honour the UID from the URL by pre-generating — not supported directly
@@ -178,6 +182,7 @@ class CardDavHandler {
         metalworkingInduction: _parseDate(fields['x-metalworking-induction']),
         gymWaiver: _parseDate(fields['x-gym-waiver']),
       );
+      _auditChanges(request)?.set(_snapshot(member));
       return Response(201, body: '', headers: {'ETag': '"${member.etag}"'});
     } on MemberValidationException catch (e) {
       return Response(400, body: e.message);
@@ -192,8 +197,15 @@ class CardDavHandler {
     if (entityId == null) return _unauthorized();
 
     final id = _stripVcf(uid);
+
+    Member? before;
+    try {
+      before = await _get.execute(id, entityId: entityId);
+    } catch (_) {}
+
     try {
       await _delete.execute(id, entityId: entityId);
+      if (before != null) _auditChanges(request)?.set(_snapshot(before));
       return Response(204);
     } on MemberNotFoundException {
       return Response.notFound('Not found');
@@ -316,6 +328,28 @@ class CardDavHandler {
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
+
+  static AuditChanges? _auditChanges(Request r) =>
+      r.context['audit.changes'] as AuditChanges?;
+
+  static Map<String, dynamic> _snapshot(Member m) => {
+        'firstName': m.firstName,
+        'lastName': m.lastName,
+        'dateJoined': m.dateJoined?.toIso8601String().substring(0, 10),
+        'membershipStatus': m.membershipStatus,
+        'streetAddress': m.streetAddress,
+        'poBox': m.poBox,
+        'email': m.email,
+        'phone': m.phone,
+        'dateOfBirth': m.dateOfBirth?.toIso8601String().substring(0, 10),
+        'emergencyContactName': m.emergencyContactName,
+        'emergencyContactPhone': m.emergencyContactPhone,
+        'woodworkingInduction':
+            m.woodworkingInduction?.toIso8601String().substring(0, 10),
+        'metalworkingInduction':
+            m.metalworkingInduction?.toIso8601String().substring(0, 10),
+        'gymWaiver': m.gymWaiver?.toIso8601String().substring(0, 10),
+      };
 
   static String? _entityId(Request request) {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;

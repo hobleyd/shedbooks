@@ -175,5 +175,5 @@ String? _recordId(String path) {
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;
-  return last;
+  return last.endsWith('.vcf') ? last.substring(0, last.length - 4) : last;
 }

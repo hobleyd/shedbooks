@@ -599,6 +599,8 @@ END:VCARD''';
 
   group('handleDelete', () {
     test('returns 204 on successful soft-delete', () async {
+      when(() => mockGet.execute(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tMember);
       when(() => mockDelete.execute(tId, entityId: tEntityId))
           .thenAnswer((_) async {});
 
@@ -610,6 +612,8 @@ END:VCARD''';
     });
 
     test('returns 404 when member does not exist', () async {
+      when(() => mockGet.execute(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tMember);
       when(() => mockDelete.execute(tId, entityId: tEntityId))
           .thenThrow(MemberNotFoundException(tId));
 
@@ -626,6 +630,8 @@ END:VCARD''';
     });
 
     test('strips .vcf suffix when looking up by ID', () async {
+      when(() => mockGet.execute(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tMember);
       when(() => mockDelete.execute(tId, entityId: tEntityId))
           .thenAnswer((_) async {});
 
