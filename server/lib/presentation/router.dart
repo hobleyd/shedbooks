@@ -101,7 +101,15 @@ import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/stamp_aba_batch_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
+import '../application/asset/create_asset_use_case.dart';
+import '../application/asset/delete_asset_use_case.dart';
+import '../application/asset/get_asset_use_case.dart';
+import '../application/asset/import_assets_use_case.dart';
+import '../application/asset/list_assets_use_case.dart';
+import '../application/asset/update_asset_use_case.dart';
+import '../infrastructure/repositories/postgres_asset_repository.dart';
 import 'handlers/aba_sequence_handler.dart';
+import 'handlers/asset_handler.dart';
 import 'handlers/carddav_handler.dart';
 import 'handlers/member_handler.dart';
 import 'handlers/abn_lookup_handler.dart';
@@ -272,6 +280,16 @@ Handler buildRouter({
     delete: DeleteMemberUseCase(memberRepository),
     import: ImportMembersUseCase(memberRepository),
   );
+  final assetRepository = PostgresAssetRepository(pool);
+  final assetHandler = AssetHandler(
+    create: CreateAssetUseCase(assetRepository),
+    get: GetAssetUseCase(assetRepository),
+    list: ListAssetsUseCase(assetRepository),
+    update: UpdateAssetUseCase(assetRepository),
+    delete: DeleteAssetUseCase(assetRepository),
+    import: ImportAssetsUseCase(assetRepository),
+  );
+
   final cardDavHandler = CardDavHandler(
     list: ListMembersUseCase(memberRepository),
     get: GetMemberUseCase(memberRepository),
@@ -343,6 +361,8 @@ Handler buildRouter({
         _authed(_budgetRouter(budgetHandler)))
     ..mount('/members',
         _authed(_memberRouter(memberHandler)))
+    ..mount('/assets',
+        _authed(_assetRouter(assetHandler)))
     ..mount('/admin',
         _authed(_adminRouter(backupHandler, auditHandler, usersHandler)))
     // CardDAV addressbook — uses separate auth (Bearer OR Basic w/ JWT password).
@@ -528,6 +548,18 @@ Router _budgetRouter(BudgetHandler h) {
 // Viewers can read; contributors and admins can write.
 // /import must be registered before /<id> to avoid being shadowed.
 Router _memberRouter(MemberHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..post('/', _role(requireContributor(), h.handleCreate))
+    ..post('/import', _role(requireContributor(), h.handleImport))
+    ..get('/<id>', h.handleGet)
+    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+}
+
+// Viewers can read; contributors and admins can write.
+// /import must be registered before /<id> to avoid being shadowed.
+Router _assetRouter(AssetHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireContributor(), h.handleCreate))

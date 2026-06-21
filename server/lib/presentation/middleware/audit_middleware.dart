@@ -154,6 +154,7 @@ const _tableMap = {
   'budgets': 'budgets',
   'members': 'members',
   'carddav': 'members',
+  'assets': 'assets',
 };
 
 String _tableName(String path) {
