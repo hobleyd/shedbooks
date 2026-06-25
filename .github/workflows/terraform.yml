@@ -1,0 +1,134 @@
+# Terraform plan + apply workflow.
+#
+# Behaviour:
+#   push → main          plan + apply  (confirms infrastructure state on every deploy)
+#   pull_request → main  plan only     (posts diff as a PR comment)
+#   workflow_dispatch    plan + apply  (manual trigger)
+#
+# ── Required GitHub Secrets ──────────────────────────────────────────────────
+#   OCI_TENANCY_OCID     — OCID of the OCI tenancy
+#   OCI_USER_OCID        — OCID of the Terraform service user
+#   OCI_FINGERPRINT      — API key fingerprint for that user
+#   OCI_PRIVATE_KEY      — PEM content of the API private key (multiline secret)
+#   OCI_COMPARTMENT_OCID — OCID of the target compartment
+#   SSH_PUBLIC_KEY       — SSH public key for the compute instance
+#   SSH_ALLOWED_CIDRS    — JSON list, e.g. ["1.2.3.4/32"]
+#   TF_STATE_NAMESPACE   — OCI tenancy namespace (output of: oci os ns get)
+#   TF_STATE_ACCESS_KEY  — Customer Secret Key ID for state bucket S3-compat access
+#   TF_STATE_SECRET_KEY  — Customer Secret Key secret (shown once at creation)
+#
+# ── Required GitHub Variables (Settings → Variables → Actions) ───────────────
+#   OCI_REGION           — OCI region, e.g. ap-sydney-1
+#   IMAGE_TAG            — Docker image tag to deploy, e.g. latest or v1.2.0
+
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Prevent concurrent applies; never cancel an in-progress apply.
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write   # required to post plan as a PR comment
+
+jobs:
+  terraform:
+    name: ${{ github.event_name == 'pull_request' && 'Plan' || 'Plan + Apply' }}
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: terraform
+
+    env:
+      # Scalar Terraform variables — supplied via environment so they are masked
+      # in logs and never written to committed files.
+      TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_user_ocid:        ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_fingerprint:      ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_region:           ${{ vars.OCI_REGION }}
+      TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      TF_VAR_ssh_public_key:   ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_image_tag:        ${{ vars.IMAGE_TAG || 'latest' }}
+      TF_VAR_private_key_path: /home/runner/.oci/oci_api_key.pem
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      # Write the OCI API private key to a temp file on the runner.
+      # Using printf avoids adding a trailing newline that can invalidate the PEM.
+      - name: Write OCI API private key
+        run: |
+          mkdir -p /home/runner/.oci
+          printf '%s' "$OCI_PRIVATE_KEY" > /home/runner/.oci/oci_api_key.pem
+          chmod 600 /home/runner/.oci/oci_api_key.pem
+        env:
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+
+      # ssh_allowed_cidrs is a list(string); writing it to a tfvars file avoids
+      # the shell quoting issues that come with setting list types via TF_VAR_*.
+      # The file is gitignored (terraform/ci.auto.tfvars).
+      - name: Write list variables
+        run: |
+          printf 'ssh_allowed_cidrs = %s\n' '${{ secrets.SSH_ALLOWED_CIDRS }}' > ci.auto.tfvars
+
+      # Credentials for the S3-compatible state backend are passed at init time
+      # so they never appear in providers.tf or committed configuration.
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="region=${{ vars.OCI_REGION }}" \
+            -backend-config="endpoint=https://${{ secrets.TF_STATE_NAMESPACE }}.compat.objectstorage.${{ vars.OCI_REGION }}.oraclecloud.com" \
+            -backend-config="access_key=${{ secrets.TF_STATE_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.TF_STATE_SECRET_KEY }}"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -out=tfplan -no-color
+
+      # Post the plan output as a PR comment so reviewers can see what will change.
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const plan = process.env.PLAN || '(no output)';
+            // Trim from the front if the plan is too large for a GitHub comment.
+            const truncated = plan.length > 60000
+              ? '_(truncated — see Actions log for full output)_\n\n' + plan.slice(-60000)
+              : plan;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terraform Plan\n\`\`\`\n${truncated}\n\`\`\``
+            });
+
+      # Apply runs on every push to main (including non-infra changes) so that
+      # infrastructure state is confirmed as part of every deployment cycle.
+      # If the plan produced no changes, apply completes instantly as a no-op.
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: terraform apply -auto-approve tfplan

@@ -46,9 +46,10 @@ variable "region" {
 # ── Compartment ───────────────────────────────────────────────────────────────
 
 variable "compartment_ocid" {
-  description = "OCID of the compartment to deploy into. Defaults to root (tenancy) compartment."
+  # Required: deploy into a dedicated compartment, not the root tenancy.
+  # Create one in OCI Console → Identity → Compartments before running terraform apply.
+  description = "OCID of the compartment to deploy into. Must be a dedicated compartment, not the root tenancy."
   type        = string
-  default     = null
 }
 
 # ── Compute ───────────────────────────────────────────────────────────────────
@@ -77,28 +78,21 @@ variable "boot_volume_size_gb" {
 }
 
 variable "ssh_allowed_cidrs" {
-  description = "CIDR ranges allowed for SSH access. Restrict to your IP in production."
+  description = "CIDR ranges allowed to SSH into the instance. Set to your public IP (e.g. [\"203.0.113.1/32\"]). Do not leave as 0.0.0.0/0 in production."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+
+  validation {
+    condition     = length(var.ssh_allowed_cidrs) > 0
+    error_message = "ssh_allowed_cidrs must contain at least one CIDR block."
+  }
 }
 
-# ── OCIR (Container Registry) ─────────────────────────────────────────────────
+# ── Images ────────────────────────────────────────────────────────────────────
 
-variable "ocir_auth_token" {
-  description = "OCI auth token for OCIR Docker login. Generate in OCI Console → User Settings → Auth Tokens."
+variable "image_tag" {
+  description = "Docker image tag for all Shedbooks images. Use a version tag (e.g. v1.2.0) rather than 'latest' for reproducible production deployments."
   type        = string
-  sensitive   = true
-}
-
-variable "ocir_username" {
-  description = "OCI username for OCIR login. Use your email for IDCS/federated users, or IAM username for native users."
-  type        = string
-}
-
-variable "use_idcs" {
-  description = "Whether the OCI user authenticates via IDCS federation (true) or native IAM (false)."
-  type        = bool
-  default     = true
+  default     = "latest"
 }
 
 # ── General ───────────────────────────────────────────────────────────────────

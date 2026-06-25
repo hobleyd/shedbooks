@@ -1,27 +1,25 @@
 # OCI Authentication
-# Obtain from OCI Console → User Settings → API Keys
+# Obtain from OCI Console → Profile → User Settings → API Keys
 tenancy_ocid     = "ocid1.tenancy.oc1..aaaa..."
 user_ocid        = "ocid1.user.oc1..aaaa..."
 fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
 private_key_path = "~/.oci/oci_api_key.pem"
 region           = "ap-sydney-1"
 
-# Compartment — leave commented to deploy into the root compartment
-# compartment_ocid = "ocid1.compartment.oc1..aaaa..."
+# Compartment — create a dedicated compartment for Shedbooks before running apply.
+# OCI Console → Identity → Compartments → Create Compartment
+compartment_ocid = "ocid1.compartment.oc1..aaaa..."
 
 # Compute
 ssh_public_key     = "ssh-rsa AAAA... your-key-comment"
 instance_ocpus     = 2
 instance_memory_gb = 12
-boot_volume_size_gb = 50
 
-# SSH restriction — replace with your public IP for better security
-# e.g. ssh_allowed_cidrs = ["203.0.113.1/32"]
-ssh_allowed_cidrs = ["0.0.0.0/0"]
+# SSH access — restrict to your public IP for security
+# Find your IP: curl ifconfig.me
+ssh_allowed_cidrs = ["YOUR_IP/32"]
 
-# OCIR (Container Registry)
-# Auth token: OCI Console → User Settings → Auth Tokens → Generate Token
-ocir_auth_token = "your-oci-auth-token"
-# For IDCS/federated users use your email; for native IAM use your IAM username
-ocir_username   = "your.email@example.com"
-use_idcs        = true
+# Image tag — use a version tag for reproducible production deployments
+# This value is baked into the .env on the instance at cloud-init time.
+# After changing the tag, update .env on the instance or re-provision.
+image_tag = "latest"

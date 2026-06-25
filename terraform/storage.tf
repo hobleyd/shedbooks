@@ -15,6 +15,16 @@
 # You should have received a copy of the GNU General Public License
 # along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+# ── Customer-managed KMS encryption (optional) ────────────────────────────────
+# Both buckets use Oracle-managed encryption by default. To add a customer-managed
+# key (CMK), create an OCI Vault + Master Encryption Key, then add to each bucket:
+#
+#   kms_key_id = oci_kms_key.shedbooks.id
+#
+# resource "oci_kms_vault" "shedbooks" { ... }
+# resource "oci_kms_key" "shedbooks" { ... }
+# ──────────────────────────────────────────────────────────────────────────────
+
 # Bucket for entity-scoped JSON backups (downloaded via the admin backup endpoint)
 resource "oci_objectstorage_bucket" "backups" {
   compartment_id = local.compartment_id

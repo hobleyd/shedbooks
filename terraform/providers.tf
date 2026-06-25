@@ -24,6 +24,24 @@ terraform {
       version = "~> 6.0"
     }
   }
+
+  # Partial backend configuration — non-secret values only.
+  # The remaining values (region, endpoint, access_key, secret_key) are supplied
+  # via -backend-config flags at `terraform init` time so they never appear in
+  # committed code. See scripts/bootstrap-state.sh (local) and
+  # .github/workflows/terraform.yml (CI).
+  #
+  # First-time setup: run scripts/bootstrap-state.sh, then terraform init with
+  # the flags it prints. To init without remote state during bootstrapping:
+  #   terraform init -backend=false
+  backend "s3" {
+    bucket                      = "shedbooks-tf-state"
+    key                         = "shedbooks/terraform.tfstate"
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_region_validation      = true
+    force_path_style            = true
+  }
 }
 
 provider "oci" {

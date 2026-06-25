@@ -42,17 +42,17 @@ output "ocir_prefix" {
 
 output "ocir_image_db" {
   description = "Full OCIR image reference for the database image"
-  value       = "${local.ocir_prefix}/db:latest"
+  value       = "${local.ocir_prefix}/db:${var.image_tag}"
 }
 
 output "ocir_image_server" {
   description = "Full OCIR image reference for the server image"
-  value       = "${local.ocir_prefix}/server:latest"
+  value       = "${local.ocir_prefix}/server:${var.image_tag}"
 }
 
 output "ocir_image_client" {
   description = "Full OCIR image reference for the client image"
-  value       = "${local.ocir_prefix}/client:latest"
+  value       = "${local.ocir_prefix}/client:${var.image_tag}"
 }
 
 output "backups_bucket" {
@@ -77,10 +77,13 @@ output "next_steps" {
     2. Copy TLS certificates to the instance:
          scp your_domain.crt your_domain.key ubuntu@${oci_core_instance.shedbooks.public_ip}:/tmp/
          ssh ubuntu@${oci_core_instance.shedbooks.public_ip} 'sudo mkdir -p /opt/shedbooks/certs/postgres && sudo mv /tmp/your_domain.* /opt/shedbooks/certs/'
-    3. Generate PostgreSQL SSL certs and place in /opt/shedbooks/certs/postgres/
-    4. Edit /opt/shedbooks/.env on the instance and fill in secrets
-    5. Build and push images:  cd terraform && ../scripts/build-and-push.sh
-    6. Deploy:                 ../scripts/deploy.sh
-    7. Start the stack:        ssh ubuntu@${oci_core_instance.shedbooks.public_ip} 'sudo systemctl start shedbooks'
+    3. Generate PostgreSQL SSL certs → /opt/shedbooks/certs/postgres/{server.crt,server.key}
+    4. Configure OCIR auth (token never touches Terraform state):
+         OCIR_AUTH_TOKEN=<token> OCIR_USERNAME=<email> ../scripts/setup-instance.sh
+    5. Edit /opt/shedbooks/.env on the instance and fill in all CHANGE_ME values
+    6. Build + push images (use a version tag, not latest):
+         TAG=v1.0.0 AUTH0_DOMAIN=x AUTH0_CLIENT_ID=y AUTH0_AUDIENCE=z ../scripts/build-and-push.sh
+    7. Deploy:   ../scripts/deploy.sh
+    8. Start:    ssh ubuntu@${oci_core_instance.shedbooks.public_ip} 'sudo systemctl start shedbooks'
   EOT
 }

@@ -16,7 +16,7 @@
 # along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 locals {
-  compartment_id = coalesce(var.compartment_ocid, var.tenancy_ocid)
+  compartment_id = var.compartment_ocid
   tags           = { project = "shedbooks", environment = var.environment }
 }
 
@@ -55,6 +55,9 @@ resource "oci_core_security_list" "web" {
   vcn_id         = oci_core_vcn.shedbooks.id
   display_name   = "shedbooks-web-sl"
 
+  # Broad outbound egress is intentional: the instance needs to reach OCIR, Auth0,
+  # apt mirrors, and the ABR API on dynamic addresses. Restrict further with NSGs
+  # once destination CIDRs are known and stable.
   egress_security_rules {
     destination = "0.0.0.0/0"
     protocol    = "all"

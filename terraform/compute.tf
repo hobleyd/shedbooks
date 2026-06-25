@@ -35,9 +35,7 @@ data "oci_objectstorage_namespace" "ns" {
 
 locals {
   ocir_registry = "${var.region}.ocir.io"
-  # IDCS-federated users need the oracleidentitycloudservice/ prefix; native IAM users do not.
-  ocir_docker_username = var.use_idcs ? "${data.oci_objectstorage_namespace.ns.namespace}/oracleidentitycloudservice/${var.ocir_username}" : "${data.oci_objectstorage_namespace.ns.namespace}/${var.ocir_username}"
-  ocir_prefix          = "${local.ocir_registry}/${data.oci_objectstorage_namespace.ns.namespace}/shedbooks"
+  ocir_prefix   = "${local.ocir_registry}/${data.oci_objectstorage_namespace.ns.namespace}/shedbooks"
 }
 
 resource "oci_core_instance" "shedbooks" {
@@ -65,11 +63,12 @@ resource "oci_core_instance" "shedbooks" {
 
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
+    # OCIR auth token is intentionally NOT passed through cloud-init/user-data.
+    # Run scripts/setup-instance.sh after provisioning to configure docker login
+    # via SSH, keeping the token out of Terraform state and OCI instance metadata.
     user_data = base64encode(templatefile("${path.module}/templates/cloud-init.yaml.tpl", {
-      ocir_registry        = local.ocir_registry
-      ocir_docker_username = local.ocir_docker_username
-      ocir_token           = var.ocir_auth_token
-      ocir_prefix          = local.ocir_prefix
+      ocir_prefix = local.ocir_prefix
+      image_tag   = var.image_tag
     }))
   }
 

@@ -1,8 +1,15 @@
 #cloud-config
-# Bootstrap script for Ubuntu 22.04 ARM64 on OCI VM.Standard.A1.Flex
-# Installs Docker CE, configures OCIR authentication, and sets up the
-# shedbooks systemd service. The stack is NOT started automatically —
-# TLS certs and the .env secrets must be placed first (see terraform outputs).
+# Bootstrap script for Ubuntu 22.04 ARM64 on OCI VM.Standard.A1.Flex.
+# Installs Docker CE and sets up the shedbooks directory structure and systemd service.
+#
+# OCIR authentication is deliberately NOT configured here — the auth token must
+# not enter Terraform state or OCI instance metadata. Run scripts/setup-instance.sh
+# after provisioning to configure docker login via SSH.
+#
+# The shedbooks stack is NOT started automatically. After setup-instance.sh:
+#   1. Place TLS certs in /opt/shedbooks/certs/ and /opt/shedbooks/certs/postgres/
+#   2. Fill in secrets in /opt/shedbooks/.env
+#   3. sudo systemctl start shedbooks
 
 package_update: true
 package_upgrade: true
@@ -31,10 +38,10 @@ write_files:
       CORS_ORIGIN=https://CHANGE_ME_YOUR_DOMAIN
       ABR_GUID=
 
-      # OCIR image references (populated by Terraform)
-      SHEDBOOKS_DB_IMAGE=${ocir_prefix}/db:latest
-      SHEDBOOKS_SERVER_IMAGE=${ocir_prefix}/server:latest
-      SHEDBOOKS_CLIENT_IMAGE=${ocir_prefix}/client:latest
+      # OCIR image references (populated by Terraform via image_tag variable)
+      SHEDBOOKS_DB_IMAGE=${ocir_prefix}/db:${image_tag}
+      SHEDBOOKS_SERVER_IMAGE=${ocir_prefix}/server:${image_tag}
+      SHEDBOOKS_CLIENT_IMAGE=${ocir_prefix}/client:${image_tag}
 
   - path: /etc/systemd/system/shedbooks.service
     permissions: "0644"
@@ -75,12 +82,9 @@ runcmd:
   - systemctl enable docker
   - systemctl start docker
 
-  # Directory structure
+  # Directory structure — TLS certs and postgres SSL certs are placed manually
   - mkdir -p /opt/shedbooks/certs/postgres
   - chmod 700 /opt/shedbooks/certs
 
-  # Authenticate with OCIR so the instance can pull images
-  - echo "${ocir_token}" | docker login ${ocir_registry} --username "${ocir_docker_username}" --password-stdin
-
-  # Register the service but do NOT start it yet — certs and .env secrets are still needed
+  # Register the service; do NOT start until OCIR auth, certs, and .env are ready
   - systemctl enable shedbooks
