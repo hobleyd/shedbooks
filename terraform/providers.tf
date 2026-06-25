@@ -16,7 +16,7 @@
 # along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.6"
 
   required_providers {
     oci = {
@@ -40,7 +40,11 @@ terraform {
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_region_validation      = true
+    skip_requesting_account_id  = true
     force_path_style            = true
+    # region and endpoints.s3 are supplied via backend.hcl at init time.
+    # access_key and secret_key are supplied via backend.hcl at init time.
+    # See scripts/bootstrap-state.sh (local) and .github/workflows/terraform.yml (CI).
   }
 }
 

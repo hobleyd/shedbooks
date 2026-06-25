@@ -85,28 +85,34 @@ else
   KEY_SECRET="<customer-secret-key-secret>"
 fi
 
+BACKEND_HCL="$(dirname "$0")/../terraform/backend.hcl"
+
+echo ""
+echo "=== Writing terraform/backend.hcl ==="
+cat > "$BACKEND_HCL" <<EOF
+region     = "$OCI_REGION"
+access_key = "${KEY_ID:-<customer-secret-key-id>}"
+secret_key = "${KEY_SECRET:-<customer-secret-key-secret>}"
+endpoints  = { s3 = "https://$NAMESPACE.compat.objectstorage.$OCI_REGION.oraclecloud.com" }
+EOF
+echo "  Written to $BACKEND_HCL"
+echo "  (this file is gitignored — do not commit it)"
+
 echo ""
 echo "=== Next Steps ==="
 echo ""
-echo "The backend block in terraform/providers.tf uses partial configuration."
-echo "Run the following to initialise (or migrate existing local state):"
+echo "1. Initialise Terraform (or migrate existing local state):"
+echo "     cd terraform && terraform init -backend-config=backend.hcl -migrate-state"
 echo ""
-echo '  cd terraform && terraform init \'
-echo '    -backend-config="region='"$OCI_REGION"'" \'
-echo '    -backend-config="endpoint=https://'"$NAMESPACE"'.compat.objectstorage.'"$OCI_REGION"'.oraclecloud.com" \'
-echo '    -backend-config="access_key='"${KEY_ID:-<customer-secret-key-id>}"'" \'
-echo '    -backend-config="secret_key='"${KEY_SECRET:-<customer-secret-key-secret>}"'" \'
-echo '    -migrate-state'
+echo "2. Configure these GitHub Actions secrets/variables:"
 echo ""
-echo "Then configure these GitHub Actions secrets/variables:"
+echo "   Secrets:"
+echo "     TF_STATE_NAMESPACE  = $NAMESPACE"
+echo "     TF_STATE_ACCESS_KEY = ${KEY_ID:-<customer-secret-key-id>}"
+echo "     TF_STATE_SECRET_KEY = ${KEY_SECRET:-<customer-secret-key-secret>}"
 echo ""
-echo "  Secrets:"
-echo "    TF_STATE_NAMESPACE  = $NAMESPACE"
-echo "    TF_STATE_ACCESS_KEY = ${KEY_ID:-<customer-secret-key-id>}"
-echo "    TF_STATE_SECRET_KEY = ${KEY_SECRET:-<customer-secret-key-secret>}"
+echo "   Variables (Settings → Variables → Actions):"
+echo "     OCI_REGION          = $OCI_REGION"
 echo ""
-echo "  Variables (Settings → Variables → Actions):"
-echo "    OCI_REGION          = $OCI_REGION"
-echo ""
-echo "Delete local state files once migration is confirmed:"
-echo "  rm -f terraform/terraform.tfstate terraform/terraform.tfstate.backup"
+echo "3. Delete local state files once migration is confirmed:"
+echo "     rm -f terraform/terraform.tfstate terraform/terraform.tfstate.backup"

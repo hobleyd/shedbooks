@@ -1,9 +1,9 @@
-# Terraform plan + apply workflow.
+# CI/CD pipeline: server tests run first; Terraform plan + apply runs only if they pass.
 #
 # Behaviour:
-#   push → main          plan + apply  (confirms infrastructure state on every deploy)
-#   pull_request → main  plan only     (posts diff as a PR comment)
-#   workflow_dispatch    plan + apply  (manual trigger)
+#   push → main          test → plan + apply  (confirms infra state on every deploy)
+#   pull_request → main  test → plan only     (posts diff as a PR comment)
+#   workflow_dispatch    test → plan + apply
 #
 # ── Required GitHub Secrets ──────────────────────────────────────────────────
 #   OCI_TENANCY_OCID     — OCID of the OCI tenancy
@@ -21,7 +21,7 @@
 #   OCI_REGION           — OCI region, e.g. ap-sydney-1
 #   IMAGE_TAG            — Docker image tag to deploy, e.g. latest or v1.2.0
 
-name: Terraform
+name: CI
 
 on:
   push:
@@ -30,9 +30,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Prevent concurrent applies; never cancel an in-progress apply.
+# Never cancel an in-progress apply; queue instead.
 concurrency:
-  group: terraform
+  group: ci-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -40,8 +40,30 @@ permissions:
   pull-requests: write   # required to post plan as a PR comment
 
 jobs:
+  # ── 1. Server tests ─────────────────────────────────────────────────────────
+  test:
+    name: Server Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Get dependencies
+        run: dart pub get
+        working-directory: server
+
+      - name: Run tests
+        run: dart test --reporter expanded
+        working-directory: server
+
+  # ── 2. Terraform plan + apply ────────────────────────────────────────────────
   terraform:
-    name: ${{ github.event_name == 'pull_request' && 'Plan' || 'Plan + Apply' }}
+    name: ${{ github.event_name == 'pull_request' && 'Terraform Plan' || 'Terraform Plan + Apply' }}
+    needs: [test]
     runs-on: ubuntu-latest
 
     defaults:
@@ -82,18 +104,27 @@ jobs:
       # the shell quoting issues that come with setting list types via TF_VAR_*.
       # The file is gitignored (terraform/ci.auto.tfvars).
       - name: Write list variables
-        run: |
-          printf 'ssh_allowed_cidrs = %s\n' '${{ secrets.SSH_ALLOWED_CIDRS }}' > ci.auto.tfvars
+        run: printf 'ssh_allowed_cidrs = %s\n' '${{ secrets.SSH_ALLOWED_CIDRS }}' > ci.auto.tfvars
 
-      # Credentials for the S3-compatible state backend are passed at init time
-      # so they never appear in providers.tf or committed configuration.
-      - name: Terraform Init
+      # Write backend credentials to backend.hcl (gitignored).
+      # A config file is used rather than -backend-config flags because the
+      # endpoints attribute requires nested HCL syntax unavailable via CLI flags.
+      - name: Write backend config
+        env:
+          TF_STATE_NAMESPACE:  ${{ secrets.TF_STATE_NAMESPACE }}
+          TF_STATE_ACCESS_KEY: ${{ secrets.TF_STATE_ACCESS_KEY }}
+          TF_STATE_SECRET_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
+          OCI_REGION:          ${{ vars.OCI_REGION }}
         run: |
-          terraform init \
-            -backend-config="region=${{ vars.OCI_REGION }}" \
-            -backend-config="endpoint=https://${{ secrets.TF_STATE_NAMESPACE }}.compat.objectstorage.${{ vars.OCI_REGION }}.oraclecloud.com" \
-            -backend-config="access_key=${{ secrets.TF_STATE_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.TF_STATE_SECRET_KEY }}"
+          cat > backend.hcl <<EOF
+          region     = "${OCI_REGION}"
+          access_key = "${TF_STATE_ACCESS_KEY}"
+          secret_key = "${TF_STATE_SECRET_KEY}"
+          endpoints  = { s3 = "https://${TF_STATE_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com" }
+          EOF
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -126,9 +157,8 @@ jobs:
               body: `## Terraform Plan\n\`\`\`\n${truncated}\n\`\`\``
             });
 
-      # Apply runs on every push to main (including non-infra changes) so that
-      # infrastructure state is confirmed as part of every deployment cycle.
-      # If the plan produced no changes, apply completes instantly as a no-op.
+      # Apply runs on every push to main so infrastructure state is confirmed
+      # as part of every deployment cycle. No-op if the plan shows no changes.
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: terraform apply -auto-approve tfplan

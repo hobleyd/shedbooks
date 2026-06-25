@@ -1,0 +1,10 @@
+# Backend credentials for the OCI Object Storage S3-compatible state store.
+# Copy to backend.hcl and fill in values. backend.hcl is gitignored.
+# Generated automatically by scripts/bootstrap-state.sh.
+#
+# Usage: terraform init -backend-config=backend.hcl
+
+region     = "ap-sydney-1"
+access_key = "<customer-secret-key-id>"
+secret_key = "<customer-secret-key-secret>"
+endpoints  = { s3 = "https://<namespace>.compat.objectstorage.ap-sydney-1.oraclecloud.com" }

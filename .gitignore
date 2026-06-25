@@ -65,6 +65,7 @@ terraform/.terraform/
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
 terraform/terraform.tfvars
+terraform/backend.hcl
 terraform/ci.auto.tfvars
 *.tfvars
 !*.tfvars.example
