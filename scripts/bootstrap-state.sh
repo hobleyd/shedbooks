@@ -74,8 +74,8 @@ PAR_RESPONSE="$(oci os preauth-request create \
   --region "$OCI_REGION" 2>/dev/null || echo "")"
 
 if [[ -n "$PAR_RESPONSE" ]]; then
-  PAR_PATH="$(echo "$PAR_RESPONSE" | jq -r '.data["full-path"]')"
-  TF_STATE_URL="https://objectstorage.${OCI_REGION}.oraclecloud.com${PAR_PATH}"
+  PAR_ACCESS_URI="$(echo "$PAR_RESPONSE" | jq -r '.data["access-uri"]')"
+  TF_STATE_URL="https://objectstorage.${OCI_REGION}.oraclecloud.com${PAR_ACCESS_URI}"
   echo "  PAR URL: $TF_STATE_URL"
   echo "  *** Save this URL — it is the only credential needed for state access ***"
 else
