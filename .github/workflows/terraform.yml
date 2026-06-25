@@ -43,6 +43,10 @@ jobs:
     name: Server Tests
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: server
+
     steps:
       - uses: actions/checkout@v4
 
@@ -52,11 +56,12 @@ jobs:
 
       - name: Get dependencies
         run: dart pub get
-        working-directory: server
+
+      - name: Analyse
+        run: dart analyze --fatal-infos
 
       - name: Run tests
         run: dart test --reporter expanded
-        working-directory: server
 
   # ── 2. Terraform plan + apply ────────────────────────────────────────────────
   terraform:
