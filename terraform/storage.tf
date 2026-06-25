@@ -47,20 +47,7 @@ resource "oci_objectstorage_bucket" "data" {
   freeform_tags  = local.tags
 }
 
-# Lifecycle policy: move objects older than 90 days to Infrequent Access in the backups bucket
-resource "oci_objectstorage_object_lifecycle_policy" "backups" {
-  namespace = data.oci_objectstorage_namespace.ns.namespace
-  bucket    = oci_objectstorage_bucket.backups.name
-
-  rules {
-    name        = "archive-old-backups"
-    action      = "INFREQUENT_ACCESS"
-    is_enabled  = true
-    time_amount = 90
-    time_unit   = "DAYS"
-
-    object_name_filter {
-      inclusion_prefixes = ["backups/"]
-    }
-  }
-}
+# Lifecycle policy (removed): OCI requires an IAM service policy granting
+# objectstorage-<region> permission to manage object-family before lifecycle
+# policies can be applied. Omitted here as it is irrelevant for Always Free
+# (storage is free within the 10 GB limit regardless of tier).

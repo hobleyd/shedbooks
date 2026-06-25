@@ -57,32 +57,33 @@ else
   echo "  Bucket already exists (or creation failed — check OCI Console)"
 fi
 
-# Create a Customer Secret Key for S3-compat access
+# Create a Pre-Authenticated Request (PAR) for the state object.
+# PAR URL grants read/write access to terraform.tfstate without exposing IAM credentials.
+# OCI's S3-compat API does not support AWS chunked encoding, so the HTTP backend + PAR
+# is used instead of the S3 backend.
 echo ""
-echo "→ Creating Customer Secret Key for S3-compatible access..."
-if [[ -n "$USER_OCID" ]]; then
-  SECRET_KEY_RESPONSE="$(oci iam customer-secret-key create \
-    --user-id "$USER_OCID" \
-    --display-name "terraform-state-$(date +%Y%m%d)" \
-    --region "$OCI_REGION" 2>/dev/null || echo "")"
+echo "→ Creating Pre-Authenticated Request for terraform state..."
+PAR_EXPIRY="2036-01-01T00:00:00+00:00"  # 10-year PAR; rotate if security requires it
+PAR_RESPONSE="$(oci os preauth-request create \
+  --bucket-name "$BUCKET_NAME" \
+  --namespace "$NAMESPACE" \
+  --name "terraform-state-$(date +%Y%m%d)" \
+  --access-type "ObjectReadWrite" \
+  --time-expires "$PAR_EXPIRY" \
+  --object-name "terraform.tfstate" \
+  --region "$OCI_REGION" 2>/dev/null || echo "")"
 
-  if [[ -n "$SECRET_KEY_RESPONSE" ]]; then
-    KEY_ID="$(echo "$SECRET_KEY_RESPONSE" | jq -r '.data.id')"
-    KEY_SECRET="$(echo "$SECRET_KEY_RESPONSE" | jq -r '.data.key')"
-    echo ""
-    echo "  Customer Secret Key ID    : $KEY_ID"
-    echo "  Customer Secret Key Secret: $KEY_SECRET"
-    echo ""
-    echo "  *** Save the secret above — it is shown ONLY ONCE ***"
-  else
-    echo "  Could not create Customer Secret Key automatically."
-    echo "  Create one manually: OCI Console → User Settings → Customer Secret Keys"
-  fi
+if [[ -n "$PAR_RESPONSE" ]]; then
+  PAR_PATH="$(echo "$PAR_RESPONSE" | jq -r '.data["full-path"]')"
+  TF_STATE_URL="https://objectstorage.${OCI_REGION}.oraclecloud.com${PAR_PATH}"
+  echo "  PAR URL: $TF_STATE_URL"
+  echo "  *** Save this URL — it is the only credential needed for state access ***"
 else
-  echo "  Could not determine USER_OCID. Create a Customer Secret Key manually:"
-  echo "  OCI Console → User Settings → Customer Secret Keys → Generate Secret Key"
-  KEY_ID="<customer-secret-key-id>"
-  KEY_SECRET="<customer-secret-key-secret>"
+  echo "  Could not create PAR automatically."
+  echo "  Create one manually in OCI Console:"
+  echo "    Object Storage → shedbooks-tf-state → Pre-Authenticated Requests → Create"
+  echo "    Access Type: Object Read/Write, Object Name: terraform.tfstate"
+  TF_STATE_URL="https://objectstorage.${OCI_REGION}.oraclecloud.com/p/<PAR-token>/n/${NAMESPACE}/b/${BUCKET_NAME}/o/terraform.tfstate"
 fi
 
 BACKEND_HCL="$(dirname "$0")/../terraform/backend.hcl"
@@ -90,10 +91,8 @@ BACKEND_HCL="$(dirname "$0")/../terraform/backend.hcl"
 echo ""
 echo "=== Writing terraform/backend.hcl ==="
 cat > "$BACKEND_HCL" <<EOF
-region     = "$OCI_REGION"
-access_key = "${KEY_ID:-<customer-secret-key-id>}"
-secret_key = "${KEY_SECRET:-<customer-secret-key-secret>}"
-endpoints  = { s3 = "https://$NAMESPACE.compat.objectstorage.$OCI_REGION.oraclecloud.com" }
+address       = "$TF_STATE_URL"
+update_method = "PUT"
 EOF
 echo "  Written to $BACKEND_HCL"
 echo "  (this file is gitignored — do not commit it)"
@@ -101,18 +100,18 @@ echo "  (this file is gitignored — do not commit it)"
 echo ""
 echo "=== Next Steps ==="
 echo ""
-echo "1. Initialise Terraform (or migrate existing local state):"
-echo "     cd terraform && terraform init -backend-config=backend.hcl -migrate-state"
+echo "1. Initialise Terraform with the HTTP backend:"
+echo "     cd terraform && terraform init -backend-config=backend.hcl"
 echo ""
-echo "2. Configure these GitHub Actions secrets/variables:"
+echo "   To migrate existing local or errored state to the new backend:"
+echo "     terraform state push errored.tfstate   # if errored.tfstate exists"
+echo "     terraform init -backend-config=backend.hcl -migrate-state"
 echo ""
-echo "   Secrets:"
-echo "     TF_STATE_NAMESPACE  = $NAMESPACE"
-echo "     TF_STATE_ACCESS_KEY = ${KEY_ID:-<customer-secret-key-id>}"
-echo "     TF_STATE_SECRET_KEY = ${KEY_SECRET:-<customer-secret-key-secret>}"
+echo "2. Replace the GitHub Actions secret TF_STATE_URL with:"
+echo "     $TF_STATE_URL"
 echo ""
-echo "   Variables (Settings → Variables → Actions):"
-echo "     OCI_REGION          = $OCI_REGION"
+echo "   (Remove the old secrets TF_STATE_NAMESPACE, TF_STATE_ACCESS_KEY, TF_STATE_SECRET_KEY"
+echo "    — they are no longer used by the HTTP backend.)"
 echo ""
 echo "3. Delete local state files once migration is confirmed:"
-echo "     rm -f terraform/terraform.tfstate terraform/terraform.tfstate.backup"
+echo "     rm -f terraform/terraform.tfstate terraform/terraform.tfstate.backup terraform/errored.tfstate"

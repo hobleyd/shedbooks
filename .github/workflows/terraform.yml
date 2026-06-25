@@ -13,9 +13,7 @@
 #   OCI_COMPARTMENT_OCID — OCID of the target compartment
 #   SSH_PUBLIC_KEY       — SSH public key for the compute instance
 #   SSH_ALLOWED_CIDRS    — JSON list, e.g. ["1.2.3.4/32"]
-#   TF_STATE_NAMESPACE   — OCI tenancy namespace (output of: oci os ns get)
-#   TF_STATE_ACCESS_KEY  — Customer Secret Key ID for state bucket S3-compat access
-#   TF_STATE_SECRET_KEY  — Customer Secret Key secret (shown once at creation)
+#   TF_STATE_URL         — Full PAR URL for terraform.tfstate (from bootstrap-state.sh)
 #
 # ── Required GitHub Variables (Settings → Variables → Actions) ───────────────
 #   OCI_REGION           — OCI region, e.g. ap-sydney-1
@@ -106,22 +104,13 @@ jobs:
       - name: Write list variables
         run: printf 'ssh_allowed_cidrs = %s\n' '${{ secrets.SSH_ALLOWED_CIDRS }}' > ci.auto.tfvars
 
-      # Write backend credentials to backend.hcl (gitignored).
-      # A config file is used rather than -backend-config flags because the
-      # endpoints attribute requires nested HCL syntax unavailable via CLI flags.
+      # Write the PAR URL to backend.hcl (gitignored).
+      # The HTTP backend uses a Pre-Authenticated Request URL instead of IAM
+      # credentials — avoids the AWS chunked-encoding incompatibility with OCI.
       - name: Write backend config
         env:
-          TF_STATE_NAMESPACE:  ${{ secrets.TF_STATE_NAMESPACE }}
-          TF_STATE_ACCESS_KEY: ${{ secrets.TF_STATE_ACCESS_KEY }}
-          TF_STATE_SECRET_KEY: ${{ secrets.TF_STATE_SECRET_KEY }}
-          OCI_REGION:          ${{ vars.OCI_REGION }}
-        run: |
-          cat > backend.hcl <<EOF
-          region     = "${OCI_REGION}"
-          access_key = "${TF_STATE_ACCESS_KEY}"
-          secret_key = "${TF_STATE_SECRET_KEY}"
-          endpoints  = { s3 = "https://${TF_STATE_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com" }
-          EOF
+          TF_STATE_URL: ${{ secrets.TF_STATE_URL }}
+        run: printf 'address       = "%s"\nupdate_method = "PUT"\n' "$TF_STATE_URL" > backend.hcl
 
       - name: Terraform Init
         run: terraform init -backend-config=backend.hcl

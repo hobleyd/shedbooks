@@ -25,26 +25,20 @@ terraform {
     }
   }
 
-  # Partial backend configuration — non-secret values only.
-  # The remaining values (region, endpoint, access_key, secret_key) are supplied
-  # via -backend-config flags at `terraform init` time so they never appear in
-  # committed code. See scripts/bootstrap-state.sh (local) and
-  # .github/workflows/terraform.yml (CI).
+  # HTTP backend using an OCI Pre-Authenticated Request (PAR).
+  # OCI's S3-compatible API does not support AWS chunked transfer encoding,
+  # so the S3 backend cannot be used. The HTTP backend with a PAR URL avoids
+  # all AWS SDK compatibility issues.
   #
-  # First-time setup: run scripts/bootstrap-state.sh, then terraform init with
-  # the flags it prints. To init without remote state during bootstrapping:
+  # The PAR URL (address) is the only credential needed — it grants read/write
+  # access to the single state object. It is supplied at `terraform init` time
+  # via -backend-config=backend.hcl so it never appears in committed code.
+  # See scripts/bootstrap-state.sh (local) and .github/workflows/terraform.yml (CI).
+  #
+  # To init without remote state during bootstrapping:
   #   terraform init -backend=false
-  backend "s3" {
-    bucket                      = "shedbooks-tf-state"
-    key                         = "shedbooks/terraform.tfstate"
-    skip_credentials_validation = true
-    skip_metadata_api_check     = true
-    skip_region_validation      = true
-    skip_requesting_account_id  = true
-    force_path_style            = true
-    # region and endpoints.s3 are supplied via backend.hcl at init time.
-    # access_key and secret_key are supplied via backend.hcl at init time.
-    # See scripts/bootstrap-state.sh (local) and .github/workflows/terraform.yml (CI).
+  backend "http" {
+    update_method = "PUT"
   }
 }
 

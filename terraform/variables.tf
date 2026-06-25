@@ -77,6 +77,12 @@ variable "boot_volume_size_gb" {
   default     = 50
 }
 
+variable "availability_domain_index" {
+  description = "Index of the availability domain to deploy the compute instance into (0-based). Increment to 1 or 2 if OCI reports out-of-capacity for the current AD."
+  type        = number
+  default     = 0
+}
+
 variable "ssh_allowed_cidrs" {
   description = "CIDR ranges allowed to SSH into the instance. Set to your public IP (e.g. [\"203.0.113.1/32\"]). Do not leave as 0.0.0.0/0 in production."
   type        = list(string)

@@ -39,7 +39,7 @@ locals {
 }
 
 resource "oci_core_instance" "shedbooks" {
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[var.availability_domain_index].name
   compartment_id      = local.compartment_id
   display_name        = "shedbooks-app"
   shape               = "VM.Standard.A1.Flex"

@@ -1,10 +1,8 @@
-# Backend credentials for the OCI Object Storage S3-compatible state store.
-# Copy to backend.hcl and fill in values. backend.hcl is gitignored.
+# Backend config for the OCI Object Storage HTTP backend.
+# Copy to backend.hcl and fill in the PAR URL. backend.hcl is gitignored.
 # Generated automatically by scripts/bootstrap-state.sh.
 #
 # Usage: terraform init -backend-config=backend.hcl
 
-region     = "ap-sydney-1"
-access_key = "<customer-secret-key-id>"
-secret_key = "<customer-secret-key-secret>"
-endpoints  = { s3 = "https://<namespace>.compat.objectstorage.ap-sydney-1.oraclecloud.com" }
+address       = "https://objectstorage.ap-sydney-1.oraclecloud.com/p/<PAR-token>/n/<namespace>/b/shedbooks-tf-state/o/terraform.tfstate"
+update_method = "PUT"
