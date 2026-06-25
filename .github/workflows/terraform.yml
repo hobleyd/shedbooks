@@ -89,9 +89,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: opentofu/setup-opentofu@v1
         with:
-          terraform_version: "~1.9"
+          opentofu_version: "~1.9"
 
       # Write the OCI API private key to a temp file on the runner.
       # Using printf avoids adding a trailing newline that can invalidate the PEM.
@@ -118,17 +118,17 @@ jobs:
         run: printf 'address       = "%s"\nupdate_method = "PUT"\n' "$TF_STATE_URL" > backend.hcl
 
       - name: Terraform Init
-        run: terraform init -backend-config=backend.hcl
+        run: tofu init -backend-config=backend.hcl
 
       - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+        run: tofu fmt -check -recursive
 
       - name: Terraform Validate
-        run: terraform validate
+        run: tofu validate
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -out=tfplan -no-color
+        run: tofu plan -out=tfplan -no-color
 
       # Post the plan output as a PR comment so reviewers can see what will change.
       - name: Post plan to PR
@@ -155,4 +155,4 @@ jobs:
       # as part of every deployment cycle. No-op if the plan shows no changes.
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: terraform apply -auto-approve tfplan
+        run: tofu apply -auto-approve tfplan

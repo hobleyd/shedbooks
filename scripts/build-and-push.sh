@@ -32,7 +32,7 @@ TERRAFORM_DIR="$PROJECT_ROOT/terraform"
 # Resolve OCIR prefix from terraform output or environment
 if [[ -z "${OCIR_PREFIX:-}" ]]; then
   echo "→ Reading OCIR prefix from terraform output..."
-  OCIR_PREFIX="$(cd "$TERRAFORM_DIR" && terraform output -raw ocir_prefix)"
+  OCIR_PREFIX="$(cd "$TERRAFORM_DIR" && tofu output -raw ocir_prefix)"
 fi
 
 TAG="${TAG:-latest}"

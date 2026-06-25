@@ -48,15 +48,15 @@ USE_IDCS="${USE_IDCS:-true}"
 
 if [[ -z "${INSTANCE_IP:-}" ]]; then
   echo "→ Reading instance IP from terraform output..."
-  INSTANCE_IP="$(cd "$TERRAFORM_DIR" && terraform output -raw instance_public_ip)"
+  INSTANCE_IP="$(cd "$TERRAFORM_DIR" && tofu output -raw instance_public_ip)"
 fi
 
 if [[ -z "${OCIR_REGISTRY:-}" ]]; then
-  OCIR_REGISTRY="$(cd "$TERRAFORM_DIR" && terraform output -raw ocir_registry)"
+  OCIR_REGISTRY="$(cd "$TERRAFORM_DIR" && tofu output -raw ocir_registry)"
 fi
 
 if [[ -z "${TENANCY_NAMESPACE:-}" ]]; then
-  TENANCY_NAMESPACE="$(cd "$TERRAFORM_DIR" && terraform output -raw tenancy_namespace)"
+  TENANCY_NAMESPACE="$(cd "$TERRAFORM_DIR" && tofu output -raw tenancy_namespace)"
 fi
 
 SSH_USER="${SSH_USER:-ubuntu}"

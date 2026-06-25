@@ -32,7 +32,7 @@ TERRAFORM_DIR="$PROJECT_ROOT/terraform"
 # Resolve instance IP from terraform output or environment
 if [[ -z "${INSTANCE_IP:-}" ]]; then
   echo "→ Reading instance IP from terraform output..."
-  INSTANCE_IP="$(cd "$TERRAFORM_DIR" && terraform output -raw instance_public_ip)"
+  INSTANCE_IP="$(cd "$TERRAFORM_DIR" && tofu output -raw instance_public_ip)"
 fi
 
 SSH_USER="${SSH_USER:-ubuntu}"
