@@ -30,14 +30,13 @@ class InvoiceLineItem {
     amountController.dispose();
   }
 
-  void updateAmounts(double gstRate) {
+  void updateAmounts(double gstRate, {bool contactGstRegistered = false}) {
     final amountText = amountController.text.replaceAll(',', '');
     final amount = double.tryParse(amountText) ?? 0.0;
     amountCents = (amount * 100).round();
-    
-    if (glAccount?.gstApplicable == true) {
-      // GST is included in the amount
-      gstCents = (amountCents * gstRate / (1 + gstRate)).round();
+
+    if (contactGstRegistered) {
+      gstCents = (amountCents * gstRate).round();
     } else {
       gstCents = 0;
     }

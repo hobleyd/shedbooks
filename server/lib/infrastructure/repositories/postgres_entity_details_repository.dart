@@ -35,7 +35,7 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
       Sql.named('''
         SELECT entity_id, name, abn, incorporation_identifier, apca_id,
                money_in_receipt_format, money_out_receipt_format,
-               created_at, updated_at
+               invoice_number_format, created_at, updated_at
         FROM entity_details
         WHERE entity_id = @entityId
       '''),
@@ -54,10 +54,10 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
       Sql.named('''
         INSERT INTO entity_details
           (entity_id, name, abn, incorporation_identifier, apca_id,
-           money_in_receipt_format, money_out_receipt_format)
+           money_in_receipt_format, money_out_receipt_format, invoice_number_format)
         VALUES
           (@entityId, @name, @abn, @incorporationIdentifier, @apcaId,
-           @moneyInReceiptFormat, @moneyOutReceiptFormat)
+           @moneyInReceiptFormat, @moneyOutReceiptFormat, @invoiceNumberFormat)
         ON CONFLICT (entity_id) DO UPDATE
           SET name                     = EXCLUDED.name,
               abn                      = EXCLUDED.abn,
@@ -65,10 +65,11 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
               apca_id                  = EXCLUDED.apca_id,
               money_in_receipt_format  = EXCLUDED.money_in_receipt_format,
               money_out_receipt_format = EXCLUDED.money_out_receipt_format,
+              invoice_number_format    = EXCLUDED.invoice_number_format,
               updated_at               = NOW()
         RETURNING entity_id, name, abn, incorporation_identifier, apca_id,
                   money_in_receipt_format, money_out_receipt_format,
-                  created_at, updated_at
+                  invoice_number_format, created_at, updated_at
       '''),
       parameters: {
         'entityId': details.entityId,
@@ -78,6 +79,7 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
         'apcaId': details.apcaId != null ? _enc.encrypt(details.apcaId!) : null,
         'moneyInReceiptFormat': details.moneyInReceiptFormat,
         'moneyOutReceiptFormat': details.moneyOutReceiptFormat,
+        'invoiceNumberFormat': details.invoiceNumberFormat,
       },
     );
 
@@ -94,6 +96,7 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
             : null,
         moneyInReceiptFormat: (row['money_in_receipt_format'] as String?) ?? '',
         moneyOutReceiptFormat: (row['money_out_receipt_format'] as String?) ?? '',
+        invoiceNumberFormat: (row['invoice_number_format'] as String?) ?? 'WMS-YY-###',
         createdAt: row['created_at'] as DateTime,
         updatedAt: row['updated_at'] as DateTime,
       );

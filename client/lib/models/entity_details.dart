@@ -34,6 +34,11 @@ class EntityDetails {
   /// Empty string means no format is enforced.
   final String moneyOutReceiptFormat;
 
+  /// Format pattern for generating sequential invoice numbers.
+  /// Tokens: YYYY (4-digit year), YY (2-digit year), # (sequential digit).
+  /// Defaults to 'WMS-YY-###'.
+  final String invoiceNumberFormat;
+
   const EntityDetails({
     required this.name,
     required this.abn,
@@ -41,6 +46,7 @@ class EntityDetails {
     this.apcaId,
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
+    required this.invoiceNumberFormat,
   });
 
   factory EntityDetails.fromJson(Map<String, dynamic> json) => EntityDetails(
@@ -50,5 +56,7 @@ class EntityDetails {
         apcaId: json['apcaId'] as String?,
         moneyInReceiptFormat: (json['moneyInReceiptFormat'] as String?) ?? '',
         moneyOutReceiptFormat: (json['moneyOutReceiptFormat'] as String?) ?? '',
+        invoiceNumberFormat:
+            (json['invoiceNumberFormat'] as String?) ?? 'WMS-YY-###',
       );
 }

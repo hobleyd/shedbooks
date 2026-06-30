@@ -104,6 +104,34 @@ class ContactPicker extends StatefulWidget {
 }
 
 class _ContactPickerState extends State<ContactPicker> {
+  TextEditingController? _typeaheadTextController;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(ContactPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
+    super.dispose();
+  }
+
+  void _onControllerChanged() {
+    setState(() {});
+    _typeaheadTextController?.text = widget.controller.nameController.text;
+  }
+
   Future<List<ContactEntry>> _searchContacts(String query) async {
     if (query.isEmpty) return [];
     try {
@@ -168,16 +196,19 @@ class _ContactPickerState extends State<ContactPicker> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TypeAheadField<ContactEntry>(
-          builder: (context, textController, focusNode) => TextField(
-            controller: textController,
-            focusNode: focusNode,
-            enabled: widget.enabled,
-            decoration: const InputDecoration(
-              labelText: 'Search Contact',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.search),
-            ),
-          ),
+          builder: (context, textController, focusNode) {
+            _typeaheadTextController = textController;
+            return TextField(
+              controller: textController,
+              focusNode: focusNode,
+              enabled: widget.enabled,
+              decoration: const InputDecoration(
+                labelText: 'Search Contact',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search),
+              ),
+            );
+          },
           onSelected: (contact) {
             controller.selectContact(contact);
           },

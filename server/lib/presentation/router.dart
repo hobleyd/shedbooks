@@ -57,6 +57,7 @@ import '../application/bank_account/list_bank_accounts_use_case.dart';
 import '../application/bank_account/reorder_bank_accounts_use_case.dart';
 import '../application/bank_account/update_bank_account_use_case.dart';
 import '../application/entity/get_entity_details_use_case.dart';
+import '../application/entity/get_next_invoice_number_use_case.dart';
 import '../application/entity/save_entity_details_use_case.dart';
 import '../application/general_ledger/create_general_ledger_use_case.dart';
 import '../application/general_ledger/delete_general_ledger_use_case.dart';
@@ -125,6 +126,7 @@ import 'handlers/contact_handler.dart';
 import 'handlers/dashboard_preference_handler.dart';
 import 'handlers/bank_account_handler.dart';
 import 'handlers/entity_details_handler.dart';
+import 'handlers/invoice_handler.dart';
 import 'handlers/transaction_handler.dart';
 import 'handlers/general_ledger_handler.dart';
 import 'handlers/gst_rate_handler.dart';
@@ -218,6 +220,12 @@ Handler buildRouter({
   final entityDetailsHandler = EntityDetailsHandler(
     get: GetEntityDetailsUseCase(entityDetailsRepository),
     save: SaveEntityDetailsUseCase(entityDetailsRepository),
+  );
+  final invoiceHandler = InvoiceHandler(
+    nextNumber: GetNextInvoiceNumberUseCase(
+      entityDetailsRepository,
+      transactionRepository,
+    ),
   );
 
   final dashboardPreferenceRepository =
@@ -349,6 +357,8 @@ Handler buildRouter({
         _authed(_bankAccountRouter(bankAccountHandler)))
     ..mount('/entity-details',
         _authed(_entityDetailsRouter(entityDetailsHandler)))
+    ..mount('/invoices',
+        _authed(_invoiceRouter(invoiceHandler)))
     ..mount('/bank-imports',
         _authed(_bankImportsRouter(bankImportsHandler)))
     ..mount('/locked-months',
@@ -567,4 +577,9 @@ Router _assetRouter(AssetHandler h) {
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+}
+
+// All authenticated users can fetch the next invoice number.
+Router _invoiceRouter(InvoiceHandler h) {
+  return Router()..get('/next-number', h.handleNextNumber);
 }

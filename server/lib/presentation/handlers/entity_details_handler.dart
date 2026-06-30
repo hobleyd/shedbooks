@@ -97,6 +97,7 @@ class EntityDetailsHandler {
         apcaId: isAuthorized ? dto.apcaId : before?.apcaId,
         moneyInReceiptFormat: dto.moneyInReceiptFormat,
         moneyOutReceiptFormat: dto.moneyOutReceiptFormat,
+        invoiceNumberFormat: dto.invoiceNumberFormat,
       );
       if (before == null) {
         _auditChanges(request)?.set(_detailsSnapshot(details, redact: true));
@@ -135,6 +136,7 @@ class EntityDetailsHandler {
         apcaId: null,
         moneyInReceiptFormat: d.moneyInReceiptFormat,
         moneyOutReceiptFormat: d.moneyOutReceiptFormat,
+        invoiceNumberFormat: d.invoiceNumberFormat,
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
       );
@@ -151,6 +153,7 @@ class EntityDetailsHandler {
         'apcaId': redact ? (d.apcaId != null ? '***' : null) : d.apcaId,
         'moneyInReceiptFormat': d.moneyInReceiptFormat,
         'moneyOutReceiptFormat': d.moneyOutReceiptFormat,
+        'invoiceNumberFormat': d.invoiceNumberFormat,
       };
 
   static Response _orgRequired() => Response.unauthorized(

@@ -35,6 +35,11 @@ class EntityDetails {
   /// Empty string means no format is enforced.
   final String moneyOutReceiptFormat;
 
+  /// Format pattern for generating sequential invoice numbers.
+  /// Tokens: YYYY (4-digit year), YY (2-digit year), # (sequential digit), other chars are literals.
+  /// Defaults to 'WMS-YY-###' producing numbers like WMS-26-001.
+  final String invoiceNumberFormat;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -46,6 +51,7 @@ class EntityDetails {
     this.apcaId,
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
+    required this.invoiceNumberFormat,
     required this.createdAt,
     required this.updatedAt,
   });

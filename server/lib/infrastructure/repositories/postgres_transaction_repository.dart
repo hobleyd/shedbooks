@@ -332,4 +332,20 @@ class PostgresTransactionRepository implements ITransactionRepository {
       }
     });
   }
+
+  @override
+  Future<List<String>> findReceiptNumbersLike(String pattern,
+      {required String entityId}) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT DISTINCT receipt_number
+        FROM transactions
+        WHERE entity_id = @entityId
+          AND deleted_at IS NULL
+          AND receipt_number LIKE @pattern
+      '''),
+      parameters: {'entityId': entityId, 'pattern': pattern},
+    );
+    return result.map((r) => r[0] as String).toList();
+  }
 }

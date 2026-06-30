@@ -18,14 +18,16 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/contact_entry.dart';
+import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/invoice_line_item.dart';
 import '../services/api_client.dart';
 import '../widgets/contact_picker.dart';
+import '../widgets/gl_account_dropdown.dart';
+import '../widgets/invoice_pdf.dart';
 
 class InvoicesScreen extends StatefulWidget {
   const InvoicesScreen({super.key});
@@ -41,18 +43,22 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   final TextEditingController _invoiceNumberController = TextEditingController();
   DateTime _invoiceDate = DateTime.now();
   List<GeneralLedgerEntry> _glAccounts = [];
-  double _gstRate = 0.10; // Default to 10%
+  double _gstRate = 0.10;
+  EntityDetails? _entityDetails;
   bool _loading = true;
   bool _saving = false;
+  bool _saved = false;
 
   @override
   void initState() {
     super.initState();
+    _contactController.addListener(_updateCalculations);
     _loadData();
   }
 
   @override
   void dispose() {
+    _contactController.removeListener(_updateCalculations);
     _contactController.dispose();
     _invoiceNumberController.dispose();
     for (var item in _lineItems) {
@@ -67,6 +73,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       final results = await Future.wait([
         client.get('/general-ledger'),
         client.get('/gst-rates/effective'),
+        client.get('/invoices/next-number'),
+        client.get('/entity-details'),
       ]);
 
       if (results[0].statusCode == 200) {
@@ -79,6 +87,16 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       if (results[1].statusCode == 200) {
         final gstData = jsonDecode(results[1].body);
         _gstRate = gstData['rate'] as double;
+      }
+
+      if (results[2].statusCode == 200) {
+        final numData = jsonDecode(results[2].body) as Map<String, dynamic>;
+        _invoiceNumberController.text = numData['invoiceNumber'] as String;
+      }
+
+      if (results[3].statusCode == 200) {
+        _entityDetails = EntityDetails.fromJson(
+            jsonDecode(results[3].body) as Map<String, dynamic>);
       }
 
       setState(() => _loading = false);
@@ -106,13 +124,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 
   void _updateCalculations() {
+    final contactGstRegistered = _contactController.gstRegistered;
     for (var item in _lineItems) {
-      item.updateAmounts(_gstRate);
+      item.updateAmounts(_gstRate, contactGstRegistered: contactGstRegistered);
     }
     setState(() {});
   }
 
-  int get _totalCents => _lineItems.fold(0, (sum, item) => sum + item.amountCents);
+  int get _totalCents => _lineItems.fold(0, (sum, item) => sum + item.amountCents + item.gstCents);
   int get _totalGstCents => _lineItems.fold(0, (sum, item) => sum + item.gstCents);
 
   @override
@@ -131,6 +150,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               Text('Invoices',
                   style: Theme.of(context).textTheme.headlineMedium),
               const Spacer(),
+              OutlinedButton.icon(
+                onPressed: _saved ? _generatePdf : null,
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                label: const Text('Generate PDF'),
+              ),
+              const SizedBox(width: 12),
               FilledButton(
                 onPressed: _saving ? null : _saveInvoice,
                 child: _saving
@@ -185,8 +210,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               child: TextFormField(
                 controller: _invoiceNumberController,
                 decoration: const InputDecoration(
-                  labelText: 'Invoice / Receipt Number',
+                  labelText: 'Invoice Number',
                   border: OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 ),
               ),
             ),
@@ -208,6 +236,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Invoice Date',
                     border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   ),
                   child: Text(DateFormat('yyyy-MM-dd').format(_invoiceDate)),
                 ),
@@ -261,24 +292,26 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             decoration: const InputDecoration(
               labelText: 'Description',
               border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           flex: 2,
-          child: DropdownButtonFormField<GeneralLedgerEntry>(
-            initialValue: item.glAccount,
+          child: GlAccountDropdown(
+            allEntries: _glAccounts,
+            value: item.glAccount,
             decoration: const InputDecoration(
               labelText: 'GL Account',
               border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
-            items: _glAccounts.map((gl) {
-              return DropdownMenuItem(
-                value: gl,
-                child: Text(gl.label, overflow: TextOverflow.ellipsis),
-              );
-            }).toList(),
+            directionFilter: GlDirection.moneyIn,
             onChanged: (val) {
               setState(() {
                 item.glAccount = val;
@@ -299,6 +332,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             decoration: const InputDecoration(
               labelText: 'Amount',
               border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               prefixText: r'$ ',
             ),
             onChanged: (val) => _updateCalculations(),
@@ -390,8 +426,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
     try {
       final client = context.read<ApiClient>();
-      
-      // 1. Handle new contact if necessary
+
+      // 1. Create contact if new.
       String contactId;
       if (_contactController.isNew) {
         final contactBody = jsonEncode({
@@ -409,29 +445,40 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         contactId = _contactController.selectedContact!.id;
       }
 
-      // 2. Create transactions for each line item
-      // Note: In a real system, we'd want this to be atomic on the backend.
-      for (var item in _lineItems) {
-        final txnBody = jsonEncode({
-          'contactId': contactId,
-          'generalLedgerId': item.glAccount!.id,
-          'amount': item.amountCents,
-          'gstAmount': item.gstCents,
-          'transactionType': 'debit', // Invoices are usually outgoings/debits
-          'receiptNumber': _invoiceNumberController.text.trim(),
-          'transactionDate': DateFormat('yyyy-MM-dd').format(_invoiceDate),
-        });
-        final res = await client.post('/transactions', txnBody);
-        if (res.statusCode != 201) {
-          throw Exception('Failed to create transaction for "${item.descriptionController.text}": ${res.body}');
+      // 2. Create one transaction per line item, collecting IDs for rollback.
+      final createdIds = <String>[];
+      try {
+        for (final item in _lineItems) {
+          final txnBody = jsonEncode({
+            'contactId': contactId,
+            'generalLedgerId': item.glAccount!.id,
+            'amount': item.amountCents,
+            'gstAmount': item.gstCents,
+            'transactionType': 'credit',
+            'description': item.descriptionController.text.trim(),
+            'receiptNumber': _invoiceNumberController.text.trim(),
+            'transactionDate': DateFormat('yyyy-MM-dd').format(_invoiceDate),
+          });
+          final res = await client.post('/transactions', txnBody);
+          if (res.statusCode != 201) {
+            throw Exception(
+                'Failed to save line "${item.descriptionController.text}": ${res.body}');
+          }
+          createdIds.add(jsonDecode(res.body)['id'] as String);
         }
+      } catch (_) {
+        // Roll back any transactions that were already created.
+        for (final id in createdIds) {
+          await client.delete('/transactions/$id');
+        }
+        rethrow;
       }
 
       if (mounted) {
+        setState(() => _saved = true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invoice saved successfully.')),
+          const SnackBar(content: Text('Invoice saved. Use Generate PDF to download.')),
         );
-        context.go('/transactions');
       }
     } catch (e) {
       if (mounted) {
@@ -439,6 +486,20 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         _showError('Failed to save invoice: $e');
       }
     }
+  }
+
+  Future<void> _generatePdf() async {
+    final currencyFormat = NumberFormat.currency(symbol: r'$');
+    await InvoicePdf.generateAndDownload(
+      entity: _entityDetails,
+      contactName: _contactController.nameController.text.trim(),
+      contactAbn: _contactController.abnController.text.trim(),
+      contactGstRegistered: _contactController.gstRegistered,
+      invoiceNumber: _invoiceNumberController.text.trim(),
+      invoiceDate: _invoiceDate,
+      lineItems: _lineItems,
+      formatCents: (cents) => currencyFormat.format(cents / 100),
+    );
   }
 
   void _showError(String message) {

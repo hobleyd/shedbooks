@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import '../models/contact_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
+import 'gl_account_dropdown.dart';
 
 /// Validated form data passed to the parent's save handler.
 class TransactionFormData {
@@ -511,14 +512,6 @@ class TransactionFormState extends State<TransactionForm> {
       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     );
 
-    final filteredGls = (_selectedDirection == null
-            ? widget.glEntries
-            : widget.glEntries
-                .where((g) => g.direction == _selectedDirection)
-                .toList())
-        ..sort((a, b) => buildGlPath(widget.glEntries, a.id)
-            .compareTo(buildGlPath(widget.glEntries, b.id)));
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -558,90 +551,12 @@ class TransactionFormState extends State<TransactionForm> {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: InputDecorator(
+          child: GlAccountDropdown(
+            allEntries: widget.glEntries,
+            value: _selectedGl,
             decoration: decoration.copyWith(labelText: 'General Ledger Account'),
-            child: DropdownButton<GeneralLedgerEntry>(
-              value: _selectedGl,
-              isExpanded: true,
-              isDense: true,
-              underline: const SizedBox.shrink(),
-              selectedItemBuilder: (context) => filteredGls.map((gl) {
-                final glIsIn = gl.direction == GlDirection.moneyIn;
-                return Row(children: [
-                  Icon(
-                    glIsIn
-                        ? Icons.arrow_circle_down_outlined
-                        : Icons.arrow_circle_up_outlined,
-                    size: 16,
-                    color: glIsIn
-                        ? Colors.green.shade700
-                        : Colors.red.shade700,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: Text(buildGlPath(widget.glEntries, gl.id),
-                          overflow: TextOverflow.ellipsis)),
-                  if (gl.gstApplicable) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(3),
-                        border: Border.all(color: Colors.blue.shade200),
-                      ),
-                      child: Text('GST',
-                          style: TextStyle(
-                              fontSize: 10, color: Colors.blue.shade700)),
-                    ),
-                  ],
-                ]);
-              }).toList(),
-              items: filteredGls.map((gl) {
-                final glIsIn = gl.direction == GlDirection.moneyIn;
-                final depth = glDepth(widget.glEntries, gl.id);
-                return DropdownMenuItem(
-                  value: gl,
-                  child: Padding(
-                    padding: EdgeInsets.only(left: depth * 16.0),
-                    child: Row(
-                      children: [
-                        Icon(
-                          glIsIn
-                              ? Icons.arrow_circle_down_outlined
-                              : Icons.arrow_circle_up_outlined,
-                          size: 16,
-                          color: glIsIn
-                              ? Colors.green.shade700
-                              : Colors.red.shade700,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: Text(gl.description,
-                                overflow: TextOverflow.ellipsis)),
-                        if (gl.gstApplicable) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(3),
-                              border: Border.all(color: Colors.blue.shade200),
-                            ),
-                            child: Text('GST',
-                                style: TextStyle(
-                                    fontSize: 10, color: Colors.blue.shade700)),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-              onChanged: widget.isSaving ? null : _onGlChangedFull,
-            ),
+            directionFilter: _selectedDirection,
+            onChanged: widget.isSaving ? null : _onGlChangedFull,
           ),
         ),
       ],
@@ -851,13 +766,6 @@ class TransactionFormState extends State<TransactionForm> {
 
   Widget _buildCompactLayout() {
     final isMoneyOut = _isMoneyOut;
-    final compactGls = (widget.glEntries
-            .where((g) => g.direction ==
-                (isMoneyOut ? GlDirection.moneyOut : GlDirection.moneyIn))
-            .toList()
-          ..sort((a, b) => buildGlPath(widget.glEntries, a.id)
-              .compareTo(buildGlPath(widget.glEntries, b.id))))
-        .toList();
     const dec = InputDecoration(
       border: OutlineInputBorder(),
       isDense: true,
@@ -880,60 +788,14 @@ class TransactionFormState extends State<TransactionForm> {
               Expanded(child: _buildContactField(decoration: dec.copyWith(labelText: 'Contact'))),
               const SizedBox(width: 8),
               Expanded(
-                child: InputDecorator(
+                child: GlAccountDropdown(
+                  allEntries: widget.glEntries,
+                  value: _selectedGl,
                   decoration: dec.copyWith(labelText: 'GL Account'),
-                  child: DropdownButton<GeneralLedgerEntry>(
-                    value: _selectedGl,
-                    isExpanded: true,
-                    isDense: true,
-                    underline: const SizedBox.shrink(),
-                    selectedItemBuilder: (context) => compactGls.map((g) {
-                      final glIsIn = g.direction == GlDirection.moneyIn;
-                      return Row(children: [
-                        Icon(
-                          glIsIn
-                              ? Icons.arrow_circle_down_outlined
-                              : Icons.arrow_circle_up_outlined,
-                          size: 14,
-                          color: glIsIn
-                              ? Colors.green.shade700
-                              : Colors.red.shade700,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                            child: Text(buildGlPath(widget.glEntries, g.id),
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 13))),
-                      ]);
-                    }).toList(),
-                    items: compactGls.map((g) {
-                      final glIsIn = g.direction == GlDirection.moneyIn;
-                      final depth = glDepth(widget.glEntries, g.id);
-                      return DropdownMenuItem(
-                        value: g,
-                        child: Padding(
-                          padding: EdgeInsets.only(left: depth * 16.0),
-                          child: Row(children: [
-                            Icon(
-                              glIsIn
-                                  ? Icons.arrow_circle_down_outlined
-                                  : Icons.arrow_circle_up_outlined,
-                              size: 14,
-                              color: glIsIn
-                                  ? Colors.green.shade700
-                                  : Colors.red.shade700,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                                child: Text(g.description,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 13))),
-                          ]),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: widget.isSaving ? null : _onGlChangedCompact,
-                  ),
+                  directionFilter:
+                      isMoneyOut ? GlDirection.moneyOut : GlDirection.moneyIn,
+                  compact: true,
+                  onChanged: widget.isSaving ? null : _onGlChangedCompact,
                 ),
               ),
             ],

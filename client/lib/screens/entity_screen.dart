@@ -48,6 +48,7 @@ class _EntityScreenState extends State<EntityScreen> {
   final _apcaIdController = TextEditingController();
   final _moneyInReceiptFormatController = TextEditingController();
   final _moneyOutReceiptFormatController = TextEditingController();
+  final _invoiceNumberFormatController = TextEditingController();
 
   bool get _isCreating => _saved == null;
 
@@ -60,6 +61,7 @@ class _EntityScreenState extends State<EntityScreen> {
     _apcaIdController.addListener(_onFieldChanged);
     _moneyInReceiptFormatController.addListener(_onFieldChanged);
     _moneyOutReceiptFormatController.addListener(_onFieldChanged);
+    _invoiceNumberFormatController.addListener(_onFieldChanged);
     _load();
   }
 
@@ -73,6 +75,7 @@ class _EntityScreenState extends State<EntityScreen> {
     _apcaIdController.dispose();
     _moneyInReceiptFormatController.dispose();
     _moneyOutReceiptFormatController.dispose();
+    _invoiceNumberFormatController.dispose();
     super.dispose();
   }
 
@@ -113,6 +116,7 @@ class _EntityScreenState extends State<EntityScreen> {
         _apcaIdController.text = details.apcaId ?? '';
         _moneyInReceiptFormatController.text = details.moneyInReceiptFormat;
         _moneyOutReceiptFormatController.text = details.moneyOutReceiptFormat;
+        _invoiceNumberFormatController.text = details.invoiceNumberFormat;
         _loading = false;
       });
     } catch (e) {
@@ -159,6 +163,7 @@ class _EntityScreenState extends State<EntityScreen> {
         'apcaId': _apcaIdController.text.trim(),
         'moneyInReceiptFormat': _moneyInReceiptFormatController.text.trim(),
         'moneyOutReceiptFormat': _moneyOutReceiptFormatController.text.trim(),
+        'invoiceNumberFormat': _invoiceNumberFormatController.text.trim(),
       });
 
       final res =
@@ -215,6 +220,7 @@ class _EntityScreenState extends State<EntityScreen> {
       _apcaIdController.text = _saved!.apcaId ?? '';
       _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
       _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
+      _invoiceNumberFormatController.text = _saved!.invoiceNumberFormat;
       _editing = true;
     });
   }
@@ -227,6 +233,7 @@ class _EntityScreenState extends State<EntityScreen> {
       _apcaIdController.text = _saved!.apcaId ?? '';
       _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
       _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
+      _invoiceNumberFormatController.text = _saved!.invoiceNumberFormat;
       _editing = false;
     });
   }
@@ -367,6 +374,26 @@ class _EntityScreenState extends State<EntityScreen> {
             helperText: '6-digit User ID assigned by your bank for Direct Entry',
             keyboardType: TextInputType.number,
           ),
+          const SizedBox(height: 24),
+          Text('Invoice Number Format',
+              style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(
+            'Tokens: # digit  YY 2-digit year  YYYY 4-digit year. '
+            'All other characters are required literals.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          _buildField(
+            label: 'Invoice Format',
+            controller: _invoiceNumberFormatController,
+            enabled: _editing,
+            helperText: 'e.g. WMS-YY-###',
+          ),
+          _buildFormatExample(_invoiceNumberFormatController.text),
           const SizedBox(height: 24),
           Text('Receipt Number Formats',
               style: Theme.of(context).textTheme.titleSmall),

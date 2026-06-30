@@ -83,4 +83,9 @@ abstract interface class ITransactionRepository {
     String batchName, {
     required String entityId,
   });
+
+  /// Returns distinct non-deleted receipt numbers matching [pattern] (SQL LIKE syntax)
+  /// for [entityId].
+  Future<List<String>> findReceiptNumbersLike(String pattern,
+      {required String entityId});
 }

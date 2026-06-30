@@ -38,6 +38,7 @@ void main() {
     incorporationIdentifier: 'IA-2024-001',
     moneyInReceiptFormat: '',
     moneyOutReceiptFormat: 'P-#####',
+    invoiceNumberFormat: 'WMS-YY-###',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );
@@ -61,6 +62,7 @@ void main() {
         incorporationIdentifier: 'IA-2024-001',
         moneyInReceiptFormat: '',
         moneyOutReceiptFormat: 'P-#####',
+        invoiceNumberFormat: 'WMS-YY-###',
       );
 
       // Assert
@@ -81,6 +83,7 @@ void main() {
         incorporationIdentifier: '  IA-2024-001  ',
         moneyInReceiptFormat: '  ####  ',
         moneyOutReceiptFormat: '  P-#####  ',
+        invoiceNumberFormat: '  WMS-YY-###  ',
       );
 
       // Assert
@@ -92,6 +95,7 @@ void main() {
       expect(captured.incorporationIdentifier, equals('IA-2024-001'));
       expect(captured.moneyInReceiptFormat, equals('####'));
       expect(captured.moneyOutReceiptFormat, equals('P-#####'));
+      expect(captured.invoiceNumberFormat, equals('WMS-YY-###'));
     });
 
     test('throws EntityDetailsValidationException when name is blank', () {
@@ -104,6 +108,7 @@ void main() {
           incorporationIdentifier: 'IA-2024-001',
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
+          invoiceNumberFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -119,6 +124,7 @@ void main() {
           incorporationIdentifier: 'IA-2024-001',
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
+          invoiceNumberFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -134,6 +140,7 @@ void main() {
           incorporationIdentifier: 'IA-2024-001',
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
+          invoiceNumberFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -149,6 +156,7 @@ void main() {
           incorporationIdentifier: 'IA-2024-001',
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
+          invoiceNumberFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -164,6 +172,7 @@ void main() {
           incorporationIdentifier: '   ',
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
+          invoiceNumberFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
