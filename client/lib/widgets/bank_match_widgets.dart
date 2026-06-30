@@ -23,6 +23,7 @@ import '../models/transaction_entry.dart';
 
 /// Matching status used by both the CSV import and PDF reconciliation screens.
 /// [newTransaction] is only used by the import screen.
+/// [invoiceMatched] is used when a bank credit row matches an unpaid invoice by number.
 enum BankMatchStatus {
   autoMatched,
   amountMismatch,
@@ -32,6 +33,7 @@ enum BankMatchStatus {
   unmatched,
   skipped,
   alreadyImported,
+  invoiceMatched,
 }
 
 extension BankMatchStatusX on BankMatchStatus {
@@ -150,6 +152,11 @@ class MatchStatusBadge extends StatelessWidget {
           'Imported',
           Icons.check_circle,
           Colors.grey,
+        ),
+      BankMatchStatus.invoiceMatched => (
+          'Invoice',
+          Icons.receipt_long_outlined,
+          Colors.teal,
         ),
     };
     return Row(

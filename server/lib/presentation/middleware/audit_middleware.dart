@@ -132,6 +132,7 @@ String _action(String method, String path) {
   if (path.endsWith('/restore')) return 'RESTORE';
   if (path.endsWith('/merge')) return 'MERGE';
   if (path.endsWith('/aba-sequences/next')) return 'ABA_EXPORT';
+  if (path.endsWith('/mark-paid')) return 'MARK_PAID';
   return switch (method) {
     'POST' => 'CREATE',
     'PUT' => 'UPDATE',
@@ -155,6 +156,7 @@ const _tableMap = {
   'members': 'members',
   'carddav': 'members',
   'assets': 'assets',
+  'invoices': 'invoices',
 };
 
 String _tableName(String path) {
@@ -172,6 +174,7 @@ String? _recordId(String path) {
   const nonIdSegments = {
     'merge', 'effective', 'backup', 'restore', 'audit-log', 'users', 'next',
     'confirm-import', 'gl-mappings', 'import', 'members',
+    'next-number', 'mark-paid',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

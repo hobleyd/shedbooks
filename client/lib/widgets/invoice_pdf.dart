@@ -201,7 +201,6 @@ class InvoicePdf {
     String Function(int) fmt,
     bool showGst,
   ) {
-    const headerStyle = pw.TextStyle(color: PdfColors.white, fontSize: 9);
     const cellStyle = pw.TextStyle(fontSize: 9);
     const headerDecoration = pw.BoxDecoration(color: PdfColors.blue900);
 

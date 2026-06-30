@@ -58,6 +58,9 @@ import '../application/bank_account/reorder_bank_accounts_use_case.dart';
 import '../application/bank_account/update_bank_account_use_case.dart';
 import '../application/entity/get_entity_details_use_case.dart';
 import '../application/entity/get_next_invoice_number_use_case.dart';
+import '../application/invoice/create_invoice_use_case.dart';
+import '../application/invoice/list_invoices_use_case.dart';
+import '../application/invoice/mark_invoice_paid_use_case.dart';
 import '../application/entity/save_entity_details_use_case.dart';
 import '../application/general_ledger/create_general_ledger_use_case.dart';
 import '../application/general_ledger/delete_general_ledger_use_case.dart';
@@ -109,6 +112,7 @@ import '../application/asset/import_assets_use_case.dart';
 import '../application/asset/list_assets_use_case.dart';
 import '../application/asset/update_asset_use_case.dart';
 import '../infrastructure/repositories/postgres_asset_repository.dart';
+import '../infrastructure/repositories/postgres_invoice_repository.dart';
 import 'handlers/aba_sequence_handler.dart';
 import 'handlers/asset_handler.dart';
 import 'handlers/carddav_handler.dart';
@@ -221,11 +225,16 @@ Handler buildRouter({
     get: GetEntityDetailsUseCase(entityDetailsRepository),
     save: SaveEntityDetailsUseCase(entityDetailsRepository),
   );
+
+  final invoiceRepository = PostgresInvoiceRepository(pool);
   final invoiceHandler = InvoiceHandler(
     nextNumber: GetNextInvoiceNumberUseCase(
       entityDetailsRepository,
-      transactionRepository,
+      invoiceRepository,
     ),
+    create: CreateInvoiceUseCase(invoiceRepository),
+    list: ListInvoicesUseCase(invoiceRepository),
+    markPaid: MarkInvoicePaidUseCase(invoiceRepository, transactionRepository),
   );
 
   final dashboardPreferenceRepository =
@@ -579,7 +588,18 @@ Router _assetRouter(AssetHandler h) {
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
 }
 
-// All authenticated users can fetch the next invoice number.
+// Viewers can read; contributors and admins can write.
+// Fixed paths (next-number) must be registered before /<id> to avoid shadowing.
 Router _invoiceRouter(InvoiceHandler h) {
-  return Router()..get('/next-number', h.handleNextNumber);
+  return Router()
+    ..get('/next-number', h.handleNextNumber)
+    ..get('/', h.handleList)
+    ..post('/', _role(requireContributor(), h.handleCreate))
+    ..post(
+      '/<id>/mark-paid',
+      (Request req, String id) => _role(
+        requireContributor(),
+        (r) => h.handleMarkPaid(r, id),
+      )(req),
+    );
 }

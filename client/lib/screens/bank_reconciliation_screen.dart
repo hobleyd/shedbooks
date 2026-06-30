@@ -25,6 +25,7 @@ import 'package:provider/provider.dart';
 import '../models/bank_account_summary.dart';
 import '../models/cba_statement_data.dart';
 import '../models/contact_entry.dart';
+import '../models/invoice_entry.dart';
 import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
@@ -45,6 +46,9 @@ class _RecRow {
   BankMatchStatus status = BankMatchStatus.unmatched;
   List<TransactionEntry> matched = const [];
 
+  // Set when this credit row was matched to an unpaid invoice by invoice number.
+  InvoiceEntry? invoiceMatch;
+
   _RecRow({
     required this.source,
     required this.processDate,
@@ -55,7 +59,8 @@ class _RecRow {
 
   bool get isResolved =>
       status == BankMatchStatus.autoMatched ||
-      status == BankMatchStatus.manuallyMatched;
+      status == BankMatchStatus.manuallyMatched ||
+      status == BankMatchStatus.invoiceMatched;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -75,6 +80,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   bool _loading = true;
   String? _loadError;
   List<TransactionEntry> _allTransactions = [];
+  List<InvoiceEntry> _unpaidInvoices = [];
   Map<String, String> _contactNames = {};
   Set<String> _lockedMonths = {};
   ReceiptFormat _moneyInFormat = const ReceiptFormat('');
@@ -133,6 +139,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         client.get('/entity-details'),
         client.get('/contacts'),
         client.get('/bank-reconciliation/bank-accounts'),
+        client.get('/invoices?unpaid=true'),
       ]);
 
       final txRes = results[0];
@@ -182,6 +189,14 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         if (_bankAccounts.length == 1 && _selectedBankAccountId == null) {
           _selectedBankAccountId = _bankAccounts.first.id;
         }
+      }
+
+      final invRes = results[5];
+      if (invRes.statusCode == 200) {
+        final list = jsonDecode(invRes.body) as List<dynamic>;
+        _unpaidInvoices = list
+            .map((j) => InvoiceEntry.fromJson(j as Map<String, dynamic>))
+            .toList();
       }
     } catch (e) {
       if (mounted) setState(() => _loadError = e.toString());
@@ -348,19 +363,21 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   }
 
   Future<void> _saveMatchesAndReview() async {
-    final ids = _rows
-        .where((r) =>
-            r.status == BankMatchStatus.autoMatched ||
-            r.status == BankMatchStatus.manuallyMatched)
-        .expand((r) => r.matched)
-        .map((t) => t.id)
-        .toSet()
-        .toList();
+    setState(() => _savingMatches = true);
+    final client = context.read<ApiClient>();
 
-    if (ids.isNotEmpty) {
-      setState(() => _savingMatches = true);
-      try {
-        final client = context.read<ApiClient>();
+    try {
+      // 1. Bank-match transaction-matched rows.
+      final ids = _rows
+          .where((r) =>
+              r.status == BankMatchStatus.autoMatched ||
+              r.status == BankMatchStatus.manuallyMatched)
+          .expand((r) => r.matched)
+          .map((t) => t.id)
+          .toSet()
+          .toList();
+
+      if (ids.isNotEmpty) {
         final res = await client.post(
           '/transactions/bank-match',
           jsonEncode({'transactionIds': ids}),
@@ -382,18 +399,47 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             .map((t) =>
                 idSet.contains(t.id) ? t.copyWith(bankMatched: true) : t)
             .toList();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Failed to save matches: $e'),
-                behavior: SnackBarBehavior.floating),
-          );
-        }
-        return;
-      } finally {
-        if (mounted) setState(() => _savingMatches = false);
       }
+
+      // 2. Mark invoice-matched rows as paid.
+      final invoiceRows = _rows
+          .where((r) => r.status == BankMatchStatus.invoiceMatched &&
+              r.invoiceMatch != null)
+          .toList();
+
+      for (final row in invoiceRows) {
+        final invoice = row.invoiceMatch!;
+        final res = await client.post(
+          '/invoices/${invoice.id}/mark-paid',
+          jsonEncode({'transactionDate': row.processDate}),
+        );
+        if (res.statusCode != 200) {
+          final msg =
+              (jsonDecode(res.body) as Map?)?['error']?.toString() ??
+                  'Failed to mark invoice ${invoice.invoiceNumber} as paid';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(msg), behavior: SnackBarBehavior.floating),
+            );
+          }
+          return;
+        }
+        // Remove from unpaid list so it won't be re-matched on re-entry.
+        _unpaidInvoices =
+            _unpaidInvoices.where((inv) => inv.id != invoice.id).toList();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to save matches: $e'),
+              behavior: SnackBarBehavior.floating),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _savingMatches = false);
     }
 
     if (mounted) setState(() => _phase = _Phase.results);
@@ -601,6 +647,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   }
 
   void _matchCreditRow(_RecRow row) {
+    row.invoiceMatch = null;
+
     if (row.parsedReceipts.isNotEmpty) {
       final found = _allTransactions
           .where((t) =>
@@ -626,6 +674,16 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       if (alreadyByReceipt) {
         row.status = BankMatchStatus.alreadyImported;
         row.matched = [];
+        return;
+      }
+
+      // Check unpaid invoices by invoice number.
+      final matchedInvoice = _unpaidInvoices.where((inv) =>
+          row.parsedReceipts.contains(inv.invoiceNumber)).firstOrNull;
+      if (matchedInvoice != null) {
+        row.invoiceMatch = matchedInvoice;
+        row.matched = [];
+        row.status = BankMatchStatus.invoiceMatched;
         return;
       }
     }
@@ -681,7 +739,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   static bool _isUserResolved(BankMatchStatus s) =>
       s == BankMatchStatus.manuallyMatched ||
       s == BankMatchStatus.skipped ||
-      s == BankMatchStatus.alreadyImported;
+      s == BankMatchStatus.alreadyImported ||
+      s == BankMatchStatus.invoiceMatched;
 
   void _toggleSkip(_RecRow row) {
     final idx = _rows.indexOf(row);
@@ -1501,13 +1560,23 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       DataCell(MatchStatusBadge(status: row.status)),
       DataCell(ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 260),
-        child: MatchedToCell(
-          receipts: row.matched.map((t) => t.receiptNumber).toList(),
-          matchedTotal: row.matched.fold(0, (int s, t) => s + t.totalAmount),
-          bankAmount: row.source.amountCents,
-          parsedReceipts: row.parsedReceipts,
-          suppressMismatch: _suppressMismatch(row),
-        ),
+        child: row.status == BankMatchStatus.invoiceMatched &&
+                row.invoiceMatch != null
+            ? Text(
+                row.invoiceMatch!.invoiceNumber,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.teal),
+              )
+            : MatchedToCell(
+                receipts: row.matched.map((t) => t.receiptNumber).toList(),
+                matchedTotal:
+                    row.matched.fold(0, (int s, t) => s + t.totalAmount),
+                bankAmount: row.source.amountCents,
+                parsedReceipts: row.parsedReceipts,
+                suppressMismatch: _suppressMismatch(row),
+              ),
       )),
       DataCell(_actionCell(row)),
     ]);
@@ -1522,6 +1591,15 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       return TextButton(
         onPressed: () => _toggleSkip(row),
         child: const Text('Unskip'),
+      );
+    }
+
+    if (row.status == BankMatchStatus.invoiceMatched) {
+      return IconButton(
+        icon: const Icon(Icons.not_interested_outlined, size: 18),
+        tooltip: 'Skip',
+        onPressed: () => _toggleSkip(row),
+        color: Colors.grey,
       );
     }
 

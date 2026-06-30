@@ -23,6 +23,7 @@ import 'package:provider/provider.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/invoice_entry.dart';
 import '../models/invoice_line_item.dart';
 import '../services/api_client.dart';
 import '../widgets/contact_picker.dart';
@@ -48,6 +49,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _saved = false;
+
+  // Invoice list.
+  List<InvoiceEntry> _invoices = [];
+  Map<String, String> _contactNames = {};
 
   @override
   void initState() {
@@ -75,6 +80,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         client.get('/gst-rates/effective'),
         client.get('/invoices/next-number'),
         client.get('/entity-details'),
+        client.get('/invoices'),
+        client.get('/contacts'),
       ]);
 
       if (results[0].statusCode == 200) {
@@ -99,6 +106,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             jsonDecode(results[3].body) as Map<String, dynamic>);
       }
 
+      if (results[4].statusCode == 200) {
+        final List<dynamic> invoiceData = jsonDecode(results[4].body);
+        _invoices = invoiceData
+            .map((e) => InvoiceEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+
+      if (results[5].statusCode == 200) {
+        final List<dynamic> contactData = jsonDecode(results[5].body);
+        _contactNames = {
+          for (final c in contactData.cast<Map<String, dynamic>>())
+            c['id'] as String: c['name'] as String,
+        };
+      }
+
       setState(() => _loading = false);
     } catch (e) {
       if (mounted) {
@@ -108,6 +130,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         );
       }
     }
+  }
+
+  Future<void> _refreshInvoiceList() async {
+    try {
+      final client = context.read<ApiClient>();
+      final res = await client.get('/invoices');
+      if (res.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(res.body);
+        setState(() {
+          _invoices = data
+              .map((e) => InvoiceEntry.fromJson(e as Map<String, dynamic>))
+              .toList();
+        });
+      }
+    } catch (_) {}
   }
 
   void _addLineItem() {
@@ -131,8 +168,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     setState(() {});
   }
 
-  int get _totalCents => _lineItems.fold(0, (sum, item) => sum + item.amountCents + item.gstCents);
-  int get _totalGstCents => _lineItems.fold(0, (sum, item) => sum + item.gstCents);
+  int get _totalCents =>
+      _lineItems.fold(0, (sum, item) => sum + item.amountCents + item.gstCents);
+  int get _totalGstCents =>
+      _lineItems.fold(0, (sum, item) => sum + item.gstCents);
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +223,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   _buildLineItemsSection(),
                   const SizedBox(height: 32),
                   _buildTotalsSection(),
+                  const SizedBox(height: 48),
+                  const Divider(),
+                  const SizedBox(height: 24),
+                  _buildInvoiceList(),
                 ],
               ),
             ),
@@ -396,13 +439,142 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     );
   }
 
+  Widget _buildInvoiceList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Invoice History',
+            style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 16),
+        if (_invoices.isEmpty)
+          const Text('No invoices yet.',
+              style: TextStyle(color: Colors.black54))
+        else
+          _buildInvoiceTable(),
+      ],
+    );
+  }
+
+  Widget _buildInvoiceTable() {
+    final currencyFormat = NumberFormat.currency(symbol: r'$');
+    return Table(
+      columnWidths: const {
+        0: IntrinsicColumnWidth(),
+        1: IntrinsicColumnWidth(),
+        2: FlexColumnWidth(),
+        3: IntrinsicColumnWidth(),
+        4: IntrinsicColumnWidth(),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        TableRow(
+          decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
+          children: const [
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Invoice #',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Date',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Contact',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+              child: Text('Total',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 0, 8),
+              child: Text('Status',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+        for (final inv in _invoices)
+          TableRow(
+            decoration: BoxDecoration(
+                border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade200))),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(inv.invoiceNumber,
+                    style: const TextStyle(
+                        fontSize: 12, fontFamily: 'monospace')),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(inv.invoiceDate,
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(
+                    _contactNames[inv.contactId] ?? inv.contactId,
+                    style: const TextStyle(fontSize: 12)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
+                child: Text(
+                    currencyFormat.format(inv.totalWithGstCents / 100),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                        fontSize: 12, fontFamily: 'monospace')),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 6, 0, 6),
+                child: inv.isPaid
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.green.shade300),
+                        ),
+                        child: Text('Paid',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.green.shade800,
+                                fontWeight: FontWeight.w600)),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.orange.shade300),
+                        ),
+                        child: Text('Unpaid',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange.shade800,
+                                fontWeight: FontWeight.w600)),
+                      ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
   Future<void> _saveInvoice() async {
-    // Basic validation
     if (_contactController.selectedContact == null && !_contactController.isNew) {
       _showError('Please select or create a contact.');
       return;
     }
-    if (_contactController.isNew && _contactController.nameController.text.isEmpty) {
+    if (_contactController.isNew &&
+        _contactController.nameController.text.isEmpty) {
       _showError('Please enter a name for the new contact.');
       return;
     }
@@ -427,7 +599,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     try {
       final client = context.read<ApiClient>();
 
-      // 1. Create contact if new.
+      // Create contact if new.
       String contactId;
       if (_contactController.isNew) {
         final contactBody = jsonEncode({
@@ -440,51 +612,48 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         if (res.statusCode != 201) {
           throw Exception('Failed to create contact: ${res.body}');
         }
-        contactId = jsonDecode(res.body)['id'];
+        contactId = jsonDecode(res.body)['id'] as String;
       } else {
         contactId = _contactController.selectedContact!.id;
       }
 
-      // 2. Create one transaction per line item, collecting IDs for rollback.
-      final createdIds = <String>[];
-      try {
-        for (final item in _lineItems) {
-          final txnBody = jsonEncode({
-            'contactId': contactId,
-            'generalLedgerId': item.glAccount!.id,
-            'amount': item.amountCents,
-            'gstAmount': item.gstCents,
-            'transactionType': 'credit',
-            'description': item.descriptionController.text.trim(),
-            'receiptNumber': _invoiceNumberController.text.trim(),
-            'transactionDate': DateFormat('yyyy-MM-dd').format(_invoiceDate),
-          });
-          final res = await client.post('/transactions', txnBody);
-          if (res.statusCode != 201) {
-            throw Exception(
-                'Failed to save line "${item.descriptionController.text}": ${res.body}');
-          }
-          createdIds.add(jsonDecode(res.body)['id'] as String);
-        }
-      } catch (_) {
-        // Roll back any transactions that were already created.
-        for (final id in createdIds) {
-          await client.delete('/transactions/$id');
-        }
-        rethrow;
+      // Save invoice.
+      final invoiceBody = jsonEncode({
+        'invoiceNumber': _invoiceNumberController.text.trim(),
+        'invoiceDate': DateFormat('yyyy-MM-dd').format(_invoiceDate),
+        'contactId': contactId,
+        'lineItems': _lineItems
+            .map((item) => {
+                  'description': item.descriptionController.text.trim(),
+                  'generalLedgerId': item.glAccount!.id,
+                  'amountCents': item.amountCents,
+                  'gstCents': item.gstCents,
+                })
+            .toList(),
+      });
+
+      final res = await client.post('/invoices', invoiceBody);
+      if (res.statusCode != 201) {
+        final err = (jsonDecode(res.body) as Map?)?['error']?.toString() ??
+            'Save failed (${res.statusCode})';
+        throw Exception(err);
       }
+
+      await _refreshInvoiceList();
 
       if (mounted) {
         setState(() => _saved = true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Invoice saved. Use Generate PDF to download.')),
+          const SnackBar(
+              content: Text('Invoice saved. Use Generate PDF to download.')),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
         _showError('Failed to save invoice: $e');
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 

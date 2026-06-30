@@ -16,7 +16,7 @@
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 import '../../domain/repositories/i_entity_details_repository.dart';
-import '../../domain/repositories/i_transaction_repository.dart';
+import '../../domain/repositories/i_invoice_repository.dart';
 
 /// Returns the next invoice number for an entity based on its configured format.
 ///
@@ -26,9 +26,9 @@ import '../../domain/repositories/i_transaction_repository.dart';
 /// to the block length.  Returns 001 (padded) when no prior invoice exists.
 class GetNextInvoiceNumberUseCase {
   final IEntityDetailsRepository _entityRepo;
-  final ITransactionRepository _transactionRepo;
+  final IInvoiceRepository _invoiceRepo;
 
-  const GetNextInvoiceNumberUseCase(this._entityRepo, this._transactionRepo);
+  const GetNextInvoiceNumberUseCase(this._entityRepo, this._invoiceRepo);
 
   /// Returns `(invoiceNumber, format)` for [entityId].
   Future<({String invoiceNumber, String format})> execute(
@@ -47,7 +47,7 @@ class GetNextInvoiceNumberUseCase {
       existing = [];
     } else {
       final prefix = resolved.substring(0, firstHash);
-      existing = await _transactionRepo.findReceiptNumbersLike(
+      existing = await _invoiceRepo.findInvoiceNumbersLike(
         '$prefix%',
         entityId: entityId,
       );
