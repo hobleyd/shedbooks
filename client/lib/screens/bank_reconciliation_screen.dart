@@ -611,6 +611,40 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       return;
     }
 
+    // Check for ABA batch name (e.g. WMS260620001) before falling back to date+amount.
+    final batchName = _extractBatchName(row.source.description);
+    if (batchName != null) {
+      final batchFound = _allTransactions
+          .where((t) =>
+              !t.bankMatched &&
+              !_reservedIds.contains(t.id) &&
+              t.transactionType == 'debit' &&
+              t.abaBatchName == batchName)
+          .toList();
+      if (batchFound.isNotEmpty) {
+        final subset = findMatchingSubset(batchFound, row.source.amountCents);
+        row.matched = subset ?? batchFound;
+        row.status = subset != null
+            ? BankMatchStatus.autoMatched
+            : BankMatchStatus.amountMismatch;
+        return;
+      }
+      // Batch transactions already bank-matched (e.g. via CSV import).
+      final alreadyByBatch = _allTransactions
+          .where((t) =>
+              t.bankMatched &&
+              t.transactionType == 'debit' &&
+              t.abaBatchName == batchName)
+          .toList();
+      final batchTotal =
+          alreadyByBatch.fold(0, (int s, t) => s + t.totalAmount);
+      if (alreadyByBatch.isNotEmpty && batchTotal == row.source.amountCents) {
+        row.status = BankMatchStatus.alreadyImported;
+        row.matched = [];
+        return;
+      }
+    }
+
     final candidates = _allTransactions
         .where((t) =>
             !t.bankMatched &&
@@ -644,6 +678,13 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           : BankMatchStatus.unmatched;
       row.matched = [];
     }
+  }
+
+  static final _batchNamePattern = RegExp(r'WMS\d{9}');
+
+  static String? _extractBatchName(String description) {
+    final match = _batchNamePattern.firstMatch(description);
+    return match?[0];
   }
 
   void _matchCreditRow(_RecRow row) {
