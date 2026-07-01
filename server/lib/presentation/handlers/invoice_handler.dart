@@ -104,6 +104,7 @@ class InvoiceHandler {
     final invoiceDateStr = body['invoiceDate'] as String?;
     final contactId = body['contactId'] as String?;
     final lineItemsRaw = body['lineItems'] as List<dynamic>?;
+    final bankAccountId = body['bankAccountId'] as String?;
 
     if (invoiceNumber == null || invoiceNumber.isEmpty) {
       return _badRequest('invoiceNumber is required');
@@ -143,6 +144,7 @@ class InvoiceHandler {
         invoiceDate: invoiceDate,
         contactId: contactId,
         lineItems: lineItems,
+        bankAccountId: bankAccountId,
       );
 
       _auditChanges(request)?.set({
@@ -247,6 +249,7 @@ class InvoiceHandler {
     final invoiceNumber = body['invoiceNumber'] as String?;
     final invoiceDateStr = body['invoiceDate'] as String?;
     final lineItemsRaw = body['lineItems'] as List<dynamic>?;
+    final bankAccountId = body['bankAccountId'] as String?;
 
     if (invoiceNumber == null || invoiceNumber.isEmpty) {
       return _badRequest('invoiceNumber is required');
@@ -285,6 +288,7 @@ class InvoiceHandler {
         invoiceNumber: invoiceNumber,
         invoiceDate: invoiceDate,
         lineItems: lineItems,
+        bankAccountId: bankAccountId,
       );
 
       _auditChanges(request)?.set({
@@ -372,6 +376,7 @@ class InvoiceHandler {
         'contactId': invoice.contactId,
         'totalAmountCents': invoice.totalAmountCents,
         'totalGstCents': invoice.totalGstCents,
+        'bankAccountId': invoice.bankAccountId,
         'paidAt': invoice.paidAt?.toIso8601String(),
         'createdAt': invoice.createdAt.toIso8601String(),
         'updatedAt': invoice.updatedAt.toIso8601String(),

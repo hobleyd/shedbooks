@@ -42,6 +42,7 @@ abstract interface class IInvoiceRepository {
     required DateTime invoiceDate,
     required String contactId,
     required List<InvoiceLineItemInput> lineItems,
+    String? bankAccountId,
   });
 
   /// Returns all invoices for [entityId] ordered by invoice_date descending.
@@ -69,7 +70,7 @@ abstract interface class IInvoiceRepository {
   Future<List<String>> findInvoiceNumbersLike(String pattern,
       {required String entityId});
 
-  /// Updates an unpaid invoice's number, date, and line items atomically.
+  /// Updates an unpaid invoice's number, date, line items, and bank account atomically.
   /// Throws [Exception] if the invoice is not found or is already paid.
   Future<Invoice> update({
     required String id,
@@ -77,6 +78,7 @@ abstract interface class IInvoiceRepository {
     required String invoiceNumber,
     required DateTime invoiceDate,
     required List<InvoiceLineItemInput> lineItems,
+    String? bankAccountId,
   });
 
   /// Permanently deletes an unpaid invoice and its line items.

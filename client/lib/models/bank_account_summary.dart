@@ -19,12 +19,28 @@
 class BankAccountSummary {
   final String id;
   final String accountName;
+  final String bankName;
+  final String bsb;
+  final String accountNumber;
 
-  const BankAccountSummary({required this.id, required this.accountName});
+  const BankAccountSummary({
+    required this.id,
+    required this.accountName,
+    required this.bankName,
+    required this.bsb,
+    required this.accountNumber,
+  });
 
   factory BankAccountSummary.fromJson(Map<String, dynamic> json) =>
       BankAccountSummary(
         id: json['id'] as String,
         accountName: json['accountName'] as String,
+        bankName: json['bankName'] as String? ?? '',
+        bsb: json['bsb'] as String? ?? '',
+        accountNumber: json['accountNumber'] as String? ?? '',
       );
+
+  /// BSB formatted as XXX-XXX for display.
+  String get bsbFormatted =>
+      bsb.length == 6 ? '${bsb.substring(0, 3)}-${bsb.substring(3)}' : bsb;
 }

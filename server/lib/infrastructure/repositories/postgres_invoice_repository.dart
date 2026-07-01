@@ -36,6 +36,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
     required DateTime invoiceDate,
     required String contactId,
     required List<InvoiceLineItemInput> lineItems,
+    String? bankAccountId,
   }) async {
     final totalAmountCents =
         lineItems.fold(0, (sum, i) => sum + i.amountCents);
@@ -49,16 +50,18 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
         Sql.named('''
           INSERT INTO invoices (
             id, entity_id, invoice_number, invoice_date,
-            contact_id, total_amount_cents, total_gst_cents
+            contact_id, total_amount_cents, total_gst_cents,
+            bank_account_id
           )
           VALUES (
             @id::uuid, @entityId, @invoiceNumber, @invoiceDate::date,
-            @contactId::uuid, @totalAmountCents, @totalGstCents
+            @contactId::uuid, @totalAmountCents, @totalGstCents,
+            @bankAccountId::uuid
           )
           RETURNING
             id, entity_id, invoice_number, invoice_date,
             contact_id, total_amount_cents, total_gst_cents,
-            paid_at, created_at, updated_at
+            bank_account_id, paid_at, created_at, updated_at
         '''),
         parameters: {
           'id': invoiceId,
@@ -68,6 +71,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
           'contactId': contactId,
           'totalAmountCents': totalAmountCents,
           'totalGstCents': totalGstCents,
+          'bankAccountId': bankAccountId,
         },
       );
 
@@ -111,6 +115,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
         contactId: invoice.contactId,
         totalAmountCents: invoice.totalAmountCents,
         totalGstCents: invoice.totalGstCents,
+        bankAccountId: invoice.bankAccountId,
         paidAt: invoice.paidAt,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
@@ -129,7 +134,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
         SELECT
           id, entity_id, invoice_number, invoice_date,
           contact_id, total_amount_cents, total_gst_cents,
-          paid_at, created_at, updated_at
+          bank_account_id, paid_at, created_at, updated_at
         FROM invoices
         WHERE entity_id = @entityId
           ${unpaidOnly ? 'AND paid_at IS NULL' : ''}
@@ -148,7 +153,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
         SELECT
           id, entity_id, invoice_number, invoice_date,
           contact_id, total_amount_cents, total_gst_cents,
-          paid_at, created_at, updated_at
+          bank_account_id, paid_at, created_at, updated_at
         FROM invoices
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -184,6 +189,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
       contactId: invoice.contactId,
       totalAmountCents: invoice.totalAmountCents,
       totalGstCents: invoice.totalGstCents,
+      bankAccountId: invoice.bankAccountId,
       paidAt: invoice.paidAt,
       createdAt: invoice.createdAt,
       updatedAt: invoice.updatedAt,
@@ -208,7 +214,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
         RETURNING
           id, entity_id, invoice_number, invoice_date,
           contact_id, total_amount_cents, total_gst_cents,
-          paid_at, created_at, updated_at
+          bank_account_id, paid_at, created_at, updated_at
       '''),
       parameters: {
         'id': id,
@@ -246,6 +252,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
     required String invoiceNumber,
     required DateTime invoiceDate,
     required List<InvoiceLineItemInput> lineItems,
+    String? bankAccountId,
   }) async {
     final totalAmountCents =
         lineItems.fold(0, (sum, i) => sum + i.amountCents);
@@ -261,6 +268,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
               invoice_date       = @invoiceDate::date,
               total_amount_cents = @totalAmountCents,
               total_gst_cents    = @totalGstCents,
+              bank_account_id    = @bankAccountId::uuid,
               updated_at         = NOW()
           WHERE id = @id::uuid
             AND entity_id = @entityId
@@ -268,7 +276,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
           RETURNING
             id, entity_id, invoice_number, invoice_date,
             contact_id, total_amount_cents, total_gst_cents,
-            paid_at, created_at, updated_at
+            bank_account_id, paid_at, created_at, updated_at
         '''),
         parameters: {
           'id': id,
@@ -277,6 +285,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
           'invoiceDate': invoiceDateStr,
           'totalAmountCents': totalAmountCents,
           'totalGstCents': totalGstCents,
+          'bankAccountId': bankAccountId,
         },
       );
 
@@ -332,6 +341,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
         contactId: invoice.contactId,
         totalAmountCents: invoice.totalAmountCents,
         totalGstCents: invoice.totalGstCents,
+        bankAccountId: invoice.bankAccountId,
         paidAt: invoice.paidAt,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
@@ -362,6 +372,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
 
   Invoice _mapInvoiceRow(Map<String, dynamic> row) {
     final invoiceDate = row['invoice_date'] as DateTime;
+    final rawBankAccountId = row['bank_account_id'];
     return Invoice(
       id: row['id'].toString(),
       entityId: row['entity_id'] as String,
@@ -371,6 +382,7 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
       contactId: row['contact_id'].toString(),
       totalAmountCents: row['total_amount_cents'] as int,
       totalGstCents: row['total_gst_cents'] as int,
+      bankAccountId: rawBankAccountId != null ? rawBankAccountId.toString() : null,
       paidAt: row['paid_at'] as DateTime?,
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,

@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../auth/auth_state.dart';
+import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
@@ -45,6 +46,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   final TextEditingController _invoiceNumberController = TextEditingController();
   DateTime _invoiceDate = DateTime.now();
   List<GeneralLedgerEntry> _glAccounts = [];
+  List<BankAccountSummary> _bankAccounts = [];
+  BankAccountSummary? _selectedBankAccount;
   double _gstRate = 0.10;
   EntityDetails? _entityDetails;
   bool _loading = true;
@@ -83,6 +86,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         client.get('/entity-details'),
         client.get('/invoices'),
         client.get('/contacts'),
+        client.get('/bank-reconciliation/bank-accounts'),
       ]);
 
       if (results[0].statusCode == 200) {
@@ -120,6 +124,16 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           for (final c in contactData.cast<Map<String, dynamic>>())
             c['id'] as String: ContactEntry.fromJson(c),
         };
+      }
+
+      if (results[6].statusCode == 200) {
+        final List<dynamic> baData = jsonDecode(results[6].body);
+        _bankAccounts = baData
+            .map((e) => BankAccountSummary.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (_bankAccounts.isNotEmpty) {
+          _selectedBankAccount = _bankAccounts.first;
+        }
       }
 
       setState(() => _loading = false);
@@ -285,6 +299,32 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   ),
                   child: Text(DateFormat('yyyy-MM-dd').format(_invoiceDate)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Pay Into Bank Account',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                ),
+                child: DropdownButton<BankAccountSummary>(
+                  value: _selectedBankAccount,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  hint: const Text('Select account'),
+                  items: _bankAccounts
+                      .map((a) => DropdownMenuItem(
+                            value: a,
+                            child: Text(a.accountName,
+                                overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (val) => setState(() => _selectedBankAccount = val),
                 ),
               ),
             ),
@@ -671,6 +711,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         contactName: contact?.name ?? inv.contactId,
         contactGstRegistered: contact?.gstRegistered ?? false,
         glAccounts: _glAccounts,
+        bankAccounts: _bankAccounts,
         gstRate: _gstRate,
         client: client,
       ),
@@ -732,6 +773,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         'invoiceNumber': _invoiceNumberController.text.trim(),
         'invoiceDate': DateFormat('yyyy-MM-dd').format(_invoiceDate),
         'contactId': contactId,
+        'bankAccountId': _selectedBankAccount?.id,
         'lineItems': _lineItems
             .map((item) => {
                   'description': item.descriptionController.text.trim(),
@@ -778,6 +820,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       invoiceDate: _invoiceDate,
       lineItems: _lineItems,
       formatCents: (cents) => currencyFormat.format(cents / 100),
+      bankAccount: _selectedBankAccount,
     );
   }
 
@@ -798,6 +841,7 @@ class _EditInvoiceDialog extends StatefulWidget {
   final String contactName;
   final bool contactGstRegistered;
   final List<GeneralLedgerEntry> glAccounts;
+  final List<BankAccountSummary> bankAccounts;
   final double gstRate;
   final ApiClient client;
 
@@ -806,6 +850,7 @@ class _EditInvoiceDialog extends StatefulWidget {
     required this.contactName,
     required this.contactGstRegistered,
     required this.glAccounts,
+    required this.bankAccounts,
     required this.gstRate,
     required this.client,
   });
@@ -818,6 +863,7 @@ class _EditInvoiceDialogState extends State<_EditInvoiceDialog> {
   late TextEditingController _numberController;
   late DateTime _date;
   late List<InvoiceLineItem> _items;
+  BankAccountSummary? _selectedBankAccount;
   bool _saving = false;
 
   @override
@@ -826,6 +872,13 @@ class _EditInvoiceDialogState extends State<_EditInvoiceDialog> {
     _numberController =
         TextEditingController(text: widget.invoice.invoiceNumber);
     _date = DateTime.parse(widget.invoice.invoiceDate);
+    final savedId = widget.invoice.bankAccountId;
+    if (savedId != null) {
+      _selectedBankAccount = widget.bankAccounts
+          .where((a) => a.id == savedId)
+          .firstOrNull;
+    }
+    _selectedBankAccount ??= widget.bankAccounts.firstOrNull;
     _items = (widget.invoice.lineItems ?? []).map((entry) {
       final item = InvoiceLineItem();
       item.descriptionController.text = entry.description;
@@ -901,6 +954,7 @@ class _EditInvoiceDialogState extends State<_EditInvoiceDialog> {
       final body = jsonEncode({
         'invoiceNumber': _numberController.text.trim(),
         'invoiceDate': DateFormat('yyyy-MM-dd').format(_date),
+        'bankAccountId': _selectedBankAccount?.id,
         'lineItems': _items
             .map((item) => {
                   'description': item.descriptionController.text.trim(),
@@ -984,6 +1038,32 @@ class _EditInvoiceDialogState extends State<_EditInvoiceDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+              if (widget.bankAccounts.isNotEmpty)
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Pay Into Bank Account',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  ),
+                  child: DropdownButton<BankAccountSummary>(
+                    value: _selectedBankAccount,
+                    isExpanded: true,
+                    underline: const SizedBox.shrink(),
+                    hint: const Text('Select account'),
+                    items: widget.bankAccounts
+                        .map((a) => DropdownMenuItem(
+                              value: a,
+                              child: Text(a.accountName,
+                                  overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (val) =>
+                        setState(() => _selectedBankAccount = val),
+                  ),
+                ),
               const SizedBox(height: 20),
               Row(
                 children: [

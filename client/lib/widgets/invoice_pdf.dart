@@ -20,6 +20,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../models/bank_account_summary.dart';
 import '../models/entity_details.dart';
 import '../models/invoice_line_item.dart';
 import '../utils/formatters.dart';
@@ -35,6 +36,7 @@ class InvoicePdf {
     required DateTime invoiceDate,
     required List<InvoiceLineItem> lineItems,
     required String Function(int) formatCents,
+    BankAccountSummary? bankAccount,
   }) async {
     final doc = pw.Document();
     final dateLabel = DateFormat('dd/MM/yyyy').format(invoiceDate);
@@ -179,6 +181,28 @@ class InvoicePdf {
 
               pw.Spacer(),
 
+              // ── Payment details ──────────────────────────────────────────
+              if (bankAccount != null) ...[
+                pw.Divider(thickness: 0.5, color: PdfColors.grey300),
+                pw.SizedBox(height: 8),
+                pw.Text('PAYMENT DETAILS',
+                    style: const pw.TextStyle(
+                        fontSize: 8, color: PdfColors.grey600)),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  children: [
+                    _paymentDetailCol('Bank', bankAccount.bankName),
+                    pw.SizedBox(width: 24),
+                    _paymentDetailCol('Account Name', bankAccount.accountName),
+                    pw.SizedBox(width: 24),
+                    _paymentDetailCol('BSB', bankAccount.bsbFormatted),
+                    pw.SizedBox(width: 24),
+                    _paymentDetailCol('Account Number', bankAccount.accountNumber),
+                  ],
+                ),
+                pw.SizedBox(height: 8),
+              ],
+
               // ── Footer ───────────────────────────────────────────────────
               pw.Divider(thickness: 0.5, color: PdfColors.grey300),
               PdfReportComponents.pageFooter(
@@ -283,6 +307,19 @@ class InvoicePdf {
             }).toList(),
           );
         }),
+      ],
+    );
+  }
+
+  static pw.Widget _paymentDetailCol(String label, String value) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(label,
+            style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
+        pw.SizedBox(height: 2),
+        pw.Text(value,
+            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
       ],
     );
   }

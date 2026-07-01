@@ -32,6 +32,7 @@ class UpdateInvoiceUseCase {
     required String invoiceNumber,
     required DateTime invoiceDate,
     required List<InvoiceLineItemInput> lineItems,
+    String? bankAccountId,
   }) =>
       _repository.update(
         id: id,
@@ -39,5 +40,6 @@ class UpdateInvoiceUseCase {
         invoiceNumber: invoiceNumber,
         invoiceDate: invoiceDate,
         lineItems: lineItems,
+        bankAccountId: bankAccountId,
       );
 }

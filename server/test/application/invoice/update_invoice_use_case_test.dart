@@ -31,6 +31,7 @@ void main() {
   const tEntityId = 'entity-1';
   const tId = '00000000-0000-0000-0000-000000000030';
   const tGlId = '00000000-0000-0000-0000-000000000020';
+  const tBankAccountId = '00000000-0000-0000-0000-000000000040';
   final tDate = DateTime.utc(2026, 7, 1);
   final tNow = DateTime.utc(2026, 7, 1);
 
@@ -63,6 +64,7 @@ void main() {
     contactId: 'contact-1',
     totalAmountCents: 6000,
     totalGstCents: 600,
+    bankAccountId: tBankAccountId,
     createdAt: tNow,
     updatedAt: tNow,
     lineItems: tUpdatedLineItems,
@@ -85,6 +87,7 @@ void main() {
             invoiceNumber: 'WMS-26-002',
             invoiceDate: tDate,
             lineItems: tLineItems,
+            bankAccountId: tBankAccountId,
           )).thenAnswer((_) async => tUpdatedInvoice);
 
       // Act
@@ -94,6 +97,7 @@ void main() {
         invoiceNumber: 'WMS-26-002',
         invoiceDate: tDate,
         lineItems: tLineItems,
+        bankAccountId: tBankAccountId,
       );
 
       // Assert
@@ -101,12 +105,14 @@ void main() {
       expect(result.invoiceNumber, equals('WMS-26-002'));
       expect(result.totalAmountCents, equals(6000));
       expect(result.totalGstCents, equals(600));
+      expect(result.bankAccountId, equals(tBankAccountId));
       verify(() => repository.update(
             id: tId,
             entityId: tEntityId,
             invoiceNumber: 'WMS-26-002',
             invoiceDate: tDate,
             lineItems: tLineItems,
+            bankAccountId: tBankAccountId,
           )).called(1);
     });
 

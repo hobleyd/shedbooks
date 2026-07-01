@@ -51,6 +51,7 @@ class InvoiceEntry {
   final String contactId;
   final int totalAmountCents;
   final int totalGstCents;
+  final String? bankAccountId;
   final String? paidAt;
   final List<InvoiceLineItemEntry>? lineItems;
 
@@ -61,6 +62,7 @@ class InvoiceEntry {
     required this.contactId,
     required this.totalAmountCents,
     required this.totalGstCents,
+    this.bankAccountId,
     this.paidAt,
     this.lineItems,
   });
@@ -78,6 +80,7 @@ class InvoiceEntry {
       contactId: json['contactId'] as String,
       totalAmountCents: json['totalAmountCents'] as int,
       totalGstCents: json['totalGstCents'] as int,
+      bankAccountId: json['bankAccountId'] as String?,
       paidAt: json['paidAt'] as String?,
       lineItems: rawItems
           ?.map((e) =>

@@ -75,6 +75,9 @@ class Invoice {
   /// Total GST across all line items, in cents.
   final int totalGstCents;
 
+  /// FK — the bank account the invoice should be paid into; null if unspecified.
+  final String? bankAccountId;
+
   /// Timestamp when the invoice was marked paid; null when unpaid.
   final DateTime? paidAt;
 
@@ -95,6 +98,7 @@ class Invoice {
     required this.contactId,
     required this.totalAmountCents,
     required this.totalGstCents,
+    this.bankAccountId,
     this.paidAt,
     required this.createdAt,
     required this.updatedAt,

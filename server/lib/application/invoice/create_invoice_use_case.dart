@@ -31,6 +31,7 @@ class CreateInvoiceUseCase {
     required DateTime invoiceDate,
     required String contactId,
     required List<InvoiceLineItemInput> lineItems,
+    String? bankAccountId,
   }) async {
     return _repository.create(
       entityId: entityId,
@@ -38,6 +39,7 @@ class CreateInvoiceUseCase {
       invoiceDate: invoiceDate,
       contactId: contactId,
       lineItems: lineItems,
+      bankAccountId: bankAccountId,
     );
   }
 }

@@ -44,7 +44,13 @@ class BankReconciliationHandler {
 
     final accounts = await _listBankAccounts.execute(entityId: entityId);
     final payload = accounts
-        .map((a) => {'id': a.id, 'accountName': a.accountName})
+        .map((a) => {
+              'id': a.id,
+              'accountName': a.accountName,
+              'bankName': a.bankName,
+              'bsb': a.bsb,
+              'accountNumber': a.accountNumber,
+            })
         .toList();
     return Response.ok(jsonEncode(payload), headers: _jsonHeaders);
   }

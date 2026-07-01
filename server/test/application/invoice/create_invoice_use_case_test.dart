@@ -31,6 +31,7 @@ void main() {
   const tEntityId = 'entity-1';
   const tContactId = '00000000-0000-0000-0000-000000000010';
   const tGlId = '00000000-0000-0000-0000-000000000020';
+  const tBankAccountId = '00000000-0000-0000-0000-000000000040';
   final tDate = DateTime.utc(2026, 6, 1);
 
   final tLineItems = [
@@ -77,6 +78,7 @@ void main() {
     contactId: tContactId,
     totalAmountCents: 7000,
     totalGstCents: 700,
+    bankAccountId: tBankAccountId,
     createdAt: DateTime.utc(2026, 6, 1),
     updatedAt: DateTime.utc(2026, 6, 1),
     lineItems: tInvoiceLineItems,
@@ -100,6 +102,7 @@ void main() {
           invoiceDate: tDate,
           contactId: tContactId,
           lineItems: tLineItems,
+          bankAccountId: tBankAccountId,
         ),
       ).thenAnswer((_) async => tInvoice);
 
@@ -110,6 +113,7 @@ void main() {
         invoiceDate: tDate,
         contactId: tContactId,
         lineItems: tLineItems,
+        bankAccountId: tBankAccountId,
       );
 
       // Assert
@@ -118,6 +122,7 @@ void main() {
       expect(result.contactId, equals(tContactId));
       expect(result.totalAmountCents, equals(7000));
       expect(result.totalGstCents, equals(700));
+      expect(result.bankAccountId, equals(tBankAccountId));
       verify(
         () => repository.create(
           entityId: tEntityId,
@@ -125,6 +130,7 @@ void main() {
           invoiceDate: tDate,
           contactId: tContactId,
           lineItems: tLineItems,
+          bankAccountId: tBankAccountId,
         ),
       ).called(1);
     });
