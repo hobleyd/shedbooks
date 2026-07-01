@@ -68,4 +68,18 @@ abstract interface class IInvoiceRepository {
   /// for [entityId].
   Future<List<String>> findInvoiceNumbersLike(String pattern,
       {required String entityId});
+
+  /// Updates an unpaid invoice's number, date, and line items atomically.
+  /// Throws [Exception] if the invoice is not found or is already paid.
+  Future<Invoice> update({
+    required String id,
+    required String entityId,
+    required String invoiceNumber,
+    required DateTime invoiceDate,
+    required List<InvoiceLineItemInput> lineItems,
+  });
+
+  /// Permanently deletes an unpaid invoice and its line items.
+  /// Throws [Exception] if the invoice is not found or is already paid.
+  Future<void> delete(String id, {required String entityId});
 }

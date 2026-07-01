@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../auth/auth_state.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
@@ -52,7 +53,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   // Invoice list.
   List<InvoiceEntry> _invoices = [];
-  Map<String, String> _contactNames = {};
+  Map<String, ContactEntry> _contacts = {};
 
   @override
   void initState() {
@@ -115,9 +116,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
       if (results[5].statusCode == 200) {
         final List<dynamic> contactData = jsonDecode(results[5].body);
-        _contactNames = {
+        _contacts = {
           for (final c in contactData.cast<Map<String, dynamic>>())
-            c['id'] as String: c['name'] as String,
+            c['id'] as String: ContactEntry.fromJson(c),
         };
       }
 
@@ -457,47 +458,57 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   Widget _buildInvoiceTable() {
     final currencyFormat = NumberFormat.currency(symbol: r'$');
+    final isAdmin = context.read<AuthState>().isAdmin;
+
+    final columnWidths = <int, TableColumnWidth>{
+      0: const IntrinsicColumnWidth(),
+      1: const IntrinsicColumnWidth(),
+      2: const FlexColumnWidth(),
+      3: const IntrinsicColumnWidth(),
+      4: const IntrinsicColumnWidth(),
+    };
+    if (isAdmin) columnWidths[5] = const IntrinsicColumnWidth();
+
+    final headerChildren = <Widget>[
+      const Padding(
+        padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+        child: Text('Invoice #',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+        child: Text('Date',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+        child: Text('Contact',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
+        child: Text('Total',
+            textAlign: TextAlign.right,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(0, 4, 0, 8),
+        child: Text('Status',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
+    ];
+    if (isAdmin) {
+      headerChildren.add(const SizedBox(width: 72));
+    }
+
     return Table(
-      columnWidths: const {
-        0: IntrinsicColumnWidth(),
-        1: IntrinsicColumnWidth(),
-        2: FlexColumnWidth(),
-        3: IntrinsicColumnWidth(),
-        4: IntrinsicColumnWidth(),
-      },
+      columnWidths: columnWidths,
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
         TableRow(
           decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
-          children: const [
-            Padding(
-              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
-              child: Text('Invoice #',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
-              child: Text('Date',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
-              child: Text('Contact',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(0, 4, 16, 8),
-              child: Text('Total',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(0, 4, 0, 8),
-              child: Text('Status',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-          ],
+          children: headerChildren,
         ),
         for (final inv in _invoices)
           TableRow(
@@ -519,7 +530,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(0, 6, 16, 6),
                 child: Text(
-                    _contactNames[inv.contactId] ?? inv.contactId,
+                    _contacts[inv.contactId]?.name ?? inv.contactId,
                     style: const TextStyle(fontSize: 12)),
               ),
               Padding(
@@ -562,10 +573,109 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                 fontWeight: FontWeight.w600)),
                       ),
               ),
+              if (isAdmin)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 0, 0),
+                  child: inv.isPaid
+                      ? const SizedBox(width: 72)
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 16),
+                                tooltip: 'Edit invoice',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                onPressed: () => _editInvoice(inv),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 16),
+                                tooltip: 'Delete invoice',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                color: Theme.of(context).colorScheme.error,
+                                onPressed: () => _confirmDelete(inv),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
             ],
           ),
       ],
     );
+  }
+
+  Future<void> _confirmDelete(InvoiceEntry inv) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Invoice'),
+        content: Text(
+            'Delete invoice ${inv.invoiceNumber}? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final client = context.read<ApiClient>();
+      final res = await client.delete('/invoices/${inv.id}');
+      if (res.statusCode != 204) {
+        final err =
+            (jsonDecode(res.body) as Map?)?['error']?.toString() ??
+                'Delete failed (${res.statusCode})';
+        throw Exception(err);
+      }
+      await _refreshInvoiceList();
+    } catch (e) {
+      if (mounted) _showError('Failed to delete invoice: $e');
+    }
+  }
+
+  Future<void> _editInvoice(InvoiceEntry inv) async {
+    final client = context.read<ApiClient>();
+    final res = await client.get('/invoices/${inv.id}');
+    if (res.statusCode != 200) {
+      if (mounted) _showError('Failed to load invoice details.');
+      return;
+    }
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    final detail = InvoiceEntry.fromJson(data);
+    final contact = _contacts[inv.contactId];
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _EditInvoiceDialog(
+        invoice: detail,
+        contactName: contact?.name ?? inv.contactId,
+        contactGstRegistered: contact?.gstRegistered ?? false,
+        glAccounts: _glAccounts,
+        gstRate: _gstRate,
+        client: client,
+      ),
+    );
+    await _refreshInvoiceList();
   }
 
   Future<void> _saveInvoice() async {
@@ -677,6 +787,322 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         content: Text(message),
         backgroundColor: Theme.of(context).colorScheme.error,
       ),
+    );
+  }
+}
+
+// ── Edit Invoice Dialog ────────────────────────────────────────────────────
+
+class _EditInvoiceDialog extends StatefulWidget {
+  final InvoiceEntry invoice;
+  final String contactName;
+  final bool contactGstRegistered;
+  final List<GeneralLedgerEntry> glAccounts;
+  final double gstRate;
+  final ApiClient client;
+
+  const _EditInvoiceDialog({
+    required this.invoice,
+    required this.contactName,
+    required this.contactGstRegistered,
+    required this.glAccounts,
+    required this.gstRate,
+    required this.client,
+  });
+
+  @override
+  State<_EditInvoiceDialog> createState() => _EditInvoiceDialogState();
+}
+
+class _EditInvoiceDialogState extends State<_EditInvoiceDialog> {
+  late TextEditingController _numberController;
+  late DateTime _date;
+  late List<InvoiceLineItem> _items;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _numberController =
+        TextEditingController(text: widget.invoice.invoiceNumber);
+    _date = DateTime.parse(widget.invoice.invoiceDate);
+    _items = (widget.invoice.lineItems ?? []).map((entry) {
+      final item = InvoiceLineItem();
+      item.descriptionController.text = entry.description;
+      final matches = widget.glAccounts
+          .where((g) => g.id == entry.generalLedgerId);
+      item.glAccount = matches.isNotEmpty ? matches.first : null;
+      item.amountCents = entry.amountCents;
+      item.gstCents = entry.gstCents;
+      item.amountController.text =
+          (entry.amountCents / 100).toStringAsFixed(2);
+      return item;
+    }).toList();
+    if (_items.isEmpty) _items.add(InvoiceLineItem());
+  }
+
+  @override
+  void dispose() {
+    _numberController.dispose();
+    for (final item in _items) {
+      item.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addLineItem() {
+    setState(() => _items.add(InvoiceLineItem()));
+  }
+
+  void _removeLineItem(int index) {
+    if (_items.length > 1) {
+      setState(() {
+        _items[index].dispose();
+        _items.removeAt(index);
+      });
+    }
+  }
+
+  void _updateAmounts() {
+    for (final item in _items) {
+      item.updateAmounts(widget.gstRate,
+          contactGstRegistered: widget.contactGstRegistered);
+    }
+    setState(() {});
+  }
+
+  Future<void> _save() async {
+    if (_numberController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invoice number is required.')),
+      );
+      return;
+    }
+    for (final item in _items) {
+      if (item.glAccount == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('All line items must have a GL account.')),
+        );
+        return;
+      }
+      if (item.amountCents <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text('All line items must have an amount greater than zero.')),
+        );
+        return;
+      }
+    }
+
+    setState(() => _saving = true);
+    try {
+      final body = jsonEncode({
+        'invoiceNumber': _numberController.text.trim(),
+        'invoiceDate': DateFormat('yyyy-MM-dd').format(_date),
+        'lineItems': _items
+            .map((item) => {
+                  'description': item.descriptionController.text.trim(),
+                  'generalLedgerId': item.glAccount!.id,
+                  'amountCents': item.amountCents,
+                  'gstCents': item.gstCents,
+                })
+            .toList(),
+      });
+
+      final res =
+          await widget.client.put('/invoices/${widget.invoice.id}', body);
+      if (res.statusCode != 200) {
+        final err =
+            (jsonDecode(res.body) as Map?)?['error']?.toString() ??
+                'Update failed (${res.statusCode})';
+        throw Exception(err);
+      }
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update invoice: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Edit Invoice ${widget.invoice.invoiceNumber}'),
+      content: SizedBox(
+        width: 640,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Contact: ${widget.contactName}',
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _numberController,
+                      decoration: const InputDecoration(
+                        labelText: 'Invoice Number',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _date,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) setState(() => _date = picked);
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Invoice Date',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
+                        child: Text(DateFormat('yyyy-MM-dd').format(_date)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Text('Line Items',
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: _addLineItem,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Line'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _items.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, index) => _buildLineItemRow(index),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Save'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLineItemRow(int index) {
+    final item = _items[index];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 3,
+          child: TextFormField(
+            controller: item.descriptionController,
+            decoration: const InputDecoration(
+              labelText: 'Description',
+              border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 2,
+          child: GlAccountDropdown(
+            allEntries: widget.glAccounts,
+            value: item.glAccount,
+            decoration: const InputDecoration(
+              labelText: 'GL Account',
+              border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+            directionFilter: GlDirection.moneyIn,
+            onChanged: (val) {
+              setState(() {
+                item.glAccount = val;
+                _updateAmounts();
+              });
+            },
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 1,
+          child: TextFormField(
+            controller: item.amountController,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Amount',
+              border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              prefixText: r'$ ',
+            ),
+            onChanged: (_) => _updateAmounts(),
+          ),
+        ),
+        const SizedBox(width: 4),
+        SizedBox(
+          width: 32,
+          height: 40,
+          child: IconButton(
+            icon: const Icon(Icons.delete_outline, size: 16),
+            color: Theme.of(context).colorScheme.error,
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _removeLineItem(index),
+          ),
+        ),
+      ],
     );
   }
 }

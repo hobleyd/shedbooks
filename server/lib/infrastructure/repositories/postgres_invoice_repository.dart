@@ -239,6 +239,125 @@ class PostgresInvoiceRepository implements IInvoiceRepository {
     return result.map((r) => r[0] as String).toList();
   }
 
+  @override
+  Future<Invoice> update({
+    required String id,
+    required String entityId,
+    required String invoiceNumber,
+    required DateTime invoiceDate,
+    required List<InvoiceLineItemInput> lineItems,
+  }) async {
+    final totalAmountCents =
+        lineItems.fold(0, (sum, i) => sum + i.amountCents);
+    final totalGstCents = lineItems.fold(0, (sum, i) => sum + i.gstCents);
+    final invoiceDateStr =
+        invoiceDate.toIso8601String().substring(0, 10);
+
+    return await _pool.runTx((tx) async {
+      final rows = await tx.execute(
+        Sql.named('''
+          UPDATE invoices
+          SET invoice_number     = @invoiceNumber,
+              invoice_date       = @invoiceDate::date,
+              total_amount_cents = @totalAmountCents,
+              total_gst_cents    = @totalGstCents,
+              updated_at         = NOW()
+          WHERE id = @id::uuid
+            AND entity_id = @entityId
+            AND paid_at IS NULL
+          RETURNING
+            id, entity_id, invoice_number, invoice_date,
+            contact_id, total_amount_cents, total_gst_cents,
+            paid_at, created_at, updated_at
+        '''),
+        parameters: {
+          'id': id,
+          'entityId': entityId,
+          'invoiceNumber': invoiceNumber,
+          'invoiceDate': invoiceDateStr,
+          'totalAmountCents': totalAmountCents,
+          'totalGstCents': totalGstCents,
+        },
+      );
+
+      if (rows.isEmpty) {
+        throw Exception('Invoice not found or already paid');
+      }
+
+      await tx.execute(
+        Sql.named('''
+          DELETE FROM invoice_line_items
+          WHERE invoice_id = @invoiceId::uuid
+            AND entity_id = @entityId
+        '''),
+        parameters: {'invoiceId': id, 'entityId': entityId},
+      );
+
+      final createdLineItems = <InvoiceLineItem>[];
+      for (final item in lineItems) {
+        final itemId = _uuid.v4();
+        final itemRows = await tx.execute(
+          Sql.named('''
+            INSERT INTO invoice_line_items (
+              id, entity_id, invoice_id, description,
+              general_ledger_id, amount_cents, gst_cents
+            )
+            VALUES (
+              @id::uuid, @entityId, @invoiceId::uuid, @description,
+              @generalLedgerId::uuid, @amountCents, @gstCents
+            )
+            RETURNING
+              id, invoice_id, description, general_ledger_id,
+              amount_cents, gst_cents, created_at
+          '''),
+          parameters: {
+            'id': itemId,
+            'entityId': entityId,
+            'invoiceId': id,
+            'description': item.description,
+            'generalLedgerId': item.generalLedgerId,
+            'amountCents': item.amountCents,
+            'gstCents': item.gstCents,
+          },
+        );
+        createdLineItems.add(_mapLineItemRow(itemRows.first.toColumnMap()));
+      }
+
+      final invoice = _mapInvoiceRow(rows.first.toColumnMap());
+      return Invoice(
+        id: invoice.id,
+        entityId: invoice.entityId,
+        invoiceNumber: invoice.invoiceNumber,
+        invoiceDate: invoice.invoiceDate,
+        contactId: invoice.contactId,
+        totalAmountCents: invoice.totalAmountCents,
+        totalGstCents: invoice.totalGstCents,
+        paidAt: invoice.paidAt,
+        createdAt: invoice.createdAt,
+        updatedAt: invoice.updatedAt,
+        lineItems: createdLineItems,
+      );
+    });
+  }
+
+  @override
+  Future<void> delete(String id, {required String entityId}) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        DELETE FROM invoices
+        WHERE id = @id::uuid
+          AND entity_id = @entityId
+          AND paid_at IS NULL
+        RETURNING id
+      '''),
+      parameters: {'id': id, 'entityId': entityId},
+    );
+
+    if (result.isEmpty) {
+      throw Exception('Invoice not found or already paid');
+    }
+  }
+
   // ── Mapping helpers ───────────────────────────────────────────────────────
 
   Invoice _mapInvoiceRow(Map<String, dynamic> row) {

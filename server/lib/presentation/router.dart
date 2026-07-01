@@ -59,8 +59,11 @@ import '../application/bank_account/update_bank_account_use_case.dart';
 import '../application/entity/get_entity_details_use_case.dart';
 import '../application/entity/get_next_invoice_number_use_case.dart';
 import '../application/invoice/create_invoice_use_case.dart';
+import '../application/invoice/delete_invoice_use_case.dart';
+import '../application/invoice/get_invoice_use_case.dart';
 import '../application/invoice/list_invoices_use_case.dart';
 import '../application/invoice/mark_invoice_paid_use_case.dart';
+import '../application/invoice/update_invoice_use_case.dart';
 import '../application/entity/save_entity_details_use_case.dart';
 import '../application/general_ledger/create_general_ledger_use_case.dart';
 import '../application/general_ledger/delete_general_ledger_use_case.dart';
@@ -233,8 +236,11 @@ Handler buildRouter({
       invoiceRepository,
     ),
     create: CreateInvoiceUseCase(invoiceRepository),
+    get: GetInvoiceUseCase(invoiceRepository),
     list: ListInvoicesUseCase(invoiceRepository),
     markPaid: MarkInvoicePaidUseCase(invoiceRepository, transactionRepository),
+    delete: DeleteInvoiceUseCase(invoiceRepository),
+    update: UpdateInvoiceUseCase(invoiceRepository),
   );
 
   final dashboardPreferenceRepository =
@@ -588,7 +594,7 @@ Router _assetRouter(AssetHandler h) {
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
 }
 
-// Viewers can read; contributors and admins can write.
+// Viewers can read; contributors and admins can create; admins only can edit/delete.
 // Fixed paths (next-number) must be registered before /<id> to avoid shadowing.
 Router _invoiceRouter(InvoiceHandler h) {
   return Router()
@@ -601,5 +607,8 @@ Router _invoiceRouter(InvoiceHandler h) {
         requireContributor(),
         (r) => h.handleMarkPaid(r, id),
       )(req),
-    );
+    )
+    ..get('/<id>', (Request req, String id) => h.handleGet(req, id))
+    ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
 }

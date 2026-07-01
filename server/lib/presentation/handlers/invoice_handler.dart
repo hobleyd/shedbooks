@@ -22,8 +22,11 @@ import 'package:shelf/shelf.dart';
 
 import '../../application/entity/get_next_invoice_number_use_case.dart';
 import '../../application/invoice/create_invoice_use_case.dart';
+import '../../application/invoice/delete_invoice_use_case.dart';
+import '../../application/invoice/get_invoice_use_case.dart';
 import '../../application/invoice/list_invoices_use_case.dart';
 import '../../application/invoice/mark_invoice_paid_use_case.dart';
+import '../../application/invoice/update_invoice_use_case.dart';
 import '../../domain/entities/invoice.dart';
 import '../../domain/repositories/i_invoice_repository.dart';
 import '../audit_changes.dart';
@@ -32,18 +35,27 @@ import '../audit_changes.dart';
 class InvoiceHandler {
   final GetNextInvoiceNumberUseCase _nextNumber;
   final CreateInvoiceUseCase _create;
+  final GetInvoiceUseCase _get;
   final ListInvoicesUseCase _list;
   final MarkInvoicePaidUseCase _markPaid;
+  final DeleteInvoiceUseCase _delete;
+  final UpdateInvoiceUseCase _update;
 
   const InvoiceHandler({
     required GetNextInvoiceNumberUseCase nextNumber,
     required CreateInvoiceUseCase create,
+    required GetInvoiceUseCase get,
     required ListInvoicesUseCase list,
     required MarkInvoicePaidUseCase markPaid,
+    required DeleteInvoiceUseCase delete,
+    required UpdateInvoiceUseCase update,
   })  : _nextNumber = nextNumber,
         _create = create,
+        _get = get,
         _list = list,
-        _markPaid = markPaid;
+        _markPaid = markPaid,
+        _delete = delete,
+        _update = update;
 
   /// GET /invoices/next-number — returns the next invoice number.
   Future<Response> handleNextNumber(Request request) async {
@@ -197,6 +209,132 @@ class InvoiceHandler {
             jsonEncode({'error': e.toString()}), headers: _jsonHeaders);
       }
       if (e.toString().contains('already paid')) {
+        return Response(HttpStatus.conflict,
+            body: jsonEncode({'error': e.toString()}),
+            headers: _jsonHeaders);
+      }
+      rethrow;
+    }
+  }
+
+  /// GET /invoices/:id — returns a single invoice with its line items.
+  Future<Response> handleGet(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _unauthorized();
+
+    final invoice = await _get.execute(id, entityId: entityId);
+    if (invoice == null) {
+      return Response.notFound(
+          jsonEncode({'error': 'Invoice not found'}), headers: _jsonHeaders);
+    }
+    return Response.ok(
+        jsonEncode(_toJsonWithLineItems(invoice)), headers: _jsonHeaders);
+  }
+
+  /// PUT /invoices/:id — updates an unpaid invoice (admin only).
+  Future<Response> handleUpdate(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _unauthorized();
+
+    final Map<String, dynamic> body;
+    try {
+      body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return Response(HttpStatus.badRequest,
+          body: jsonEncode({'error': 'Invalid JSON'}), headers: _jsonHeaders);
+    }
+
+    final invoiceNumber = body['invoiceNumber'] as String?;
+    final invoiceDateStr = body['invoiceDate'] as String?;
+    final lineItemsRaw = body['lineItems'] as List<dynamic>?;
+
+    if (invoiceNumber == null || invoiceNumber.isEmpty) {
+      return _badRequest('invoiceNumber is required');
+    }
+    if (invoiceDateStr == null) return _badRequest('invoiceDate is required');
+    if (lineItemsRaw == null || lineItemsRaw.isEmpty) {
+      return _badRequest('lineItems must not be empty');
+    }
+
+    final DateTime invoiceDate;
+    try {
+      invoiceDate = DateTime.parse(invoiceDateStr);
+    } catch (_) {
+      return _badRequest('Invalid invoiceDate format');
+    }
+
+    final lineItems = <InvoiceLineItemInput>[];
+    for (final raw in lineItemsRaw) {
+      final item = raw as Map<String, dynamic>;
+      final glId = item['generalLedgerId'] as String?;
+      final amount = item['amountCents'] as int?;
+      if (glId == null) return _badRequest('Each lineItem must have generalLedgerId');
+      if (amount == null) return _badRequest('Each lineItem must have amountCents');
+      lineItems.add(InvoiceLineItemInput(
+        description: (item['description'] as String?) ?? '',
+        generalLedgerId: glId,
+        amountCents: amount,
+        gstCents: (item['gstCents'] as int?) ?? 0,
+      ));
+    }
+
+    try {
+      final invoice = await _update.execute(
+        id: id,
+        entityId: entityId,
+        invoiceNumber: invoiceNumber,
+        invoiceDate: invoiceDate,
+        lineItems: lineItems,
+      );
+
+      _auditChanges(request)?.set({
+        'invoiceNumber': invoiceNumber,
+        'totalCents': invoice.totalAmountCents + invoice.totalGstCents,
+        'lineCount': invoice.lineItems.length,
+      });
+
+      return Response.ok(
+          jsonEncode(_toJsonWithLineItems(invoice)), headers: _jsonHeaders);
+    } catch (e) {
+      if (e.toString().contains('not found') ||
+          e.toString().contains('already paid')) {
+        return Response(HttpStatus.conflict,
+            body: jsonEncode({'error': e.toString()}),
+            headers: _jsonHeaders);
+      }
+      if (e.toString().contains('duplicate') ||
+          e.toString().contains('unique')) {
+        return Response(HttpStatus.conflict,
+            body: jsonEncode({'error': 'Invoice number already exists'}),
+            headers: _jsonHeaders);
+      }
+      rethrow;
+    }
+  }
+
+  /// DELETE /invoices/:id — deletes an unpaid invoice (admin only).
+  Future<Response> handleDelete(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _unauthorized();
+
+    try {
+      // Snapshot before delete for the audit log.
+      final invoice = await _get.execute(id, entityId: entityId);
+
+      await _delete.execute(id, entityId: entityId);
+
+      _auditChanges(request)?.set({
+        'invoiceNumber': invoice?.invoiceNumber,
+        'contactId': invoice?.contactId,
+        'totalCents': invoice != null
+            ? invoice.totalAmountCents + invoice.totalGstCents
+            : null,
+      });
+
+      return Response(HttpStatus.noContent);
+    } catch (e) {
+      if (e.toString().contains('not found') ||
+          e.toString().contains('already paid')) {
         return Response(HttpStatus.conflict,
             body: jsonEncode({'error': e.toString()}),
             headers: _jsonHeaders);
