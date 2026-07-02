@@ -28,6 +28,7 @@ import '../models/budget_entry.dart';
 import '../models/closing_bank_balance_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/locked_month_entry.dart';
 import '../models/pnl_data.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
@@ -61,6 +62,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   List<ClosingBankBalanceEntry> _closingBalances = [];
   Map<String, GeneralLedgerEntry> _glMap = {};
   BudgetEntry? _budget;
+  List<LockedMonthEntry> _lockedMonths = [];
   bool _loading = true;
   List<PlatformFile> _bankStatements = [];
 
@@ -83,10 +85,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         client.get('/bank-accounts'),
         client.get('/closing-bank-balances'),
         client.get('/budgets/$reportYear'),
+        client.get('/locked-months'),
       ]);
       if (!mounted) return;
 
-      // Only the first 5 are required; budget (index 5) is optional.
+      // Only the first 5 are required; budget (index 5) and locked-months (index 6) are optional.
       if (results.take(5).any((r) => r.statusCode != 200)) {
         setState(() => _loading = false);
         return;
@@ -113,6 +116,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
           _budget = BudgetEntry.fromJson(
             jsonDecode(results[5].body) as Map<String, dynamic>,
           );
+        }
+        if (results[6].statusCode == 200) {
+          _lockedMonths = (jsonDecode(results[6].body) as List)
+              .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
+              .toList();
         }
         _loading = false;
       });
@@ -164,8 +172,12 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     final reportMonth = prevMonthDate.month;
     final generated = Formatters.formatDateShort(DateTime.now());
 
-    // Dashboard Data (Current Year Summary)
-    final dashboardMonths = _buildMonthSummaries(_allTransactions, _closingBalances, reportYear);
+    // Dashboard Data — locked months only (excludes in-progress months).
+    final allDashboardMonths = _buildMonthSummaries(_allTransactions, _closingBalances, reportYear);
+    final lockedKeys = _lockedMonths.map((l) => l.monthYear).toSet();
+    final dashboardMonths = allDashboardMonths
+        .where((m) => lockedKeys.contains('$reportYear-${m.month.toString().padLeft(2, '0')}'))
+        .toList();
 
     // P&L Data for the report month
     final pnlData = PnLData.compute(
