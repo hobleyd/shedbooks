@@ -339,6 +339,25 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       summaries[month]!.bankBalances[b.bankAccountId] = b.balanceCents;
     }
 
+    // Cash-type accounts have no closing_bank_balances entries; compute a
+    // running balance from all isCash-flagged transactions up to each month.
+    for (final account in _bankAccounts.where((a) => a.accountType == BankAccountType.cash)) {
+      for (final summary in summaries.values) {
+        final yearMonth = '$year-${summary.month.toString().padLeft(2, '0')}';
+        bool hasCash = false;
+        int balance = 0;
+        for (final t in transactions) {
+          if (!t.isCash) continue;
+          final txYearMonth = t.transactionDate.length >= 7 ? t.transactionDate.substring(0, 7) : '';
+          if (txYearMonth.compareTo(yearMonth) <= 0) {
+            hasCash = true;
+            balance += t.isCredit ? t.totalAmount : -t.totalAmount;
+          }
+        }
+        if (hasCash) summary.bankBalances[account.id] = balance;
+      }
+    }
+
     return summaries.values.toList();
   }
 
