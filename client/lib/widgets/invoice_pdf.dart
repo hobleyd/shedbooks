@@ -193,7 +193,7 @@ class InvoicePdf {
                   children: [
                     _paymentDetailCol('Bank', bankAccount.bankName),
                     pw.SizedBox(width: 24),
-                    _paymentDetailCol('Account Name', bankAccount.accountName),
+                    _paymentDetailCol('Account Name', entity?.name ?? bankAccount.accountName),
                     pw.SizedBox(width: 24),
                     _paymentDetailCol('BSB', bankAccount.bsbFormatted),
                     pw.SizedBox(width: 24),
