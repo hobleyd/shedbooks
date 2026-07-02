@@ -145,6 +145,22 @@ class BackupHandler {
         FROM budget_gl_mappings WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
+      final invoices = await _queryRows('''
+        SELECT id::text, entity_id, invoice_number, invoice_date,
+               contact_id::text, total_amount_cents, total_gst_cents,
+               paid_at, created_at, updated_at
+        FROM invoices WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      final invoiceLineItems = await _queryRows('''
+        SELECT ili.id::text, ili.entity_id, ili.invoice_id::text,
+               ili.description, ili.general_ledger_id::text,
+               ili.amount_cents, ili.gst_cents, ili.created_at
+        FROM invoice_line_items ili
+        JOIN invoices i ON i.id = ili.invoice_id
+        WHERE i.entity_id = @entityId
+      ''', {'entityId': entityId});
+
       final now = DateTime.now();
       final stamp =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
@@ -168,6 +184,8 @@ class BackupHandler {
         'budgets': budgets,
         'budget_lines': budgetLines,
         'budget_gl_mappings': budgetGlMappings,
+        'invoices': invoices,
+        'invoice_line_items': invoiceLineItems,
       };
 
       final jsonBytes = Uint8List.fromList(utf8.encode(jsonEncode(backup)));
@@ -244,6 +262,7 @@ class BackupHandler {
         await _del(tx, 'budget_gl_mappings', entityId);
         await _del(tx, 'budgets', entityId); // cascades to budget_lines
         await _del(tx, 'transactions', entityId);
+        await _del(tx, 'invoices', entityId); // cascades to invoice_line_items
         await _del(tx, 'contacts', entityId);
         await _del(tx, 'general_ledger', entityId);
         await _del(tx, 'gst_rates', entityId);
@@ -437,6 +456,58 @@ class BackupHandler {
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'invoices')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO invoices
+                (id, entity_id, invoice_number, invoice_date,
+                 contact_id, total_amount_cents, total_gst_cents,
+                 paid_at, created_at, updated_at)
+              VALUES (
+                @id::uuid, @e, @num, @date::date,
+                @cid::uuid, @total, @gst,
+                @paid::timestamptz, @ca::timestamptz, @ua::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'num': r['invoice_number'] as String,
+              'date': _dateString(r['invoice_date']),
+              'cid': r['contact_id'] as String,
+              'total': r['total_amount_cents'] as int,
+              'gst': r['total_gst_cents'] as int,
+              'paid': r['paid_at'],
+              'ca': r['created_at'] as String,
+              'ua': r['updated_at'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'invoice_line_items')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO invoice_line_items
+                (id, entity_id, invoice_id, description,
+                 general_ledger_id, amount_cents, gst_cents, created_at)
+              VALUES (
+                @id::uuid, @e, @iid::uuid, @desc,
+                @glid::uuid, @cents, @gst, @ca::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'iid': r['invoice_id'] as String,
+              'desc': r['description'] as String,
+              'glid': r['general_ledger_id'] as String,
+              'cents': r['amount_cents'] as int,
+              'gst': r['gst_cents'] as int,
+              'ca': r['created_at'] as String,
             },
           );
         }
