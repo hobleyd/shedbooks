@@ -338,7 +338,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     for (final row in _rows) {
       final isResolved = row.matched.isNotEmpty ||
           row.status == BankMatchStatus.skipped ||
-          row.status == BankMatchStatus.alreadyImported;
+          row.status == BankMatchStatus.alreadyImported ||
+          row.status == BankMatchStatus.invoiceMatched;
       if (!isResolved) continue;
       if (row.source.isDebit) {
         balance -= row.source.amountCents;
