@@ -87,6 +87,12 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   ReceiptFormat _moneyOutFormat = const ReceiptFormat('');
   List<BankAccountSummary> _bankAccounts = [];
 
+  // Previously-imported bank rows (from CSV import sessions).
+  // Used as a fallback "already imported" signal when a PDF row cannot be
+  // matched to any ledger transaction — e.g. WMS batch payments whose
+  // aba_batch_name was never stamped because the ABA was generated externally.
+  Set<String> _importedRowKeys = {};
+
   // Bank account selection.
   String? _selectedBankAccountId;
 
@@ -140,6 +146,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         client.get('/contacts'),
         client.get('/bank-reconciliation/bank-accounts'),
         client.get('/invoices?unpaid=true'),
+        client.get('/bank-imports'),
       ]);
 
       final txRes = results[0];
@@ -197,6 +204,19 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         _unpaidInvoices = list
             .map((j) => InvoiceEntry.fromJson(j as Map<String, dynamic>))
             .toList();
+      }
+
+      final biRes = results[6];
+      if (biRes.statusCode == 200) {
+        final list = jsonDecode(biRes.body) as List<dynamic>;
+        _importedRowKeys = {
+          for (final j in list)
+            _bankImportKey(
+              j['processDate'] as String,
+              j['isDebit'] as bool,
+              j['amountCents'] as int,
+            ),
+        };
       }
     } catch (e) {
       if (mounted) setState(() => _loadError = e.toString());
@@ -670,16 +690,21 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       }
     } else {
       final already = _allTransactions.any((t) =>
-          t.bankMatched &&
-          t.transactionType == 'debit' &&
-          t.transactionDate == row.processDate &&
-          t.totalAmount == row.source.amountCents);
+              t.bankMatched &&
+              t.transactionType == 'debit' &&
+              t.transactionDate == row.processDate &&
+              t.totalAmount == row.source.amountCents) ||
+          _importedRowKeys.contains(_bankImportKey(
+              row.processDate, true, row.source.amountCents));
       row.status = already
           ? BankMatchStatus.alreadyImported
           : BankMatchStatus.unmatched;
       row.matched = [];
     }
   }
+
+  static String _bankImportKey(String date, bool isDebit, int amountCents) =>
+      '$date|${isDebit ? 'd' : 'c'}|$amountCents';
 
   static final _batchNamePattern = RegExp(r'WMS\d{9}');
 
@@ -754,10 +779,12 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       }
     } else {
       final already = _allTransactions.any((t) =>
-          t.bankMatched &&
-          t.transactionType == 'credit' &&
-          t.transactionDate == row.processDate &&
-          t.totalAmount == row.source.amountCents);
+              t.bankMatched &&
+              t.transactionType == 'credit' &&
+              t.transactionDate == row.processDate &&
+              t.totalAmount == row.source.amountCents) ||
+          _importedRowKeys.contains(_bankImportKey(
+              row.processDate, false, row.source.amountCents));
       row.status = already
           ? BankMatchStatus.alreadyImported
           : BankMatchStatus.unmatched;

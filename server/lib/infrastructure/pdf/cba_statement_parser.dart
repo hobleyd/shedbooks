@@ -94,6 +94,13 @@ class CbaStatementParser {
 
   static final _amountRe = RegExp(r'^[\d,]+\.\d{2}$');
   static final _balanceSuffixRe = RegExp(r'^([\d,]+\.\d{2})\s+(?:CR|DR)$');
+
+  // CBA page-header boilerplate rows that appear between pages.
+  // Matched against the joined row text; a row is skipped when it starts with
+  // "Statement NNN" (followed by optional page info) or contains "Account Number".
+  static final _pageHeaderRowRe = RegExp(
+      r'^Statement\s+\d+|Account\s+Number',
+      caseSensitive: false);
   static final _openingBalanceRe =
       RegExp(r'opening\s+balance', caseSensitive: false);
   static final _closingBalanceRe =
@@ -196,7 +203,11 @@ class CbaStatementParser {
         );
       } else if (pendingDate != null) {
         // Continuation row (multi-line description or deferred balance).
-        _extractFromRow(row, pendingDescLines, (b) => pendingBalance = b);
+        // Skip CBA page-header boilerplate that appears between pages.
+        final rowJoined = row.map((e) => e.text.trim()).join(' ').trim();
+        if (!_pageHeaderRowRe.hasMatch(rowJoined)) {
+          _extractFromRow(row, pendingDescLines, (b) => pendingBalance = b);
+        }
       }
     }
 
