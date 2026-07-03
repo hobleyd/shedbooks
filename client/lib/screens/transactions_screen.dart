@@ -22,6 +22,9 @@ import 'package:web/web.dart' as web;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
@@ -33,10 +36,13 @@ import '../models/gl_pair_filter.dart';
 import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../utils/formatters.dart';
 import 'import_cba_screen.dart';
 import 'import_transactions_screen.dart';
+import '../widgets/pdf_report_components.dart';
 import '../widgets/transaction_form.dart';
 import '../widgets/transaction_receipt_pdf.dart';
+import '../widgets/transactions_pdf_report.dart';
 
 /// Entry screen for creating transactions, with a month-view list above the form.
 class TransactionsScreen extends StatefulWidget {
@@ -840,6 +846,35 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     }
   }
 
+  Future<void> _generateTransactionsPdf() async {
+    final txns = _viewMonthTransactions;
+    final monthLabel = '${_monthNames[_viewMonth.month]} ${_viewMonth.year}';
+    final generated = Formatters.formatDateShort(DateTime.now());
+    final contactNames = {for (final c in _contacts) c.id: c.name};
+    final glDescriptions = {for (final g in _glEntries) g.id: g.description};
+
+    final doc = pw.Document(title: 'Transactions - $monthLabel');
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(30),
+      footer: (ctx) => PdfReportComponents.pageFooter(ctx, generated),
+      build: (ctx) => [
+        PdfReportComponents.entityHeader(_entityDetails),
+        ...TransactionsPdfReport.build(
+          transactions: txns,
+          contactNames: contactNames,
+          glDescriptions: glDescriptions,
+          periodLabel: monthLabel,
+          formatCents: Formatters.formatCents,
+        ),
+      ],
+    ));
+    await Printing.sharePdf(
+      bytes: await doc.save(),
+      filename: 'transactions-$monthLabel.pdf',
+    );
+  }
+
   void _showSnackbar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -1088,6 +1123,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           icon: const Icon(Icons.chevron_right),
           onPressed: _canGoForward ? _nextMonth : null,
           tooltip: 'Next month',
+        ),
+        IconButton(
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          tooltip: 'Download Transactions PDF',
+          onPressed: _generateTransactionsPdf,
         ),
         if (_selectedTransactionIds.isNotEmpty &&
             context.read<AuthState>().isAdmin) ...[

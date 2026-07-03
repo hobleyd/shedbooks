@@ -36,6 +36,7 @@ import '../utils/formatters.dart';
 import '../widgets/budget_pdf_report.dart';
 import '../widgets/pdf_report_components.dart';
 import '../widgets/pnl_pdf_report.dart';
+import '../widgets/transactions_pdf_report.dart';
 
 class MonthlyReportScreen extends StatefulWidget {
   const MonthlyReportScreen({super.key});
@@ -61,6 +62,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   List<BankAccountEntry> _bankAccounts = [];
   List<ClosingBankBalanceEntry> _closingBalances = [];
   Map<String, GeneralLedgerEntry> _glMap = {};
+  Map<String, String> _contactNames = {};
   BudgetEntry? _budget;
   List<LockedMonthEntry> _lockedMonths = [];
   bool _loading = true;
@@ -86,10 +88,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         client.get('/closing-bank-balances'),
         client.get('/budgets/$reportYear'),
         client.get('/locked-months'),
+        client.get('/contacts'),
       ]);
       if (!mounted) return;
 
-      // Only the first 5 are required; budget (index 5) and locked-months (index 6) are optional.
+      // Only the first 5 are required; budget (index 5), locked-months (index 6), and contacts (index 7) are optional.
       if (results.take(5).any((r) => r.statusCode != 200)) {
         setState(() => _loading = false);
         return;
@@ -121,6 +124,13 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
           _lockedMonths = (jsonDecode(results[6].body) as List)
               .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
               .toList();
+        }
+        if (results[7].statusCode == 200) {
+          _contactNames = {
+            for (final e in jsonDecode(results[7].body) as List)
+              (e as Map<String, dynamic>)['id'] as String:
+                  e['name'] as String,
+          };
         }
         _loading = false;
       });
@@ -288,6 +298,37 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
           ...budgetWidgets,
         ],
       ));
+    }
+
+    // Append Transactions for the latest locked month
+    if (lockedKeys.isNotEmpty) {
+      final latestLockedKey = (lockedKeys.toList()..sort()).last;
+      final llParts = latestLockedKey.split('-');
+      final llYear = int.tryParse(llParts[0]);
+      final llMonth = int.tryParse(llParts.length > 1 ? llParts[1] : '');
+      if (llYear != null && llMonth != null) {
+        final llMonthName = monthNames[llMonth - 1];
+        final txnsForLatestLocked = _allTransactions
+            .where((t) => t.transactionDate.startsWith(latestLockedKey))
+            .toList();
+        final glDescriptions = {for (final e in _glMap.entries) e.key: e.value.description};
+        final txnWidgets = TransactionsPdfReport.build(
+          transactions: txnsForLatestLocked,
+          contactNames: _contactNames,
+          glDescriptions: glDescriptions,
+          periodLabel: '$llMonthName $llYear',
+          formatCents: Formatters.formatCents,
+        );
+        doc.addPage(pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(30),
+          footer: (ctx) => PdfReportComponents.pageFooter(ctx, generated),
+          build: (ctx) => [
+            PdfReportComponents.entityHeader(entity),
+            ...txnWidgets,
+          ],
+        ));
+      }
     }
 
     // Append Bank Statements
