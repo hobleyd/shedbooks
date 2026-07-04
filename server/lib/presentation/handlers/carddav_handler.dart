@@ -313,15 +313,19 @@ class CardDavHandler {
     buf.writeln('<?xml version="1.0" encoding="UTF-8"?>');
     buf.writeln('<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">');
 
-    // Collection entry — includes current-user-principal so that macOS/iOS
-    // can follow it to discover the addressbook-home-set.
+    // Collection entry — self-referential principal properties let macOS/iOS
+    // complete discovery in a single PROPFIND without following a separate
+    // principal URL. current-user-principal and addressbook-home-set both
+    // point here so any hop from /.well-known/carddav lands directly on the
+    // addressbook with everything the client needs.
     buf.writeln('  <D:response>');
     buf.writeln('    <D:href>$_basePath/</D:href>');
     buf.writeln('    <D:propstat>');
     buf.writeln('      <D:prop>');
     buf.writeln('        <D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>');
     buf.writeln('        <D:displayname>Members</D:displayname>');
-    buf.writeln('        <D:current-user-principal><D:href>$_principalPath</D:href></D:current-user-principal>');
+    buf.writeln('        <D:current-user-principal><D:href>$_basePath/</D:href></D:current-user-principal>');
+    buf.writeln('        <C:addressbook-home-set><D:href>$_basePath/</D:href></C:addressbook-home-set>');
     buf.writeln('      </D:prop>');
     buf.writeln('      <D:status>HTTP/1.1 200 OK</D:status>');
     buf.writeln('    </D:propstat>');

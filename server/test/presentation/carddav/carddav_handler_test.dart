@@ -161,6 +161,8 @@ void main() {
 
       expect(body, contains('<C:addressbook/>'));
       expect(body, contains('<D:displayname>Members</D:displayname>'));
+      expect(body, contains('<C:addressbook-home-set>'));
+      expect(body, contains('<D:current-user-principal>'));
     });
 
     test('returns 207 with empty children when no members exist', () async {
