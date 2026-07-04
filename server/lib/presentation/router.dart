@@ -116,6 +116,10 @@ import '../application/asset/list_assets_use_case.dart';
 import '../application/asset/update_asset_use_case.dart';
 import '../infrastructure/repositories/postgres_asset_repository.dart';
 import '../infrastructure/repositories/postgres_invoice_repository.dart';
+import '../infrastructure/repositories/postgres_user_api_key_repository.dart';
+import '../application/api_key/generate_api_key_use_case.dart';
+import '../application/api_key/get_api_key_status_use_case.dart';
+import 'handlers/api_key_handler.dart';
 import 'handlers/aba_sequence_handler.dart';
 import 'handlers/asset_handler.dart';
 import 'handlers/carddav_handler.dart';
@@ -321,6 +325,12 @@ Handler buildRouter({
     delete: DeleteMemberUseCase(memberRepository),
   );
 
+  final apiKeyRepository = PostgresUserApiKeyRepository(pool);
+  final apiKeyHandler = ApiKeyHandler(
+    getStatus: GetApiKeyStatusUseCase(apiKeyRepository),
+    generate: GenerateApiKeyUseCase(apiKeyRepository),
+  );
+
   final authMiddleware = auth0Middleware(
     auth0Domain: auth0Domain,
     audience: audience,
@@ -342,6 +352,7 @@ Handler buildRouter({
     auth0Domain: auth0Domain,
     audience: audience,
     jwksClient: jwksClient,
+    apiKeyRepository: apiKeyRepository,
   );
 
   // CardDAV uses its own auth middleware (accepts Bearer OR Basic with JWT as
@@ -390,7 +401,9 @@ Handler buildRouter({
         _authed(_assetRouter(assetHandler)))
     ..mount('/admin',
         _authed(_adminRouter(backupHandler, auditHandler, usersHandler)))
-    // CardDAV addressbook — uses separate auth (Bearer OR Basic w/ JWT password).
+    ..mount('/api-key',
+        _authed(_apiKeyRouter(apiKeyHandler)))
+    // CardDAV addressbook — uses separate auth (Bearer OR Basic w/ JWT password or API key).
     ..add('OPTIONS', '/carddav/members', _cardDavAuthed(cardDavHandler.handleOptions))
     ..add('OPTIONS', '/carddav/members/', _cardDavAuthed(cardDavHandler.handleOptions))
     ..add('PROPFIND', '/carddav/members', _cardDavAuthed(cardDavHandler.handlePropfind))
@@ -592,6 +605,13 @@ Router _assetRouter(AssetHandler h) {
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+}
+
+// Contributors and administrators only.
+Router _apiKeyRouter(ApiKeyHandler h) {
+  return Router()
+    ..get('/', _role(requireContributor(), h.handleGetStatus))
+    ..post('/generate', _role(requireContributor(), h.handleGenerate));
 }
 
 // Viewers can read; contributors and admins can create; admins only can edit/delete.

@@ -157,6 +157,7 @@ const _tableMap = {
   'carddav': 'members',
   'assets': 'assets',
   'invoices': 'invoices',
+  'api-key': 'user_api_keys',
 };
 
 String _tableName(String path) {
@@ -174,7 +175,7 @@ String? _recordId(String path) {
   const nonIdSegments = {
     'merge', 'effective', 'backup', 'restore', 'audit-log', 'users', 'next',
     'confirm-import', 'gl-mappings', 'import', 'members',
-    'next-number', 'mark-paid',
+    'next-number', 'mark-paid', 'generate',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

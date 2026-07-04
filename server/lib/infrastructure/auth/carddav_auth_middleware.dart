@@ -21,98 +21,93 @@ import 'dart:io';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:shelf/shelf.dart';
 
+import '../../domain/repositories/i_user_api_key_repository.dart';
+import '../encryption/sha256_hex.dart';
 import 'jwks_client.dart';
 
-/// Shelf middleware that validates Auth0 JWTs for CardDAV endpoints.
+/// Shelf middleware that authenticates CardDAV endpoints.
 ///
-/// Accepts the JWT in either:
-/// - `Authorization: Bearer <jwt>` — standard API usage.
+/// Accepts credentials in three forms:
+/// - `Authorization: Bearer <jwt>` — standard JWT Bearer token.
 /// - `Authorization: Basic base64(username:<jwt>)` — for CardDAV clients
 ///   (e.g. iOS Contacts) that only support HTTP Basic Auth; the JWT is used as
 ///   the password, and the username field is ignored.
+/// - `Authorization: Basic base64(email:<api-key>)` — when [apiKeyRepository]
+///   is provided; the API key is looked up by its SHA-256 hash and the username
+///   must match the stored email (case-insensitive).
 ///
-/// On success, the decoded JWT payload is attached to the request context under
+/// On success, the decoded claims are attached to the request context under
 /// `'auth.claims'`, matching the behaviour of [auth0Middleware].
 Middleware cardDavAuthMiddleware({
   required String auth0Domain,
   required String audience,
   required JwksClient jwksClient,
+  IUserApiKeyRepository? apiKeyRepository,
 }) {
   return (Handler inner) {
     return (Request request) async {
-      final token = _extractToken(request);
-      if (token == null) {
-        return Response.unauthorized(
-          jsonEncode({'error': 'Missing or invalid Authorization header'}),
-          headers: {
-            HttpHeaders.contentTypeHeader: 'application/json',
-            'WWW-Authenticate':
-                'Basic realm="Shedbooks Members", Bearer realm="Shedbooks"',
-          },
+      final auth = _extractAuth(request);
+      if (auth == null) {
+        return _unauthorized();
+      }
+
+      final password = auth.password;
+
+      if (_looksLikeJwt(password)) {
+        return _verifyJwt(
+          token: password,
+          auth0Domain: auth0Domain,
+          audience: audience,
+          jwksClient: jwksClient,
+          inner: inner,
+          request: request,
         );
       }
 
-      try {
-        final headerPart = token.split('.').first;
-        final headerJson = utf8.decode(
-          base64Url.decode(base64Url.normalize(headerPart)),
+      // Not a JWT — try API key lookup if a repository was supplied.
+      if (auth.username != null && apiKeyRepository != null) {
+        return _verifyApiKey(
+          username: auth.username!,
+          rawKey: password,
+          repository: apiKeyRepository,
+          inner: inner,
+          request: request,
         );
-        final header = jsonDecode(headerJson) as Map<String, dynamic>;
-        final kid = header['kid'] as String?;
-        if (kid == null) {
-          return _unauthorised('JWT header missing kid');
-        }
-
-        final publicKey = await jwksClient.getPublicKey(kid);
-        final jwt = JWT.verify(
-          token,
-          publicKey,
-          issuer: 'https://$auth0Domain/',
-        );
-
-        final payload = jwt.payload as Map<String, dynamic>?;
-        final rawAud = payload?['aud'];
-        final audList = rawAud is List
-            ? rawAud.cast<String>()
-            : rawAud is String
-                ? [rawAud]
-                : <String>[];
-        if (!audList.contains(audience)) {
-          return _unauthorised('Invalid token: invalid audience');
-        }
-
-        return inner(
-          request.change(context: {'auth.claims': jwt.payload}),
-        );
-      } on JWTExpiredException {
-        return _unauthorised('Token has expired');
-      } on JWTException catch (e) {
-        return _unauthorised('Invalid token: ${e.message}');
-      } catch (_) {
-        return _unauthorised('Authentication failed');
       }
+
+      return _unauthorized();
     };
   };
 }
 
-/// Extracts the raw JWT string from either Bearer or Basic auth header.
-String? _extractToken(Request request) {
+// ── Private helpers ────────────────────────────────────────────────────────
+
+/// Holds credentials extracted from the Authorization header.
+typedef _AuthCredentials = ({String? username, String password});
+
+/// Extracts credentials from a Bearer or Basic Authorization header.
+///
+/// Returns `(username: null, password: token)` for Bearer, or
+/// `(username: u, password: p)` for Basic, or null when the header is absent
+/// or malformed.
+_AuthCredentials? _extractAuth(Request request) {
   final authHeader = request.headers[HttpHeaders.authorizationHeader];
   if (authHeader == null) return null;
 
   if (authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7).trim();
+    final token = authHeader.substring(7).trim();
+    return token.isEmpty ? null : (username: null, password: token);
   }
 
   if (authHeader.startsWith('Basic ')) {
     final encoded = authHeader.substring(6).trim();
     try {
       final decoded = utf8.decode(base64.decode(encoded));
-      // Format: username:password — password is the JWT.
       final colonIdx = decoded.indexOf(':');
       if (colonIdx < 0) return null;
+      final username = decoded.substring(0, colonIdx);
       final password = decoded.substring(colonIdx + 1).trim();
-      return password.isEmpty ? null : password;
+      return password.isEmpty ? null : (username: username, password: password);
     } catch (_) {
       return null;
     }
@@ -121,7 +116,103 @@ String? _extractToken(Request request) {
   return null;
 }
 
-Response _unauthorised(String message) => Response.unauthorized(
+/// Returns true when [s] looks like a three-part JWT (header.payload.signature).
+bool _looksLikeJwt(String s) {
+  final parts = s.split('.');
+  return parts.length == 3 && parts.every((p) => p.isNotEmpty);
+}
+
+Future<Response> _verifyJwt({
+  required String token,
+  required String auth0Domain,
+  required String audience,
+  required JwksClient jwksClient,
+  required Handler inner,
+  required Request request,
+}) async {
+  try {
+    final headerPart = token.split('.').first;
+    final headerJson = utf8.decode(
+      base64Url.decode(base64Url.normalize(headerPart)),
+    );
+    final header = jsonDecode(headerJson) as Map<String, dynamic>;
+    final kid = header['kid'] as String?;
+    if (kid == null) {
+      return _unauthorizedMessage('JWT header missing kid');
+    }
+
+    final publicKey = await jwksClient.getPublicKey(kid);
+    final jwt = JWT.verify(
+      token,
+      publicKey,
+      issuer: 'https://$auth0Domain/',
+    );
+
+    final payload = jwt.payload as Map<String, dynamic>?;
+    final rawAud = payload?['aud'];
+    final audList = rawAud is List
+        ? rawAud.cast<String>()
+        : rawAud is String
+            ? [rawAud]
+            : <String>[];
+    if (!audList.contains(audience)) {
+      return _unauthorizedMessage('Invalid token: invalid audience');
+    }
+
+    return inner(
+      request.change(context: {'auth.claims': jwt.payload}),
+    );
+  } on JWTExpiredException {
+    return _unauthorizedMessage('Token has expired');
+  } on JWTException catch (e) {
+    return _unauthorizedMessage('Invalid token: ${e.message}');
+  } catch (_) {
+    return _unauthorizedMessage('Authentication failed');
+  }
+}
+
+Future<Response> _verifyApiKey({
+  required String username,
+  required String rawKey,
+  required IUserApiKeyRepository repository,
+  required Handler inner,
+  required Request request,
+}) async {
+  try {
+    final hash = sha256Hex(rawKey);
+    final key = await repository.findByApiKeyHash(hash);
+
+    if (key == null) return _unauthorizedMessage('Invalid API key');
+
+    // Username must match the stored email (case-insensitive).
+    if (username.toLowerCase() != key.userEmail.toLowerCase()) {
+      return _unauthorizedMessage('Username does not match API key');
+    }
+
+    return inner(
+      request.change(context: {
+        'auth.claims': {
+          'https://shedbooks.com/entity_id': key.entityId,
+          'sub': key.userId,
+          'email': key.userEmail,
+        },
+      }),
+    );
+  } catch (_) {
+    return _unauthorizedMessage('Authentication failed');
+  }
+}
+
+Response _unauthorized() => Response.unauthorized(
+      jsonEncode({'error': 'Missing or invalid Authorization header'}),
+      headers: {
+        HttpHeaders.contentTypeHeader: 'application/json',
+        'WWW-Authenticate':
+            'Basic realm="Shedbooks Members", Bearer realm="Shedbooks"',
+      },
+    );
+
+Response _unauthorizedMessage(String message) => Response.unauthorized(
       jsonEncode({'error': message}),
       headers: {
         HttpHeaders.contentTypeHeader: 'application/json',

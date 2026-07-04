@@ -23,6 +23,7 @@ import 'package:provider/provider.dart';
 
 import '../auth/app_role.dart';
 import '../auth/auth_state.dart';
+import '../screens/api_key_dialog.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 
@@ -63,6 +64,8 @@ Future<void> _guardedNavigate(BuildContext context, String path) async {
   if (context.mounted) context.go(path);
 }
 
+enum _UserMenuAction { apiKey }
+
 class _AppSidebarState extends State<AppSidebar> {
   bool _adminExpanded = false;
   bool _reportsExpanded = false;
@@ -87,6 +90,16 @@ class _AppSidebarState extends State<AppSidebar> {
         }
       }
     } catch (_) {}
+  }
+
+  void _handleUserMenuAction(BuildContext context, _UserMenuAction action) {
+    switch (action) {
+      case _UserMenuAction.apiKey:
+        showDialog<void>(
+          context: context,
+          builder: (_) => const ApiKeyDialog(),
+        );
+    }
   }
 
   @override
@@ -188,7 +201,24 @@ class _AppSidebarState extends State<AppSidebar> {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.account_circle_outlined),
+            leading: authState.canEdit
+                ? PopupMenuButton<_UserMenuAction>(
+                    tooltip: 'Account options',
+                    child: const Icon(Icons.account_circle_outlined),
+                    onSelected: (action) =>
+                        _handleUserMenuAction(context, action),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: _UserMenuAction.apiKey,
+                        child: Row(children: [
+                          Icon(Icons.vpn_key_outlined, size: 20),
+                          SizedBox(width: 12),
+                          Text('API Key'),
+                        ]),
+                      ),
+                    ],
+                  )
+                : const Icon(Icons.account_circle_outlined),
             title: Text(
               userName,
               overflow: TextOverflow.ellipsis,

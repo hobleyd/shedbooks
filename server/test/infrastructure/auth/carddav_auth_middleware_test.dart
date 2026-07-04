@@ -21,10 +21,15 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
+import 'package:shedbooks_server/domain/entities/user_api_key.dart';
+import 'package:shedbooks_server/domain/repositories/i_user_api_key_repository.dart';
 import 'package:shedbooks_server/infrastructure/auth/carddav_auth_middleware.dart';
 import 'package:shedbooks_server/infrastructure/auth/jwks_client.dart';
+import 'package:shedbooks_server/infrastructure/encryption/sha256_hex.dart';
 
 class MockJwksClient extends Mock implements JwksClient {}
+
+class MockUserApiKeyRepository extends Mock implements IUserApiKeyRepository {}
 
 /// Encodes [username] and [password] as a Basic auth header value.
 String _basicAuth(String username, String password) {
@@ -188,6 +193,141 @@ void main() {
 
       expect(res.statusCode, equals(401));
       verifyNever(() => mockJwksClient.getPublicKey(any()));
+    });
+  });
+
+  group('cardDavAuthMiddleware API key auth', () {
+    const tEntityId = 'org_entity1';
+    const tUserId = 'auth0|user1';
+    const tUserEmail = 'user@example.com';
+    const tRawKey = '11111111-2222-3333-4444-555555555555';
+
+    late MockUserApiKeyRepository mockRepo;
+    late Middleware middlewareWithRepo;
+
+    final tStoredKey = UserApiKey(
+      id: '00000000-0000-0000-0000-000000000001',
+      entityId: tEntityId,
+      userId: tUserId,
+      userEmail: tUserEmail,
+      apiKeyHash: sha256Hex(tRawKey),
+      createdAt: DateTime.utc(2026, 1, 1),
+    );
+
+    setUp(() {
+      mockRepo = MockUserApiKeyRepository();
+      middlewareWithRepo = cardDavAuthMiddleware(
+        auth0Domain: auth0Domain,
+        audience: audience,
+        jwksClient: mockJwksClient,
+        apiKeyRepository: mockRepo,
+      );
+    });
+
+    test(
+        'valid credentials — passes through and injects entity_id, sub, email '
+        'into auth.claims', () async {
+      // Arrange
+      when(() => mockRepo.findByApiKeyHash(sha256Hex(tRawKey)))
+          .thenAnswer((_) async => tStoredKey);
+
+      Map<String, dynamic>? capturedClaims;
+      final capturingHandler = (Request req) {
+        capturedClaims =
+            req.context['auth.claims'] as Map<String, dynamic>?;
+        return Response.ok('ok');
+      };
+      final handler = middlewareWithRepo(capturingHandler);
+
+      // Act
+      final req = Request(
+        'GET',
+        Uri.parse('http://localhost/carddav/members'),
+        headers: {'authorization': _basicAuth(tUserEmail, tRawKey)},
+      );
+      final res = await handler(req);
+
+      // Assert
+      expect(res.statusCode, equals(200));
+      expect(capturedClaims, isNotNull);
+      expect(capturedClaims!['https://shedbooks.com/entity_id'], equals(tEntityId));
+      expect(capturedClaims!['sub'], equals(tUserId));
+      expect(capturedClaims!['email'], equals(tUserEmail));
+    });
+
+    test('unknown key (repo returns null) → 401', () async {
+      // Arrange
+      when(() => mockRepo.findByApiKeyHash(any()))
+          .thenAnswer((_) async => null);
+      final handler = middlewareWithRepo(_okHandler);
+
+      // Act
+      final req = Request(
+        'GET',
+        Uri.parse('http://localhost/carddav/members'),
+        headers: {'authorization': _basicAuth(tUserEmail, tRawKey)},
+      );
+      final res = await handler(req);
+
+      // Assert
+      expect(res.statusCode, equals(401));
+    });
+
+    test('username does not match stored email → 401', () async {
+      // Arrange
+      when(() => mockRepo.findByApiKeyHash(sha256Hex(tRawKey)))
+          .thenAnswer((_) async => tStoredKey);
+      final handler = middlewareWithRepo(_okHandler);
+
+      // Act — correct key but wrong username
+      final req = Request(
+        'GET',
+        Uri.parse('http://localhost/carddav/members'),
+        headers: {
+          'authorization': _basicAuth('other@example.com', tRawKey),
+        },
+      );
+      final res = await handler(req);
+
+      // Assert
+      expect(res.statusCode, equals(401));
+    });
+
+    test(
+        'UUID password is not mistaken for a JWT — API key path is taken',
+        () async {
+      // A UUID has no dots, so _looksLikeJwt returns false and the API key
+      // branch runs (even though the key is unknown).
+      when(() => mockRepo.findByApiKeyHash(any()))
+          .thenAnswer((_) async => null);
+      final handler = middlewareWithRepo(_okHandler);
+
+      final req = Request(
+        'GET',
+        Uri.parse('http://localhost/carddav/members'),
+        headers: {'authorization': _basicAuth(tUserEmail, tRawKey)},
+      );
+      await handler(req);
+
+      // JWT public key lookup must NOT have been attempted.
+      verifyNever(() => mockJwksClient.getPublicKey(any()));
+      // The repo lookup WAS attempted (confirming the API key branch ran).
+      verify(() => mockRepo.findByApiKeyHash(any())).called(1);
+    });
+
+    test('no apiKeyRepository provided — non-JWT Basic auth returns 401',
+        () async {
+      // middlewareWithRepo has a repo; the middleware WITHOUT a repo should
+      // not attempt an API key lookup and instead return 401 immediately.
+      final handler = middleware(_okHandler); // middleware has no repo
+      final req = Request(
+        'GET',
+        Uri.parse('http://localhost/carddav/members'),
+        headers: {'authorization': _basicAuth(tUserEmail, tRawKey)},
+      );
+      final res = await handler(req);
+
+      expect(res.statusCode, equals(401));
     });
   });
 }
