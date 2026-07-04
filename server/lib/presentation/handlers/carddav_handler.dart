@@ -310,59 +310,56 @@ class CardDavHandler {
 
   String _buildMultistatus(List<Member> members) {
     final buf = StringBuffer();
-    buf.writeln(
-        '<?xml version="1.0" encoding="UTF-8"?>');
-    buf.writeln(
-        '<multistatus xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">');
+    buf.writeln('<?xml version="1.0" encoding="UTF-8"?>');
+    buf.writeln('<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">');
 
     // Collection entry — includes current-user-principal so that macOS/iOS
-    // can follow it to discover the addressbook-home-set (required for
-    // "Manual" and "Automatic" account setup modes).
-    buf.writeln('  <response>');
-    buf.writeln('    <href>$_basePath/</href>');
-    buf.writeln('    <propstat>');
-    buf.writeln('      <prop>');
-    buf.writeln('        <resourcetype><collection/><card:addressbook/></resourcetype>');
-    buf.writeln('        <displayname>Members</displayname>');
-    buf.writeln('        <current-user-principal><href>$_principalPath</href></current-user-principal>');
-    buf.writeln('      </prop>');
-    buf.writeln('      <status>HTTP/1.1 200 OK</status>');
-    buf.writeln('    </propstat>');
-    buf.writeln('  </response>');
+    // can follow it to discover the addressbook-home-set.
+    buf.writeln('  <D:response>');
+    buf.writeln('    <D:href>$_basePath/</D:href>');
+    buf.writeln('    <D:propstat>');
+    buf.writeln('      <D:prop>');
+    buf.writeln('        <D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>');
+    buf.writeln('        <D:displayname>Members</D:displayname>');
+    buf.writeln('        <D:current-user-principal><D:href>$_principalPath</D:href></D:current-user-principal>');
+    buf.writeln('      </D:prop>');
+    buf.writeln('      <D:status>HTTP/1.1 200 OK</D:status>');
+    buf.writeln('    </D:propstat>');
+    buf.writeln('  </D:response>');
 
     for (final m in members) {
-      buf.writeln('  <response>');
-      buf.writeln('    <href>$_basePath/${m.id}.vcf</href>');
-      buf.writeln('    <propstat>');
-      buf.writeln('      <prop>');
-      buf.writeln('        <getetag>"${m.etag}"</getetag>');
-      buf.writeln('        <getcontenttype>$_vcardType</getcontenttype>');
-      buf.writeln('        <resourcetype/>');
-      buf.writeln('      </prop>');
-      buf.writeln('      <status>HTTP/1.1 200 OK</status>');
-      buf.writeln('    </propstat>');
-      buf.writeln('  </response>');
+      buf.writeln('  <D:response>');
+      buf.writeln('    <D:href>$_basePath/${m.id}.vcf</D:href>');
+      buf.writeln('    <D:propstat>');
+      buf.writeln('      <D:prop>');
+      buf.writeln('        <D:getetag>"${m.etag}"</D:getetag>');
+      buf.writeln('        <D:getcontenttype>$_vcardType</D:getcontenttype>');
+      buf.writeln('        <D:resourcetype/>');
+      buf.writeln('      </D:prop>');
+      buf.writeln('      <D:status>HTTP/1.1 200 OK</D:status>');
+      buf.writeln('    </D:propstat>');
+      buf.writeln('  </D:response>');
     }
 
-    buf.write('</multistatus>');
+    buf.write('</D:multistatus>');
     return buf.toString();
   }
 
   String _buildPrincipalResponse() => '''<?xml version="1.0" encoding="UTF-8"?>
-<multistatus xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
-  <response>
-    <href>$_principalPath</href>
-    <propstat>
-      <prop>
-        <resourcetype><principal/></resourcetype>
-        <displayname>Members</displayname>
-        <current-user-principal><href>$_principalPath</href></current-user-principal>
-        <card:addressbook-home-set><href>$_basePath/</href></card:addressbook-home-set>
-      </prop>
-      <status>HTTP/1.1 200 OK</status>
-    </propstat>
-  </response>
-</multistatus>''';
+<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+  <D:response>
+    <D:href>$_principalPath</D:href>
+    <D:propstat>
+      <D:prop>
+        <D:resourcetype><D:principal/></D:resourcetype>
+        <D:displayname>Members</D:displayname>
+        <D:current-user-principal><D:href>$_principalPath</D:href></D:current-user-principal>
+        <C:addressbook-home-set><D:href>$_basePath/</D:href></C:addressbook-home-set>
+      </D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+  </D:response>
+</D:multistatus>''';
 
   // ── Utilities ─────────────────────────────────────────────────────────────
 

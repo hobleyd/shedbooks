@@ -144,7 +144,7 @@ void main() {
 
       expect(res.statusCode, equals(207));
       final body = await res.readAsString();
-      expect(body, contains('<multistatus'));
+      expect(body, contains('<D:multistatus'));
       expect(body, contains('$tId.vcf'));
       expect(body, contains('"etag-abc"'));
       expect(body, contains('text/vcard'));
@@ -159,8 +159,8 @@ void main() {
       final res = await sut.handlePropfind(req);
       final body = await res.readAsString();
 
-      expect(body, contains('<card:addressbook/>'));
-      expect(body, contains('<displayname>Members</displayname>'));
+      expect(body, contains('<C:addressbook/>'));
+      expect(body, contains('<D:displayname>Members</D:displayname>'));
     });
 
     test('returns 207 with empty children when no members exist', () async {
