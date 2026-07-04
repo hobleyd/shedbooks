@@ -54,7 +54,7 @@ class CardDavHandler {
 
   static const _vcardType = 'text/vcard;charset=utf-8';
   static const _xmlType = 'application/xml;charset=utf-8';
-  static const _basePath = '/carddav/members';
+  final String _basePath;
 
   const CardDavHandler({
     required ListMembersUseCase list,
@@ -62,11 +62,13 @@ class CardDavHandler {
     required CreateMemberUseCase create,
     required UpdateMemberUseCase update,
     required DeleteMemberUseCase delete,
+    String pathPrefix = '/api',
   })  : _list = list,
         _get = get,
         _create = create,
         _update = update,
-        _delete = delete;
+        _delete = delete,
+        _basePath = '$pathPrefix/carddav/members';
 
   // ── OPTIONS /carddav/members ──────────────────────────────────────────────
 

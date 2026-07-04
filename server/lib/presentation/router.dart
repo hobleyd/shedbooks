@@ -16,6 +16,7 @@
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
@@ -317,12 +318,15 @@ Handler buildRouter({
     import: ImportAssetsUseCase(assetRepository),
   );
 
+  final cardDavPathPrefix =
+      Platform.environment['CARDDAV_PATH_PREFIX'] ?? '/api';
   final cardDavHandler = CardDavHandler(
     list: ListMembersUseCase(memberRepository),
     get: GetMemberUseCase(memberRepository),
     create: CreateMemberUseCase(memberRepository),
     update: UpdateMemberUseCase(memberRepository),
     delete: DeleteMemberUseCase(memberRepository),
+    pathPrefix: cardDavPathPrefix,
   );
 
   final apiKeyRepository = PostgresUserApiKeyRepository(pool);
