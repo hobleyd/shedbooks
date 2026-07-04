@@ -410,6 +410,9 @@ Handler buildRouter({
     // CardDAV addressbook — uses separate auth (Bearer OR Basic w/ JWT password or API key).
     ..add('OPTIONS', '/carddav/members', _cardDavAuthed(cardDavHandler.handleOptions))
     ..add('OPTIONS', '/carddav/members/', _cardDavAuthed(cardDavHandler.handleOptions))
+    // Principal URL — macOS/iOS follows current-user-principal here to find addressbook-home-set.
+    ..add('PROPFIND', '/carddav/principal', _cardDavAuthed(cardDavHandler.handlePrincipalPropfind))
+    ..add('PROPFIND', '/carddav/principal/', _cardDavAuthed(cardDavHandler.handlePrincipalPropfind))
     ..add('PROPFIND', '/carddav/members', _cardDavAuthed(cardDavHandler.handlePropfind))
     ..add('PROPFIND', '/carddav/members/', _cardDavAuthed(cardDavHandler.handlePropfind))
     ..get('/carddav/members/<uid>',

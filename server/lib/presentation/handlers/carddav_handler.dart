@@ -55,6 +55,7 @@ class CardDavHandler {
   static const _vcardType = 'text/vcard;charset=utf-8';
   static const _xmlType = 'application/xml;charset=utf-8';
   final String _basePath;
+  final String _principalPath;
 
   const CardDavHandler({
     required ListMembersUseCase list,
@@ -68,7 +69,8 @@ class CardDavHandler {
         _create = create,
         _update = update,
         _delete = delete,
-        _basePath = '$pathPrefix/carddav/members';
+        _basePath = '$pathPrefix/carddav/members',
+        _principalPath = '$pathPrefix/carddav/principal';
 
   // ── OPTIONS /carddav/members ──────────────────────────────────────────────
 
@@ -79,6 +81,20 @@ class CardDavHandler {
       'DAV': '1, 2, 3, addressbook',
       'Content-Length': '0',
     });
+  }
+
+  // ── PROPFIND /carddav/principal ───────────────────────────────────────────
+
+  /// Returns the CardDAV principal resource for the authenticated user.
+  ///
+  /// macOS and iOS CardDAV clients follow [current-user-principal] from the
+  /// addressbook PROPFIND to this URL to discover [addressbook-home-set].
+  Future<Response> handlePrincipalPropfind(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _unauthorized();
+
+    final xml = _buildPrincipalResponse();
+    return Response(207, body: xml, headers: {'Content-Type': _xmlType});
   }
 
   // ── PROPFIND /carddav/members ─────────────────────────────────────────────
@@ -299,13 +315,16 @@ class CardDavHandler {
     buf.writeln(
         '<multistatus xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">');
 
-    // Collection entry
+    // Collection entry — includes current-user-principal so that macOS/iOS
+    // can follow it to discover the addressbook-home-set (required for
+    // "Manual" and "Automatic" account setup modes).
     buf.writeln('  <response>');
     buf.writeln('    <href>$_basePath/</href>');
     buf.writeln('    <propstat>');
     buf.writeln('      <prop>');
     buf.writeln('        <resourcetype><collection/><card:addressbook/></resourcetype>');
     buf.writeln('        <displayname>Members</displayname>');
+    buf.writeln('        <current-user-principal><href>$_principalPath</href></current-user-principal>');
     buf.writeln('      </prop>');
     buf.writeln('      <status>HTTP/1.1 200 OK</status>');
     buf.writeln('    </propstat>');
@@ -328,6 +347,22 @@ class CardDavHandler {
     buf.write('</multistatus>');
     return buf.toString();
   }
+
+  String _buildPrincipalResponse() => '''<?xml version="1.0" encoding="UTF-8"?>
+<multistatus xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <response>
+    <href>$_principalPath</href>
+    <propstat>
+      <prop>
+        <resourcetype><principal/></resourcetype>
+        <displayname>Members</displayname>
+        <current-user-principal><href>$_principalPath</href></current-user-principal>
+        <card:addressbook-home-set><href>$_basePath/</href></card:addressbook-home-set>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+</multistatus>''';
 
   // ── Utilities ─────────────────────────────────────────────────────────────
 
