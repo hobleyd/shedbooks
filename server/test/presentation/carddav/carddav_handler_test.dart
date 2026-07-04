@@ -179,6 +179,20 @@ void main() {
       expect(body, isNot(contains('.vcf')));
     });
 
+    test('Depth: 0 returns collection entry only without fetching members',
+        () async {
+      // mockList should NOT be called for Depth: 0
+      final req = _authed('PROPFIND', '/carddav/members',
+          headers: {'depth': '0'});
+      final res = await sut.handlePropfind(req);
+
+      expect(res.statusCode, equals(207));
+      final body = await res.readAsString();
+      expect(body, contains('<C:addressbook/>'));
+      expect(body, isNot(contains('.vcf')));
+      verifyNever(() => mockList.execute(entityId: any(named: 'entityId')));
+    });
+
     test('returns 401 when auth claims are absent', () async {
       final req = _unauthed('PROPFIND', '/carddav/members');
       final res = await sut.handlePropfind(req);

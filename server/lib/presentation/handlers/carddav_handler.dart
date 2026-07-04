@@ -100,11 +100,18 @@ class CardDavHandler {
   // ── PROPFIND /carddav/members ─────────────────────────────────────────────
 
   /// Returns a WebDAV multi-status listing all members with their ETags.
+  ///
+  /// Respects the `Depth` request header per RFC 4918:
+  /// - `Depth: 0` — collection properties only (used by macOS for account
+  ///   verification; returns a small response without fetching members).
+  /// - `Depth: 1` or absent — collection properties plus all member ETags.
   Future<Response> handlePropfind(Request request) async {
     final entityId = _entityId(request);
     if (entityId == null) return _unauthorized();
 
-    final members = await _list.execute(entityId: entityId);
+    final depth = request.headers['depth'] ?? '1';
+    final members =
+        depth == '0' ? <Member>[] : await _list.execute(entityId: entityId);
     final xml = _buildMultistatus(members);
     return Response(207, body: xml, headers: {'Content-Type': _xmlType});
   }
