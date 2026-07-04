@@ -37,7 +37,7 @@ class Formatters {
   /// When [actual] < [budget] the result is wrapped in parentheses.
   static String budgetPctLabel(int budget, int actual) {
     if (budget == 0) return '';
-    final pct = actual / budget * 100;
+    final pct = ((actual - budget) / budget * 100).abs();
     final raw = pct > 999 ? '>999%' : '${pct.toStringAsFixed(0)}%';
     return actual < budget ? '($raw)' : raw;
   }
