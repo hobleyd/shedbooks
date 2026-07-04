@@ -207,8 +207,10 @@ Response _unauthorized() => Response.unauthorized(
       jsonEncode({'error': 'Missing or invalid Authorization header'}),
       headers: {
         HttpHeaders.contentTypeHeader: 'application/json',
-        'WWW-Authenticate':
-            'Basic realm="Shedbooks Members", Bearer realm="Shedbooks"',
+        // Advertise only Basic — adding Bearer causes macOS/iOS to attempt
+        // OAuth discovery, which fails and reports "Unable to verify account
+        // or password" even when valid credentials are supplied.
+        'WWW-Authenticate': 'Basic realm="Shedbooks Members"',
       },
     );
 
@@ -216,7 +218,6 @@ Response _unauthorizedMessage(String message) => Response.unauthorized(
       jsonEncode({'error': message}),
       headers: {
         HttpHeaders.contentTypeHeader: 'application/json',
-        'WWW-Authenticate':
-            'Basic realm="Shedbooks Members", Bearer realm="Shedbooks"',
+        'WWW-Authenticate': 'Basic realm="Shedbooks Members"',
       },
     );

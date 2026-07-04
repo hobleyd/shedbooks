@@ -73,7 +73,10 @@ void main() {
 
       final wwwAuth = res.headers['www-authenticate'] ?? '';
       expect(wwwAuth, contains('Basic'));
-      expect(wwwAuth, contains('Bearer'));
+      // Bearer must NOT appear — macOS/iOS interprets Bearer as an OAuth
+      // challenge and attempts token discovery, which reports "Unable to
+      // verify account or password" even with valid credentials.
+      expect(wwwAuth, isNot(contains('Bearer')));
     });
 
     test('returns 401 when Authorization header is not Bearer or Basic',
