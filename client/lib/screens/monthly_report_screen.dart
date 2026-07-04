@@ -166,6 +166,37 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   }
 
   Future<void> _generatePdf() async {
+    final progressNotifier = ValueNotifier<String>('Building report…');
+
+    if (mounted) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          content: ValueListenableBuilder<String>(
+            valueListenable: progressNotifier,
+            builder: (_, msg, __) => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 16),
+                Flexible(child: Text(msg)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    try {
+      await _generatePdfWithProgress(progressNotifier);
+    } finally {
+      progressNotifier.dispose();
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _generatePdfWithProgress(ValueNotifier<String> progress) async {
     final authState = context.read<AuthState>();
     final userName = authState.user?.name ?? authState.user?.email ?? 'Unknown';
     final entity = _entityDetails;
@@ -277,6 +308,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       ],
     ));
 
+    progress.value = 'Adding budget vs actual…';
     // Append Budget vs Actual
     final budgetActuals = _computeBudgetActuals(reportYear, reportMonth);
     final budgetWidgets = BudgetPdfReport.build(
@@ -300,6 +332,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       ));
     }
 
+    progress.value = 'Adding transactions…';
     // Append Transactions for the latest locked month
     if (lockedKeys.isNotEmpty) {
       final latestLockedKey = (lockedKeys.toList()..sort()).last;
@@ -332,7 +365,9 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     }
 
     // Append Bank Statements
-    for (final file in _bankStatements) {
+    for (int i = 0; i < _bankStatements.length; i++) {
+      final file = _bankStatements[i];
+      progress.value = 'Processing ${file.name} (${i + 1} of ${_bankStatements.length})…';
       if (file.bytes == null) continue;
       await for (final page in Printing.raster(file.bytes!, dpi: 150)) {
         final image = await page.toPng();
@@ -347,7 +382,10 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       }
     }
 
-    await Printing.layoutPdf(onLayout: (_) async => doc.save());
+    progress.value = 'Finalizing…';
+    await Printing.layoutPdf(
+      onLayout: (_) async => doc.save(enableEventLoopBalancing: true),
+    );
   }
 
   Map<String, List<int>> _computeBudgetActuals(int year, int upToMonth) {
