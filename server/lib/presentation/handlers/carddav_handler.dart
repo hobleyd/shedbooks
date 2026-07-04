@@ -109,6 +109,12 @@ class CardDavHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _unauthorized();
 
+    final reqBody = await request.readAsString();
+    // ignore: avoid_print
+    print('[CardDAV] PROPFIND headers: ${request.headers}');
+    // ignore: avoid_print
+    print('[CardDAV] PROPFIND body: $reqBody');
+
     final depth = request.headers['depth'] ?? '1';
     final members =
         depth == '0' ? <Member>[] : await _list.execute(entityId: entityId);
