@@ -109,12 +109,6 @@ class CardDavHandler {
     final entityId = _entityId(request);
     if (entityId == null) return _unauthorized();
 
-    final reqBody = await request.readAsString();
-    // ignore: avoid_print
-    print('[CardDAV] PROPFIND headers: ${request.headers}');
-    // ignore: avoid_print
-    print('[CardDAV] PROPFIND body: $reqBody');
-
     final depth = request.headers['depth'] ?? '1';
     final members =
         depth == '0' ? <Member>[] : await _list.execute(entityId: entityId);
@@ -338,6 +332,7 @@ class CardDavHandler {
     buf.writeln('        <D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>');
     buf.writeln('        <D:displayname>Members</D:displayname>');
     buf.writeln('        <D:current-user-principal><D:href>$_basePath/</D:href></D:current-user-principal>');
+    buf.writeln('        <D:principal-URL><D:href>$_basePath/</D:href></D:principal-URL>');
     buf.writeln('        <C:addressbook-home-set><D:href>$_basePath/</D:href></C:addressbook-home-set>');
     buf.writeln('      </D:prop>');
     buf.writeln('      <D:status>HTTP/1.1 200 OK</D:status>');
@@ -371,6 +366,7 @@ class CardDavHandler {
         <D:resourcetype><D:principal/></D:resourcetype>
         <D:displayname>Members</D:displayname>
         <D:current-user-principal><D:href>$_principalPath</D:href></D:current-user-principal>
+        <D:principal-URL><D:href>$_principalPath</D:href></D:principal-URL>
         <C:addressbook-home-set><D:href>$_basePath/</D:href></C:addressbook-home-set>
       </D:prop>
       <D:status>HTTP/1.1 200 OK</D:status>
