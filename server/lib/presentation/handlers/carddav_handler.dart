@@ -320,19 +320,19 @@ class CardDavHandler {
     buf.writeln('<?xml version="1.0" encoding="UTF-8"?>');
     buf.writeln('<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">');
 
-    // Collection entry — self-referential principal properties let macOS/iOS
-    // complete discovery in a single PROPFIND without following a separate
-    // principal URL. current-user-principal and addressbook-home-set both
-    // point here so any hop from /.well-known/carddav lands directly on the
-    // addressbook with everything the client needs.
+    // Collection entry.  current-user-principal and principal-URL point to the
+    // separate /principal endpoint so macOS follows up there to discover
+    // addressbook-home-set.  A self-referential principal causes macOS to
+    // detect a circular reference, abandon discovery, and fall back to probing
+    // the user's email domain, which returns HTML and breaks setup.
     buf.writeln('  <D:response>');
     buf.writeln('    <D:href>$_basePath/</D:href>');
     buf.writeln('    <D:propstat>');
     buf.writeln('      <D:prop>');
     buf.writeln('        <D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>');
     buf.writeln('        <D:displayname>Members</D:displayname>');
-    buf.writeln('        <D:current-user-principal><D:href>$_basePath/</D:href></D:current-user-principal>');
-    buf.writeln('        <D:principal-URL><D:href>$_basePath/</D:href></D:principal-URL>');
+    buf.writeln('        <D:current-user-principal><D:href>$_principalPath</D:href></D:current-user-principal>');
+    buf.writeln('        <D:principal-URL><D:href>$_principalPath</D:href></D:principal-URL>');
     buf.writeln('        <C:addressbook-home-set><D:href>$_basePath/</D:href></C:addressbook-home-set>');
     buf.writeln('      </D:prop>');
     buf.writeln('      <D:status>HTTP/1.1 200 OK</D:status>');

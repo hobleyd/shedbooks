@@ -164,6 +164,12 @@ void main() {
       expect(body, contains('<C:addressbook-home-set>'));
       expect(body, contains('<D:current-user-principal>'));
       expect(body, contains('<D:principal-URL>'));
+      // current-user-principal and principal-URL must point to the separate
+      // principal endpoint — not self-referentially back to the members
+      // collection.  A circular reference causes macOS to fall back to
+      // email-domain autodiscovery, which returns HTML and breaks setup.
+      expect(body, contains('/api/carddav/principal'));
+      expect(body, isNot(contains('<D:current-user-principal><D:href>/api/carddav/members')));
     });
 
     test('returns 207 with empty children when no members exist', () async {
