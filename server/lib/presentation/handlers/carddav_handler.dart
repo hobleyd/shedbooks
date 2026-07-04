@@ -426,7 +426,7 @@ class CardDavHandler {
         jsonEncode({'error': 'Authentication required'}),
         headers: {
           'Content-Type': 'application/json',
-          'WWW-Authenticate': 'Basic realm="Shedbooks Members", Bearer',
+          'WWW-Authenticate': 'Basic realm="Shedbooks Members"',
         },
       );
 }
