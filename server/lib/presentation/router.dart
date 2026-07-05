@@ -411,6 +411,8 @@ Handler buildRouter({
     ..add('OPTIONS', '/carddav/members', cardDavHandler.handleOptions)
     ..add('OPTIONS', '/carddav/members/', cardDavHandler.handleOptions)
     // Principal URL — macOS/iOS follows current-user-principal here to find addressbook-home-set.
+    ..add('OPTIONS', '/carddav/principal', cardDavHandler.handleOptions)
+    ..add('OPTIONS', '/carddav/principal/', cardDavHandler.handleOptions)
     ..add('PROPFIND', '/carddav/principal', _cardDavAuthed(cardDavHandler.handlePrincipalPropfind))
     ..add('PROPFIND', '/carddav/principal/', _cardDavAuthed(cardDavHandler.handlePrincipalPropfind))
     ..add('PROPFIND', '/carddav/members', _cardDavAuthed(cardDavHandler.handlePropfind))
