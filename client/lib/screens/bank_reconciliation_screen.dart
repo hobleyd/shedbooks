@@ -825,6 +825,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           _partialMatchIds.remove(t.id);
         }
         row.matched = [];
+        row.invoiceMatch = null;
         row.status = BankMatchStatus.skipped;
         _recomputeFrom(idx + 1);
       }
@@ -857,8 +858,15 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         return b.transactionDate.compareTo(a.transactionDate);
       });
 
+    // For credit rows, offer unpaid invoices that match the exact bank amount.
+    final invoiceCandidates = !row.source.isDebit
+        ? _unpaidInvoices
+            .where((inv) => inv.totalWithGstCents == row.source.amountCents)
+            .toList()
+        : <InvoiceEntry>[];
+
     if (!mounted) return;
-    final result = await showDialog<List<TransactionEntry>>(
+    final result = await showDialog<ManualMatchResult>(
       context: context,
       builder: (ctx) => ManualMatchDialog(
         description: row.source.description,
@@ -867,11 +875,13 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         candidates: candidates,
         contactNames: _contactNames,
         initialSelection: Set<String>.from(row.matched.map((t) => t.id)),
+        invoiceMatches: invoiceCandidates,
+        initialInvoice: row.invoiceMatch,
       ),
     );
 
     if (result == null) {
-      // Cancelled — restore.
+      // Cancelled — restore previous transaction matches.
       final prevTotal =
           row.matched.fold(0, (s, t) => s + t.totalAmount);
       final prevIsPartial =
@@ -884,18 +894,28 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     }
 
     setState(() {
-      final matchedTotal = result.fold(0, (s, t) => s + t.totalAmount);
-      final isPartial =
-          result.isNotEmpty && matchedTotal != row.source.amountCents;
-      for (final t in result) {
-        _reservedIds.add(t.id);
-        if (isPartial) _partialMatchIds.add(t.id);
+      switch (result) {
+        case InvoiceMatchResult(:final invoice):
+          row.invoiceMatch = invoice;
+          row.matched = [];
+          row.status = BankMatchStatus.invoiceMatched;
+          _recomputeFrom(rowIndex + 1);
+        case TransactionMatchResult(:final transactions):
+          row.invoiceMatch = null;
+          final matchedTotal =
+              transactions.fold(0, (s, t) => s + t.totalAmount);
+          final isPartial =
+              transactions.isNotEmpty && matchedTotal != row.source.amountCents;
+          for (final t in transactions) {
+            _reservedIds.add(t.id);
+            if (isPartial) _partialMatchIds.add(t.id);
+          }
+          row.matched = transactions;
+          row.status = transactions.isEmpty
+              ? BankMatchStatus.unmatched
+              : BankMatchStatus.manuallyMatched;
+          _recomputeFrom(rowIndex + 1);
       }
-      row.matched = result;
-      row.status = result.isEmpty
-          ? BankMatchStatus.unmatched
-          : BankMatchStatus.manuallyMatched;
-      _recomputeFrom(rowIndex + 1);
     });
   }
 
@@ -1664,11 +1684,20 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     }
 
     if (row.status == BankMatchStatus.invoiceMatched) {
-      return IconButton(
-        icon: const Icon(Icons.not_interested_outlined, size: 18),
-        tooltip: 'Skip',
-        onPressed: () => _toggleSkip(row),
-        color: Colors.grey,
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton(
+            onPressed: () => _openManualMatch(row),
+            child: const Text('Change...'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.not_interested_outlined, size: 18),
+            tooltip: 'Skip',
+            onPressed: () => _toggleSkip(row),
+            color: Colors.grey,
+          ),
+        ],
       );
     }
 

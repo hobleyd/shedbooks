@@ -198,6 +198,8 @@ class InvoicePdf {
                     _paymentDetailCol('BSB', bankAccount.bsbFormatted),
                     pw.SizedBox(width: 24),
                     _paymentDetailCol('Account Number', bankAccount.accountNumber),
+                    pw.SizedBox(width: 24),
+                    _paymentDetailCol('Payment Reference', invoiceNumber),
                   ],
                 ),
                 pw.SizedBox(height: 8),

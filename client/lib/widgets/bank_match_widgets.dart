@@ -17,6 +17,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../models/invoice_entry.dart';
 import '../models/transaction_entry.dart';
 
 // ── Shared matching status ────────────────────────────────────────────────────
@@ -252,12 +253,30 @@ class SummaryIndicator extends StatelessWidget {
   }
 }
 
+// ── Manual match result ───────────────────────────────────────────────────────
+
+/// Result returned by [ManualMatchDialog].
+sealed class ManualMatchResult {}
+
+/// The user selected one or more ledger transactions.
+/// An empty list means "clear the existing match".
+final class TransactionMatchResult extends ManualMatchResult {
+  final List<TransactionEntry> transactions;
+  TransactionMatchResult(this.transactions);
+}
+
+/// The user matched the bank row to an unpaid invoice (by exact amount).
+final class InvoiceMatchResult extends ManualMatchResult {
+  final InvoiceEntry invoice;
+  InvoiceMatchResult(this.invoice);
+}
+
 // ── Manual match dialog ───────────────────────────────────────────────────────
 
-/// Dialog for manually selecting one or more [TransactionEntry]s to match
-/// against a bank row.
+/// Dialog for manually selecting one or more [TransactionEntry]s (or a single
+/// unpaid [InvoiceEntry]) to match against a bank row.
 ///
-/// Returns the selected list on Apply, or null if cancelled (caller should
+/// Returns a [ManualMatchResult] on Apply, or null if cancelled (caller should
 /// restore any previously released reserved IDs on null).
 class ManualMatchDialog extends StatefulWidget {
   final String description;
@@ -266,6 +285,8 @@ class ManualMatchDialog extends StatefulWidget {
   final List<TransactionEntry> candidates;
   final Map<String, String> contactNames;
   final Set<String> initialSelection;
+  final List<InvoiceEntry> invoiceMatches;
+  final InvoiceEntry? initialInvoice;
 
   const ManualMatchDialog({
     super.key,
@@ -275,6 +296,8 @@ class ManualMatchDialog extends StatefulWidget {
     required this.candidates,
     required this.contactNames,
     required this.initialSelection,
+    this.invoiceMatches = const [],
+    this.initialInvoice,
   });
 
   @override
@@ -283,17 +306,24 @@ class ManualMatchDialog extends StatefulWidget {
 
 class _ManualMatchDialogState extends State<ManualMatchDialog> {
   late Set<String> _selected;
+  InvoiceEntry? _selectedInvoice;
   String _filter = '';
 
   @override
   void initState() {
     super.initState();
-    _selected = Set.from(widget.initialSelection);
+    _selectedInvoice = widget.initialInvoice;
+    _selected = _selectedInvoice != null
+        ? {}
+        : Set.from(widget.initialSelection);
   }
 
-  int get _selectedTotal => widget.candidates
-      .where((t) => _selected.contains(t.id))
-      .fold(0, (s, t) => s + t.totalAmount);
+  int get _selectedTotal {
+    if (_selectedInvoice != null) return _selectedInvoice!.totalWithGstCents;
+    return widget.candidates
+        .where((t) => _selected.contains(t.id))
+        .fold(0, (s, t) => s + t.totalAmount);
+  }
 
   bool get _totalsMatch => _selectedTotal == widget.bankAmountCents;
 
@@ -318,6 +348,9 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
     final amtColor = _totalsMatch ? Colors.green : Colors.orange;
     final diff = (_selectedTotal - widget.bankAmountCents).abs();
 
+    final hasInvoices = widget.invoiceMatches.isNotEmpty;
+    final dialogHeight = hasInvoices ? 560.0 : 480.0;
+
     return AlertDialog(
       title: Text(
         'Match transaction',
@@ -325,7 +358,7 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
       ),
       content: SizedBox(
         width: 600,
-        height: 480,
+        height: dialogHeight,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -342,7 +375,7 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
                 Text('Selected: $selAmt',
                     style: TextStyle(
                         fontWeight: FontWeight.bold, color: amtColor)),
-                if (!_totalsMatch && _selected.isNotEmpty) ...[
+                if (!_totalsMatch && (_selected.isNotEmpty || _selectedInvoice != null)) ...[
                   const SizedBox(width: 8),
                   Text(
                     'Δ ${formatAmount(diff)}',
@@ -353,6 +386,41 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
               ],
             ),
             const SizedBox(height: 12),
+            // ── Invoice candidates ──────────────────────────────────────────
+            if (hasInvoices) ...[
+              const Text('Matching Invoices',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.teal)),
+              const SizedBox(height: 4),
+              ...widget.invoiceMatches.map((inv) {
+                final isSelected = _selectedInvoice?.id == inv.id;
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.receipt_long_outlined,
+                      size: 16, color: Colors.teal),
+                  title: Text(
+                    '${inv.invoiceNumber}  ${formatAmount(inv.totalWithGstCents)}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  trailing: Icon(
+                    isSelected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: isSelected ? Colors.teal : Colors.grey,
+                    size: 20,
+                  ),
+                  onTap: () => setState(() {
+                    _selectedInvoice = inv;
+                    _selected.clear();
+                  }),
+                );
+              }),
+              const Divider(),
+              const SizedBox(height: 4),
+            ],
+            // ── Ledger transactions ────────────────────────────────────────
             TextField(
               decoration: const InputDecoration(
                 hintText: 'Filter by receipt, contact or date',
@@ -378,6 +446,7 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
                           onChanged: (v) => setState(() {
                             if (v == true) {
                               _selected.add(t.id);
+                              _selectedInvoice = null;
                             } else {
                               _selected.remove(t.id);
                             }
@@ -425,12 +494,18 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
         ),
         FilledButton(
           onPressed: () {
-            final result = widget.candidates
-                .where((t) => _selected.contains(t.id))
-                .toList();
-            Navigator.of(context).pop(result);
+            if (_selectedInvoice != null) {
+              Navigator.of(context).pop(InvoiceMatchResult(_selectedInvoice!));
+            } else {
+              final result = widget.candidates
+                  .where((t) => _selected.contains(t.id))
+                  .toList();
+              Navigator.of(context).pop(TransactionMatchResult(result));
+            }
           },
-          child: Text(_selected.isEmpty ? 'Clear Match' : 'Apply'),
+          child: Text(_selectedInvoice == null && _selected.isEmpty
+              ? 'Clear Match'
+              : 'Apply'),
         ),
       ],
     );

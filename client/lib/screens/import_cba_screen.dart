@@ -25,6 +25,7 @@ import '../models/bank_import_entry.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/invoice_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../utils/cba_receipt_parser.dart';
@@ -42,6 +43,7 @@ class _CbaRow {
   List<String> parsedReceipts;
   BankMatchStatus status = BankMatchStatus.unmatched;
   List<TransactionEntry> matched = const [];
+  InvoiceEntry? invoiceMatch;
 
   _CbaRow({
     required this.processDate,
@@ -56,7 +58,8 @@ class _CbaRow {
   bool get isResolved =>
       status == BankMatchStatus.autoMatched ||
       status == BankMatchStatus.manuallyMatched ||
-      status == BankMatchStatus.newTransaction;
+      status == BankMatchStatus.newTransaction ||
+      status == BankMatchStatus.invoiceMatched;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -74,6 +77,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
   String? _loadError;
 
   List<TransactionEntry> _allTransactions = [];
+  List<InvoiceEntry> _unpaidInvoices = [];
   List<ContactEntry> _contacts = [];
   List<GeneralLedgerEntry> _glEntries = [];
   Map<String, String> _contactNames = {}; // contactId → display name
@@ -158,6 +162,14 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
             .map((j) => BankImportEntry.fromJson(j as Map<String, dynamic>)
                 .dedupKey)
             .toSet();
+      }
+
+      final invRes = await client.get('/invoices?unpaid=true');
+      if (invRes.statusCode == 200) {
+        final list = jsonDecode(invRes.body) as List<dynamic>;
+        _unpaidInvoices = list
+            .map((j) => InvoiceEntry.fromJson(j as Map<String, dynamic>))
+            .toList();
       }
     } catch (e) {
       if (mounted) setState(() => _loadError = e.toString());
@@ -481,7 +493,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       s == BankMatchStatus.manuallyMatched ||
       s == BankMatchStatus.newTransaction ||
       s == BankMatchStatus.skipped ||
-      s == BankMatchStatus.alreadyImported;
+      s == BankMatchStatus.alreadyImported ||
+      s == BankMatchStatus.invoiceMatched;
 
   // ── Manual matching dialog ────────────────────────────────────────────────────
 
@@ -505,7 +518,14 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         .toList()
       ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
 
-    final result = await showDialog<List<TransactionEntry>>(
+    // For credit rows, offer unpaid invoices that match the exact bank amount.
+    final invoiceCandidates = !row.isBankDebit
+        ? _unpaidInvoices
+            .where((inv) => inv.totalWithGstCents == row.amountCents)
+            .toList()
+        : <InvoiceEntry>[];
+
+    final result = await showDialog<ManualMatchResult>(
       context: context,
       builder: (ctx) => ManualMatchDialog(
         description: row.description,
@@ -514,11 +534,13 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         candidates: candidates,
         contactNames: _contactNames,
         initialSelection: Set<String>.from(row.matched.map((t) => t.id)),
+        invoiceMatches: invoiceCandidates,
+        initialInvoice: row.invoiceMatch,
       ),
     );
 
     if (result == null) {
-      // Cancelled — restore.
+      // Cancelled — restore previous transaction matches.
       final prevTotal =
           row.matched.fold(0, (s, t) => s + t.totalAmount);
       final prevIsPartial =
@@ -531,18 +553,28 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     }
 
     setState(() {
-      final matchedTotal = result.fold(0, (s, t) => s + t.totalAmount);
-      final isPartial =
-          result.isNotEmpty && matchedTotal != row.amountCents;
-      for (final t in result) {
-        _reservedIds.add(t.id);
-        if (isPartial) _partialMatchIds.add(t.id);
+      switch (result) {
+        case InvoiceMatchResult(:final invoice):
+          row.invoiceMatch = invoice;
+          row.matched = [];
+          row.status = BankMatchStatus.invoiceMatched;
+          _recomputeFrom(rowIndex + 1);
+        case TransactionMatchResult(:final transactions):
+          row.invoiceMatch = null;
+          final matchedTotal =
+              transactions.fold(0, (s, t) => s + t.totalAmount);
+          final isPartial =
+              transactions.isNotEmpty && matchedTotal != row.amountCents;
+          for (final t in transactions) {
+            _reservedIds.add(t.id);
+            if (isPartial) _partialMatchIds.add(t.id);
+          }
+          row.matched = transactions;
+          row.status = transactions.isEmpty
+              ? BankMatchStatus.unmatched
+              : BankMatchStatus.manuallyMatched;
+          _recomputeFrom(rowIndex + 1);
       }
-      row.matched = result;
-      row.status = result.isEmpty
-          ? BankMatchStatus.unmatched
-          : BankMatchStatus.manuallyMatched;
-      _recomputeFrom(rowIndex + 1);
     });
   }
 
@@ -596,6 +628,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           _partialMatchIds.remove(t.id);
         }
         row.matched = [];
+        row.invoiceMatch = null;
         row.status = BankMatchStatus.skipped;
         _recomputeFrom(rowIndex + 1);
       }
@@ -611,7 +644,9 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         .toSet()
         .toList();
 
-    if (ids.isEmpty) {
+    final hasInvoiceRows = _rows.any((r) => r.invoiceMatch != null);
+
+    if (ids.isEmpty && !hasInvoiceRows) {
       Navigator.of(context).pop(false);
       return;
     }
@@ -621,12 +656,32 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     try {
       final client = context.read<ApiClient>();
 
-      final matchRes = await client.post(
-        '/transactions/bank-match',
-        jsonEncode({'transactionIds': ids}),
-      );
-      if (matchRes.statusCode != 204) {
-        throw Exception('Server returned ${matchRes.statusCode}');
+      if (ids.isNotEmpty) {
+        final matchRes = await client.post(
+          '/transactions/bank-match',
+          jsonEncode({'transactionIds': ids}),
+        );
+        if (matchRes.statusCode != 204) {
+          throw Exception('Server returned ${matchRes.statusCode}');
+        }
+      }
+
+      // Mark invoice-matched rows as paid.
+      final invoiceRows =
+          _rows.where((r) => r.invoiceMatch != null).toList();
+      for (final row in invoiceRows) {
+        final invoice = row.invoiceMatch!;
+        final res = await client.post(
+          '/invoices/${invoice.id}/mark-paid',
+          jsonEncode({'transactionDate': row.processDate}),
+        );
+        if (res.statusCode != 200) {
+          final msg = (jsonDecode(res.body) as Map?)?['error'] ??
+              'Failed to mark invoice ${invoice.invoiceNumber} as paid';
+          throw Exception(msg);
+        }
+        _unpaidInvoices =
+            _unpaidInvoices.where((inv) => inv.id != invoice.id).toList();
       }
 
       // Record every actioned row so re-imports skip them.
@@ -880,13 +935,22 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       DataCell(MatchStatusBadge(status: row.status)),
       DataCell(ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 260),
-        child: MatchedToCell(
-          receipts: row.matched.map((t) => t.receiptNumber).toList(),
-          matchedTotal: row.matched.fold(0, (int s, t) => s + t.totalAmount),
-          bankAmount: row.amountCents,
-          parsedReceipts: row.parsedReceipts,
-          suppressMismatch: _suppressMismatch(row),
-        ),
+        child: row.invoiceMatch != null
+            ? Text(
+                row.invoiceMatch!.invoiceNumber,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.teal),
+              )
+            : MatchedToCell(
+                receipts: row.matched.map((t) => t.receiptNumber).toList(),
+                matchedTotal:
+                    row.matched.fold(0, (int s, t) => s + t.totalAmount),
+                bankAmount: row.amountCents,
+                parsedReceipts: row.parsedReceipts,
+                suppressMismatch: _suppressMismatch(row),
+              ),
       )),
       DataCell(_actionCell(row)),
     ]);
@@ -907,6 +971,24 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       return TextButton(
         onPressed: () => _toggleSkip(row),
         child: const Text('Unskip'),
+      );
+    }
+
+    if (row.status == BankMatchStatus.invoiceMatched) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton(
+            onPressed: _saving ? null : () => _openManualMatch(row),
+            child: const Text('Change...'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.not_interested_outlined, size: 18),
+            tooltip: 'Skip',
+            onPressed: _saving ? null : () => _toggleSkip(row),
+            color: Colors.grey,
+          ),
+        ],
       );
     }
 
