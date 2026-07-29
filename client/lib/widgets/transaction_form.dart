@@ -23,6 +23,8 @@ import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
 import 'gl_account_dropdown.dart';
 
+enum _AmountAnchor { total, amount }
+
 /// Validated form data passed to the parent's save handler.
 class TransactionFormData {
   final DateTime date;
@@ -97,6 +99,11 @@ class TransactionFormState extends State<TransactionForm> {
   final TextEditingController _gstController = TextEditingController();
   final TextEditingController _totalController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+
+  /// Which of Total / Amount-ex-GST the user last edited directly.
+  /// When GST is then edited, the *other* one is recalculated so the field
+  /// the user just set is preserved.
+  _AmountAnchor _anchor = _AmountAnchor.total;
 
   bool _isCash = false;
   String _paymentType = 'bankTransfer';
@@ -187,6 +194,7 @@ class TransactionFormState extends State<TransactionForm> {
       _paymentType = 'bankTransfer';
       _cashReceiptController.clear();
       _receiptOutController.clear();
+      _anchor = _AmountAnchor.total;
     });
   }
 
@@ -260,6 +268,7 @@ class TransactionFormState extends State<TransactionForm> {
   String _centsToString(int cents) => (cents / 100).toStringAsFixed(2);
 
   void _handleAmountChanged(String value) {
+    _anchor = _AmountAnchor.amount;
     final amount = _parseAmount(value);
     if (amount == null) {
       _gstController.text = _gstApplicable ? '' : '0.00';
@@ -278,6 +287,7 @@ class TransactionFormState extends State<TransactionForm> {
   }
 
   void _handleTotalChanged(String value) {
+    _anchor = _AmountAnchor.total;
     final total = _parseAmount(value);
     if (total == null) {
       _amountController.clear();
@@ -295,12 +305,23 @@ class TransactionFormState extends State<TransactionForm> {
     }
   }
 
+  /// Recalculates whichever of Total / Amount-ex-GST was *not* last edited
+  /// directly by the user, so the field they just set is preserved.
   void _handleGstChanged(String value) {
-    final amount = _parseAmount(_amountController.text);
     final gst = _parseAmount(value);
-    if (amount == null || gst == null) return;
-    _totalController.text =
-        _centsToString(_dollarsToCents(amount) + _dollarsToCents(gst));
+    if (gst == null) return;
+    final gstCents = _dollarsToCents(gst);
+    if (_anchor == _AmountAnchor.total) {
+      final total = _parseAmount(_totalController.text);
+      if (total == null) return;
+      _amountController.text =
+          _centsToString(_dollarsToCents(total) - gstCents);
+    } else {
+      final amount = _parseAmount(_amountController.text);
+      if (amount == null) return;
+      _totalController.text =
+          _centsToString(_dollarsToCents(amount) + gstCents);
+    }
   }
 
   void _onGlChangedFull(GeneralLedgerEntry? gl) {
@@ -315,6 +336,7 @@ class TransactionFormState extends State<TransactionForm> {
       _cashReceiptController.clear();
       _receiptOutController.text =
           gl?.direction == GlDirection.moneyOut ? widget.nextMoneyOutReceipt : '';
+      _anchor = _AmountAnchor.total;
     });
   }
 
@@ -330,6 +352,7 @@ class TransactionFormState extends State<TransactionForm> {
         _paymentType = 'bankTransfer';
         _cashReceiptController.clear();
         _receiptOutController.clear();
+        _anchor = _AmountAnchor.total;
       }
     });
   }
