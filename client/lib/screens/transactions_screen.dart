@@ -674,7 +674,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             msg = (jsonDecode(contactRes.body) as Map)['error'] as String? ?? msg;
           } catch (_) {}
           _showSnackbar(msg);
-          setState(() => _saving = false);
           return;
         }
         contactId = ContactEntry.fromJson(
@@ -710,10 +709,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         String msg = 'Save failed (${res.statusCode})';
         try { msg = (jsonDecode(res.body) as Map)['error'] as String? ?? msg; } catch (_) {}
         _showSnackbar(msg);
-        setState(() => _saving = false);
       }
     } catch (e) {
-      if (mounted) { setState(() => _saving = false); _showSnackbar('Save failed: $e'); }
+      if (mounted) _showSnackbar('Save failed: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -752,57 +752,60 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     }
 
     setState(() => _editSaving = true);
-
-    String? contactId = data.existingContactId;
-    if (contactId == null && data.newContactName != null && data.newContactName!.isNotEmpty) {
-      final contactRes = await context.read<ApiClient>().post(
-            '/contacts',
-            jsonEncode({
-              'name': data.newContactName,
-              'contactType': 'person',
-              'gstRegistered': false,
-            }),
-          );
-      if (!mounted) return;
-      if (contactRes.statusCode != 201) {
-        String msg = 'Failed to create contact (${contactRes.statusCode})';
-        try {
-          msg = (jsonDecode(contactRes.body) as Map)['error'] as String? ?? msg;
-        } catch (_) {}
-        _showSnackbar(msg);
-        setState(() => _editSaving = false);
-        return;
+    try {
+      String? contactId = data.existingContactId;
+      if (contactId == null && data.newContactName != null && data.newContactName!.isNotEmpty) {
+        final contactRes = await context.read<ApiClient>().post(
+              '/contacts',
+              jsonEncode({
+                'name': data.newContactName,
+                'contactType': 'person',
+                'gstRegistered': false,
+              }),
+            );
+        if (!mounted) return;
+        if (contactRes.statusCode != 201) {
+          String msg = 'Failed to create contact (${contactRes.statusCode})';
+          try {
+            msg = (jsonDecode(contactRes.body) as Map)['error'] as String? ?? msg;
+          } catch (_) {}
+          _showSnackbar(msg);
+          return;
+        }
+        contactId = ContactEntry.fromJson(
+            jsonDecode(contactRes.body) as Map<String, dynamic>).id;
       }
-      contactId = ContactEntry.fromJson(
-          jsonDecode(contactRes.body) as Map<String, dynamic>).id;
-    }
 
-    final body = jsonEncode({
-      'contactId': contactId,
-      'generalLedgerId': data.gl.id,
-      'amount': data.amountCents,
-      'gstAmount': data.gstCents,
-      'transactionType':
-          data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
-      'receiptNumber': data.receiptNumber,
-      'description': data.description,
-      'transactionDate':
-          '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
-      if (data.isCash) 'isCash': true,
-    });
+      final body = jsonEncode({
+        'contactId': contactId,
+        'generalLedgerId': data.gl.id,
+        'amount': data.amountCents,
+        'gstAmount': data.gstCents,
+        'transactionType':
+            data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
+        'receiptNumber': data.receiptNumber,
+        'description': data.description,
+        'transactionDate':
+            '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
+        if (data.isCash) 'isCash': true,
+      });
 
-    final res = await context.read<ApiClient>().put('/transactions/$_editingId', body);
-    if (!mounted) return;
+      final res = await context.read<ApiClient>().put('/transactions/$_editingId', body);
+      if (!mounted) return;
 
-    if (res.statusCode == 200) {
-      setState(() => _editingId = null);
-      _showSnackbar('Transaction updated');
-      await _load();
-    } else {
-      String msg = 'Update failed (${res.statusCode})';
-      try { msg = (jsonDecode(res.body) as Map)['error'] as String? ?? msg; } catch (_) {}
-      setState(() => _editSaving = false);
-      _showSnackbar(msg);
+      if (res.statusCode == 200) {
+        setState(() => _editingId = null);
+        _showSnackbar('Transaction updated');
+        await _load();
+      } else {
+        String msg = 'Update failed (${res.statusCode})';
+        try { msg = (jsonDecode(res.body) as Map)['error'] as String? ?? msg; } catch (_) {}
+        _showSnackbar(msg);
+      }
+    } catch (e) {
+      if (mounted) _showSnackbar('Update failed: $e');
+    } finally {
+      if (mounted) setState(() => _editSaving = false);
     }
   }
 
@@ -1273,6 +1276,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           onTap: () => setState(() {
             if (isMoneyOut) _addingMoneyOut = true;
             else _addingMoneyIn = true;
+            _saving = false;
           }),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
