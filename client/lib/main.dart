@@ -24,6 +24,7 @@ import 'auth/auth_state.dart';
 import 'routing/app_router.dart';
 import 'services/api_client.dart';
 import 'services/navigation_guard.dart';
+import 'services/reference_data_cache.dart';
 
 const String _auth0Domain = String.fromEnvironment('AUTH0_DOMAIN');
 const String _auth0ClientId = String.fromEnvironment('AUTH0_CLIENT_ID');
@@ -55,12 +56,18 @@ Future<void> main() async {
     onUnauthorized: authState.clearCredentials,
   );
 
+  final referenceDataCache = ReferenceDataCache(apiClient);
+  authState.addListener(() {
+    if (!authState.isAuthenticated) referenceDataCache.reset();
+  });
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: authState),
         Provider.value(value: apiClient),
         ChangeNotifierProvider(create: (_) => NavigationGuard()),
+        ChangeNotifierProvider.value(value: referenceDataCache),
       ],
       child: ShedbooksApp(router: router),
     ),

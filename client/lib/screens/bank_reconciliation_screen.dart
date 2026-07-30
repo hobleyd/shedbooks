@@ -24,14 +24,12 @@ import 'package:provider/provider.dart';
 
 import '../models/bank_account_summary.dart';
 import '../models/cba_statement_data.dart';
-import '../models/contact_entry.dart';
 import '../models/invoice_entry.dart';
-import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/cba_receipt_parser.dart';
 import '../utils/receipt_format.dart';
-import '../models/entity_details.dart';
 import '../widgets/bank_match_widgets.dart';
 
 // ── Data model ────────────────────────────────────────────────────────────────
@@ -81,11 +79,16 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   String? _loadError;
   List<TransactionEntry> _allTransactions = [];
   List<InvoiceEntry> _unpaidInvoices = [];
-  Map<String, String> _contactNames = {};
   Set<String> _lockedMonths = {};
-  ReceiptFormat _moneyInFormat = const ReceiptFormat('');
-  ReceiptFormat _moneyOutFormat = const ReceiptFormat('');
   List<BankAccountSummary> _bankAccounts = [];
+
+  // Contacts and entity details are shared via the cache.
+  Map<String, String> get _contactNames =>
+      {for (final c in context.read<ReferenceDataCache>().contacts) c.id: c.name};
+  ReceiptFormat get _moneyInFormat =>
+      ReceiptFormat(context.read<ReferenceDataCache>().entityDetails?.moneyInReceiptFormat ?? '');
+  ReceiptFormat get _moneyOutFormat =>
+      ReceiptFormat(context.read<ReferenceDataCache>().entityDetails?.moneyOutReceiptFormat ?? '');
 
   // Previously-imported bank rows (from CSV import sessions).
   // Used as a fallback "already imported" signal when a PDF row cannot be
@@ -139,14 +142,17 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     });
     try {
       final client = context.read<ApiClient>();
+      final cache = context.read<ReferenceDataCache>();
       final results = await Future.wait([
         client.get('/transactions'),
-        client.get('/locked-months'),
-        client.get('/entity-details'),
-        client.get('/contacts'),
         client.get('/bank-reconciliation/bank-accounts'),
         client.get('/invoices?unpaid=true'),
         client.get('/bank-imports'),
+      ]);
+      await Future.wait([
+        cache.refreshLockedMonths(),
+        cache.refreshEntityDetails(),
+        cache.refreshContacts(),
       ]);
 
       final txRes = results[0];
@@ -157,35 +163,11 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           .map((j) => TransactionEntry.fromJson(j as Map<String, dynamic>))
           .toList();
 
-      final lmRes = results[1];
-      if (lmRes.statusCode == 200) {
-        final list = jsonDecode(lmRes.body) as List<dynamic>;
-        _lockedMonths = list
-            .map((j) {
-              final e = LockedMonthEntry.fromJson(j as Map<String, dynamic>);
-              return '${e.monthYear}:${e.bankAccountId}';
-            })
-            .toSet();
-      }
+      _lockedMonths = cache.lockedMonths
+          .map((e) => '${e.monthYear}:${e.bankAccountId}')
+          .toSet();
 
-      final edRes = results[2];
-      if (edRes.statusCode == 200) {
-        final details = EntityDetails.fromJson(
-            jsonDecode(edRes.body) as Map<String, dynamic>);
-        _moneyInFormat = ReceiptFormat(details.moneyInReceiptFormat);
-        _moneyOutFormat = ReceiptFormat(details.moneyOutReceiptFormat);
-      }
-
-      final ctRes = results[3];
-      if (ctRes.statusCode == 200) {
-        final list = jsonDecode(ctRes.body) as List<dynamic>;
-        final contacts = list
-            .map((j) => ContactEntry.fromJson(j as Map<String, dynamic>))
-            .toList();
-        _contactNames = {for (final c in contacts) c.id: c.name};
-      }
-
-      final baRes = results[4];
+      final baRes = results[1];
       if (baRes.statusCode == 200) {
         final list = jsonDecode(baRes.body) as List<dynamic>;
         _bankAccounts = list
@@ -198,7 +180,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         }
       }
 
-      final invRes = results[5];
+      final invRes = results[2];
       if (invRes.statusCode == 200) {
         final list = jsonDecode(invRes.body) as List<dynamic>;
         _unpaidInvoices = list
@@ -206,7 +188,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             .toList();
       }
 
-      final biRes = results[6];
+      final biRes = results[3];
       if (biRes.statusCode == 200) {
         final list = jsonDecode(biRes.body) as List<dynamic>;
         _importedRowKeys = {
@@ -538,6 +520,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       }
 
       _lockedMonths = {..._lockedMonths, '$my:$_selectedBankAccountId'};
+      if (mounted) context.read<ReferenceDataCache>().refreshLockedMonths();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -940,6 +923,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ReferenceDataCache>();
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }

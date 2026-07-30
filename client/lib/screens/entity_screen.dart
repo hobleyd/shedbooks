@@ -24,6 +24,7 @@ import 'package:provider/provider.dart';
 import '../auth/auth_state.dart';
 import '../models/entity_details.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/receipt_format.dart';
 
 /// Admin screen for viewing and editing entity identity details.
@@ -178,6 +179,7 @@ class _EntityScreenState extends State<EntityScreen> {
           _editing = false;
           _saving = false;
         });
+        context.read<ReferenceDataCache>().refreshEntityDetails();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Entity details saved'),

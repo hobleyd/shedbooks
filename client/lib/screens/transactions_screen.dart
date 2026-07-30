@@ -33,9 +33,9 @@ import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/gl_pair_filter.dart';
-import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import 'import_cba_screen.dart';
 import 'import_transactions_screen.dart';
@@ -62,12 +62,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   String? _loadError;
   bool _saving = false;
 
-  List<ContactEntry> _contacts = [];
-  List<GeneralLedgerEntry> _glEntries = [];
   List<TransactionEntry> _allTransactions = [];
-  List<BankAccountEntry> _bankAccounts = [];
-  EntityDetails? _entityDetails;
-  Set<String> _lockedMonths = {}; // YYYY-MM values
   int _nextMoneyOutSeq = 1;
   int? _sortColumn;
   bool _sortAscending = true;
@@ -93,6 +88,34 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     '', 'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
+
+  // Contacts and GL accounts live in the shared [ReferenceDataCache] so that
+  // edits made on other screens (e.g. adding a contact) are reflected here
+  // immediately, even though this screen's State is retained off-screen by
+  // the IndexedStack while the user navigates elsewhere.
+  List<ContactEntry> get _contacts => context.read<ReferenceDataCache>().contacts;
+  List<GeneralLedgerEntry> get _glEntries => context.read<ReferenceDataCache>().glEntries;
+  List<BankAccountEntry> get _bankAccounts => context.read<ReferenceDataCache>().bankAccounts;
+  EntityDetails? get _entityDetails => context.read<ReferenceDataCache>().entityDetails;
+
+  /// A month is locked only when every bank account has it locked. When bank
+  /// accounts are unavailable (non-admin role), treat any entry in the
+  /// locked-months list as locked to prevent edits to locked months.
+  Set<String> get _lockedMonths {
+    final cache = context.read<ReferenceDataCache>();
+    final bankAccounts = cache.bankAccounts;
+    if (bankAccounts.isEmpty) {
+      return cache.lockedMonths.map((e) => e.monthYear).toSet();
+    }
+    final Map<String, Set<String>> accountsByMonth = {};
+    for (final entry in cache.lockedMonths) {
+      accountsByMonth.putIfAbsent(entry.monthYear, () => {}).add(entry.bankAccountId);
+    }
+    return accountsByMonth.entries
+        .where((e) => e.value.length >= bankAccounts.length)
+        .map((e) => e.key)
+        .toSet();
+  }
 
   @override
   void initState() {
@@ -122,8 +145,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     super.didUpdateWidget(old);
     // With state retention, the existing State is reused when the user
     // re-navigates to /transactions. If a different contact or GL entry
-    // arrives via `extra`, update the filter. Reference data is already
-    // loaded, so no reload is needed.
+    // arrives via `extra`, update the filter. Reference data comes from the
+    // shared ReferenceDataCache, which stays current on its own.
     final newContact = widget.initialContact;
     if (newContact != null && newContact.id != old.initialContact?.id) {
       setState(() {
@@ -159,18 +182,25 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/contacts'),
-        client.get('/general-ledger'),
-        client.get('/transactions'),
-        client.get('/locked-months'),
-        client.get('/bank-accounts'),
-        client.get('/entity-details'),
+      final cache = context.read<ReferenceDataCache>();
+      final results = await Future.wait([client.get('/transactions')]);
+      // Reference data is shared across every screen via the cache;
+      // refreshing it here keeps this screen's historical "reload
+      // everything" behavior while also propagating the fresh data to any
+      // other screen watching the cache.
+      await Future.wait([
+        cache.refreshContacts(),
+        cache.refreshGl(),
+        cache.refreshBankAccounts(),
+        cache.refreshEntityDetails(),
+        cache.refreshLockedMonths(),
       ]);
 
       if (!mounted) return;
 
-      if (results.take(3).any((r) => r.statusCode != 200)) {
+      if (results[0].statusCode != 200 ||
+          cache.contactsStatus == LoadStatus.error ||
+          cache.glStatus == LoadStatus.error) {
         setState(() {
           _loadError = 'Failed to load reference data';
           _loading = false;
@@ -178,60 +208,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         return;
       }
 
-      final contacts = (jsonDecode(results[0].body) as List)
-          .map((e) => ContactEntry.fromJson(e as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
-
-      final glEntries = (jsonDecode(results[1].body) as List)
-          .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.description.compareTo(b.description));
-
-      final transactions = (jsonDecode(results[2].body) as List)
+      final transactions = (jsonDecode(results[0].body) as List)
           .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
           .toList()
         ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
 
-      final bankAccounts = results[4].statusCode == 200
-          ? (jsonDecode(results[4].body) as List)
-              .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : <BankAccountEntry>[];
-
-      // A month is locked only when every bank account has it locked.
-      // When bank accounts are unavailable (non-admin role), treat any entry
-      // in the locked-months list as locked to prevent edits to locked months.
-      Set<String> lockedMonths = {};
-      if (results[3].statusCode == 200) {
-        final allLocked = (jsonDecode(results[3].body) as List)
-            .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-        if (bankAccounts.isNotEmpty) {
-          final Map<String, Set<String>> accountsByMonth = {};
-          for (final entry in allLocked) {
-            accountsByMonth.putIfAbsent(entry.monthYear, () => {}).add(entry.bankAccountId);
-          }
-          lockedMonths = accountsByMonth.entries
-              .where((e) => e.value.length >= bankAccounts.length)
-              .map((e) => e.key)
-              .toSet();
-        } else {
-          lockedMonths = allLocked.map((e) => e.monthYear).toSet();
-        }
-      }
-
-      final entityDetails = results[5].statusCode == 200
-          ? EntityDetails.fromJson(jsonDecode(results[5].body) as Map<String, dynamic>)
-          : null;
-
       setState(() {
-        _contacts = contacts;
-        _glEntries = glEntries;
         _allTransactions = transactions;
-        _bankAccounts = bankAccounts;
-        _entityDetails = entityDetails;
-        _lockedMonths = lockedMonths;
         _nextMoneyOutSeq = _computeNextMoneyOutSeq(transactions);
         _loading = false;
         _applySort();
@@ -678,6 +661,9 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         }
         contactId = ContactEntry.fromJson(
             jsonDecode(contactRes.body) as Map<String, dynamic>).id;
+        // Propagate the new contact to every other screen watching the
+        // cache (e.g. the Contacts screen) immediately, not just locally.
+        context.read<ReferenceDataCache>().refreshContacts();
       }
 
       final body = jsonEncode({
@@ -774,6 +760,9 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         }
         contactId = ContactEntry.fromJson(
             jsonDecode(contactRes.body) as Map<String, dynamic>).id;
+        // Propagate the new contact to every other screen watching the
+        // cache (e.g. the Contacts screen) immediately, not just locally.
+        context.read<ReferenceDataCache>().refreshContacts();
       }
 
       final body = jsonEncode({
@@ -888,6 +877,10 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Registers this screen as a listener of the shared cache so it rebuilds
+    // whenever contacts/GL accounts change on another screen, even while
+    // retained off-screen by the IndexedStack.
+    context.watch<ReferenceDataCache>();
     return Padding(
       padding: const EdgeInsets.all(24),
       child: _loading

@@ -66,13 +66,24 @@ class GlAccountDropdown extends StatelessWidget {
         ..sort((a, b) =>
             buildGlPath(allEntries, a.id).compareTo(buildGlPath(allEntries, b.id)));
 
+    // Resolve the selection by id rather than trusting object identity:
+    // [allEntries] may be a freshly-refetched list (e.g. after another
+    // screen edited the GL accounts) containing new instances for the same
+    // underlying account, which would otherwise fail DropdownButton's
+    // "exactly one matching item" check.
+    final resolvedValue = value == null
+        ? null
+        : filtered.where((g) => g.id == value!.id).isEmpty
+            ? null
+            : filtered.where((g) => g.id == value!.id).first;
+
     final double iconSize = compact ? 14 : 16;
     final double spacing = compact ? 4 : 8;
 
     return InputDecorator(
       decoration: decoration,
       child: DropdownButton<GeneralLedgerEntry>(
-        value: value,
+        value: resolvedValue,
         isExpanded: true,
         isDense: true,
         underline: const SizedBox.shrink(),

@@ -24,6 +24,7 @@ import 'package:provider/provider.dart';
 import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 
 /// Admin screen for managing bank accounts.
 class BankAccountsScreen extends StatefulWidget {
@@ -96,6 +97,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
             '/bank-accounts/order',
             jsonEncode({'ids': _accounts.map((a) => a.id).toList()}),
           );
+      if (mounted) context.read<ReferenceDataCache>().refreshBankAccounts();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -115,7 +117,10 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
       barrierDismissible: false,
       builder: (ctx) => _BankAccountDialog(existing: existing),
     );
-    if (saved == true) _load();
+    if (saved == true) {
+      _load();
+      context.read<ReferenceDataCache>().refreshBankAccounts();
+    }
   }
 
   Future<void> _delete(BankAccountEntry account) async {
@@ -149,6 +154,7 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
 
       if (res.statusCode == 204) {
         _load();
+        context.read<ReferenceDataCache>().refreshBankAccounts();
       } else {
         String msg = 'Delete failed (${res.statusCode})';
         try {

@@ -27,6 +27,7 @@ import '../models/contact_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 
 // ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -716,6 +717,9 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
           throw Exception(
               'Failed to create contact "$name" (${res.statusCode})');
         }
+      }
+      if (uniqueNewNames.isNotEmpty && mounted) {
+        context.read<ReferenceDataCache>().refreshContacts();
       }
 
       int saved = 0;

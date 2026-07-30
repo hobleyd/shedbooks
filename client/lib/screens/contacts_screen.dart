@@ -27,6 +27,7 @@ import '../models/contact_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/reference_data_cache.dart';
 
 enum _AbnLookupState { idle, loading, found, notFound, error }
 
@@ -399,6 +400,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       }
 
       await _load();
+      if (mounted) context.read<ReferenceDataCache>().refreshContacts();
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
@@ -460,6 +462,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       if (!mounted) return;
       if (res.statusCode == 200) {
         await _load();
+        if (mounted) context.read<ReferenceDataCache>().refreshContacts();
       } else {
         setState(() => _merging = false);
         _showSnackbar(_errorMessage(res.body, 'Merge failed (${res.statusCode})'));

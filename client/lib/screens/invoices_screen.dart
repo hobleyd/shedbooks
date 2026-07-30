@@ -29,6 +29,7 @@ import '../models/general_ledger_entry.dart';
 import '../models/invoice_entry.dart';
 import '../models/invoice_line_item.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../widgets/contact_picker.dart';
 import '../widgets/gl_account_dropdown.dart';
 import '../widgets/invoice_pdf.dart';
@@ -42,11 +43,15 @@ class InvoicesScreen extends StatefulWidget {
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   // Reference data
-  List<GeneralLedgerEntry> _glAccounts = [];
   List<BankAccountSummary> _bankAccounts = [];
-  double _gstRate = 0.10;
-  EntityDetails? _entityDetails;
-  Map<String, ContactEntry> _contacts = {};
+
+  // GL accounts, GST rate, entity details and contacts are shared via the
+  // cache.
+  List<GeneralLedgerEntry> get _glAccounts => context.read<ReferenceDataCache>().glEntries;
+  double get _gstRate => context.read<ReferenceDataCache>().effectiveGstRate()?.rate ?? 0.10;
+  EntityDetails? get _entityDetails => context.read<ReferenceDataCache>().entityDetails;
+  Map<String, ContactEntry> get _contacts =>
+      {for (final c in context.read<ReferenceDataCache>().contacts) c.id: c};
 
   // Invoice list
   List<InvoiceEntry> _invoices = [];
@@ -87,50 +92,33 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     setState(() => _loading = true);
     try {
       final client = context.read<ApiClient>();
+      final cache = context.read<ReferenceDataCache>();
       final results = await Future.wait([
-        client.get('/general-ledger'),
-        client.get('/gst-rates/effective'),
         client.get('/invoices/next-number'),
-        client.get('/entity-details'),
         client.get('/invoices'),
-        client.get('/contacts'),
         client.get('/bank-reconciliation/bank-accounts'),
+      ]);
+      await Future.wait([
+        cache.refreshGl(),
+        cache.refreshGstRates(),
+        cache.refreshEntityDetails(),
+        cache.refreshContacts(),
       ]);
 
       if (!mounted) return;
 
       if (results[0].statusCode == 200) {
-        final List<dynamic> glData = jsonDecode(results[0].body);
-        _glAccounts = glData
-            .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
+        _nextInvoiceNumber =
+            (jsonDecode(results[0].body) as Map<String, dynamic>)['invoiceNumber'] as String;
       }
       if (results[1].statusCode == 200) {
-        _gstRate = (jsonDecode(results[1].body) as Map<String, dynamic>)['rate'] as double;
-      }
-      if (results[2].statusCode == 200) {
-        _nextInvoiceNumber =
-            (jsonDecode(results[2].body) as Map<String, dynamic>)['invoiceNumber'] as String;
-      }
-      if (results[3].statusCode == 200) {
-        _entityDetails = EntityDetails.fromJson(
-            jsonDecode(results[3].body) as Map<String, dynamic>);
-      }
-      if (results[4].statusCode == 200) {
-        final List<dynamic> data = jsonDecode(results[4].body);
+        final List<dynamic> data = jsonDecode(results[1].body);
         _invoices = data
             .map((e) => InvoiceEntry.fromJson(e as Map<String, dynamic>))
             .toList();
       }
-      if (results[5].statusCode == 200) {
-        final List<dynamic> data = jsonDecode(results[5].body);
-        _contacts = {
-          for (final c in data.cast<Map<String, dynamic>>())
-            c['id'] as String: ContactEntry.fromJson(c),
-        };
-      }
-      if (results[6].statusCode == 200) {
-        final List<dynamic> data = jsonDecode(results[6].body);
+      if (results[2].statusCode == 200) {
+        final List<dynamic> data = jsonDecode(results[2].body);
         _bankAccounts = data
             .map((e) => BankAccountSummary.fromJson(e as Map<String, dynamic>))
             .toList();
@@ -375,6 +363,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           if (!mounted) return;
           if (res.statusCode != 201) throw Exception('Failed to create contact');
           contactId = (jsonDecode(res.body) as Map<String, dynamic>)['id'] as String;
+          context.read<ReferenceDataCache>().refreshContacts();
         } else {
           contactId = controller.selectedContact!.id;
         }
@@ -524,6 +513,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ReferenceDataCache>();
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }

@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
 import '../auth/auth_state.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 
 class _MonthSummary {
   final int month;
@@ -71,11 +73,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _loading = true;
   String? _loadError;
   List<TransactionEntry> _allTransactions = [];
-  List<GeneralLedgerEntry> _glEntries = [];
-  List<BankAccountEntry> _bankAccounts = [];
   List<_MonthSummary> _months = [];
-  List<LockedMonthEntry> _lockedMonths = [];
   List<ClosingBankBalanceEntry> _closingBalances = [];
+
+  // GL accounts, bank accounts and locked months are shared via the cache.
+  List<GeneralLedgerEntry> get _glEntries => context.read<ReferenceDataCache>().glEntries;
+  List<BankAccountEntry> get _bankAccounts => context.read<ReferenceDataCache>().bankAccounts;
+  List<LockedMonthEntry> get _lockedMonths => context.read<ReferenceDataCache>().lockedMonths;
 
   int _viewYear = DateTime.now().year;
   final List<_GlPair> _selectedPairs = [];
@@ -102,19 +106,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
     try {
       final client = context.read<ApiClient>();
+      final cache = context.read<ReferenceDataCache>();
       final results = await Future.wait([
         client.get('/transactions'),
-        client.get('/general-ledger'),
         client.get('/dashboard-preferences'),
-        client.get('/locked-months'),
         client.get('/closing-bank-balances'),
-        client.get('/bank-accounts'),
       ]);
+      // GL accounts and locked months are required; bank accounts are
+      // admin-only and may legitimately fail to load for other roles.
+      await Future.wait([cache.refreshGl(), cache.refreshLockedMonths()]);
+      unawaited(cache.refreshBankAccounts());
       if (!mounted) return;
 
-      // Bank accounts (index 5) are admin-only; a 403 is expected for other roles.
-      if (results.sublist(0, 5).any((r) => r.statusCode != 200)) {
-        final bad = results.sublist(0, 5).firstWhere((r) => r.statusCode != 200);
+      if (results.any((r) => r.statusCode != 200) ||
+          cache.glStatus == LoadStatus.error ||
+          cache.lockedMonthsStatus == LoadStatus.error) {
+        final bad = results.firstWhere((r) => r.statusCode != 200,
+            orElse: () => results[0]);
         setState(() {
           _loadError = 'Failed to load (${bad.statusCode})';
           _loading = false;
@@ -126,12 +134,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      final glEntries = (jsonDecode(results[1].body) as List)
-          .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.description.compareTo(b.description));
+      final glEntries = cache.glEntries;
 
-      final prefJson = jsonDecode(results[2].body) as Map<String, dynamic>;
+      final prefJson = jsonDecode(results[1].body) as Map<String, dynamic>;
       final rawPairs = (prefJson['selectedAccountPairs'] as List?) ?? [];
       final savedPairs = rawPairs
           .whereType<Map<String, dynamic>>()
@@ -144,27 +149,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               glEntries.any((g) => g.id == p.expenseId))
           .toList();
 
-      final lockedMonths = (jsonDecode(results[3].body) as List)
-          .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-
-      final closingBalances = (jsonDecode(results[4].body) as List)
+      final closingBalances = (jsonDecode(results[2].body) as List)
           .map((e) =>
               ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      final bankAccounts = results[5].statusCode == 200
-          ? (jsonDecode(results[5].body) as List)
-              .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : <BankAccountEntry>[];
-
       setState(() {
         _allTransactions = transactions;
-        _glEntries = glEntries;
-        _lockedMonths = lockedMonths;
         _closingBalances = closingBalances;
-        _bankAccounts = bankAccounts;
         _selectedPairs
           ..clear()
           ..addAll(savedPairs);
@@ -355,6 +347,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ReferenceDataCache>();
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(

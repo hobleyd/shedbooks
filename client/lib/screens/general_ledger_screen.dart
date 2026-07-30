@@ -25,6 +25,7 @@ import '../auth/auth_state.dart';
 import '../models/general_ledger_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/reference_data_cache.dart';
 
 /// A row in the editable general ledger table.
 class _GlRow {
@@ -236,6 +237,7 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
       }
 
       await _load();
+      if (mounted) context.read<ReferenceDataCache>().refreshGl();
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);

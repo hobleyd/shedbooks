@@ -26,6 +26,7 @@ import '../auth/auth_state.dart';
 import '../models/gst_rate_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/reference_data_cache.dart';
 
 class _GstRow {
   final String? id;
@@ -248,6 +249,7 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
       }
 
       await _load();
+      if (mounted) context.read<ReferenceDataCache>().refreshGstRates();
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);

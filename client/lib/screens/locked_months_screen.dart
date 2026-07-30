@@ -24,6 +24,7 @@ import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
 import '../models/locked_month_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 
 /// Admin screen for locking and unlocking financial months per bank account.
 class LockedMonthsScreen extends StatefulWidget {
@@ -37,7 +38,9 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   bool _loading = true;
   String? _loadError;
 
-  List<BankAccountEntry> _bankAccounts = [];
+  // Bank accounts are shared via the cache; this screen owns only the
+  // locked-months data itself.
+  List<BankAccountEntry> get _bankAccounts => context.read<ReferenceDataCache>().bankAccounts;
 
   /// Keyed by monthYear → bankAccountId → entry.
   Map<String, Map<String, LockedMonthEntry>> _lockedMap = {};
@@ -74,24 +77,20 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/bank-accounts'),
-        client.get('/locked-months'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final results = await Future.wait([client.get('/locked-months')]);
+      await cache.refreshBankAccounts();
 
-      final accountsRes = results[0];
-      final lockedRes = results[1];
+      final lockedRes = results[0];
 
-      if (accountsRes.statusCode != 200) {
-        throw Exception('Loading bank accounts failed (${accountsRes.statusCode})');
+      if (cache.bankAccountsStatus == LoadStatus.error) {
+        throw Exception('Loading bank accounts failed');
       }
       if (lockedRes.statusCode != 200) {
         throw Exception('Loading locked months failed (${lockedRes.statusCode})');
       }
 
-      final accounts = (jsonDecode(accountsRes.body) as List<dynamic>)
-          .map((j) => BankAccountEntry.fromJson(j as Map<String, dynamic>))
-          .toList();
+      final accounts = cache.bankAccounts;
 
       final locked = (jsonDecode(lockedRes.body) as List<dynamic>)
           .map((j) => LockedMonthEntry.fromJson(j as Map<String, dynamic>))
@@ -103,7 +102,6 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
       }
 
       setState(() {
-        _bankAccounts = accounts;
         _lockedMap = map;
         _pickerBankAccountId ??= accounts.isNotEmpty ? accounts.first.id : null;
         _loading = false;
@@ -150,6 +148,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
         throw Exception(msg);
       }
       await _load();
+      if (mounted) context.read<ReferenceDataCache>().refreshLockedMonths();
     } catch (e) {
       if (mounted) _showSnackbar('Failed to lock: $e');
     } finally {
@@ -204,6 +203,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
         throw Exception('Server returned ${res.statusCode}');
       }
       await _load();
+      if (mounted) context.read<ReferenceDataCache>().refreshLockedMonths();
     } catch (e) {
       if (mounted) _showSnackbar('Failed to unlock: $e');
     } finally {
@@ -228,6 +228,7 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   @override
   Widget build(BuildContext context) {
     final bool isAdmin = context.watch<AuthState>().isAdmin;
+    context.watch<ReferenceDataCache>();
 
     return Padding(
       padding: const EdgeInsets.all(24),

@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -32,6 +33,7 @@ import '../models/locked_month_entry.dart';
 import '../models/pnl_data.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/budget_pdf_report.dart';
 import '../widgets/pdf_report_components.dart';
@@ -57,16 +59,21 @@ class _MonthSummary {
 
 class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   final TextEditingController _narrativeController = TextEditingController();
-  EntityDetails? _entityDetails;
   List<TransactionEntry> _allTransactions = [];
-  List<BankAccountEntry> _bankAccounts = [];
   List<ClosingBankBalanceEntry> _closingBalances = [];
-  Map<String, GeneralLedgerEntry> _glMap = {};
-  Map<String, String> _contactNames = {};
   BudgetEntry? _budget;
-  List<LockedMonthEntry> _lockedMonths = [];
   bool _loading = true;
   List<PlatformFile> _bankStatements = [];
+
+  // Entity details, GL accounts, bank accounts, locked months and contacts
+  // are shared via the cache.
+  EntityDetails? get _entityDetails => context.read<ReferenceDataCache>().entityDetails;
+  List<BankAccountEntry> get _bankAccounts => context.read<ReferenceDataCache>().bankAccounts;
+  List<LockedMonthEntry> get _lockedMonths => context.read<ReferenceDataCache>().lockedMonths;
+  Map<String, GeneralLedgerEntry> get _glMap =>
+      {for (final g in context.read<ReferenceDataCache>().glEntries) g.id: g};
+  Map<String, String> get _contactNames =>
+      {for (final c in context.read<ReferenceDataCache>().contacts) c.id: c.name};
 
   @override
   void initState() {
@@ -77,60 +84,47 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   Future<void> _loadData() async {
     try {
       final client = context.read<ApiClient>();
+      final cache = context.read<ReferenceDataCache>();
       final now = DateTime.now();
       final reportYear = DateTime(now.year, now.month - 1).year;
 
       final results = await Future.wait([
-        client.get('/entity-details'),
         client.get('/transactions'),
-        client.get('/general-ledger'),
-        client.get('/bank-accounts'),
         client.get('/closing-bank-balances'),
         client.get('/budgets/$reportYear'),
-        client.get('/locked-months'),
-        client.get('/contacts'),
       ]);
+      // Entity details, GL accounts, bank accounts, locked months and
+      // contacts are required for the report; locked months and contacts
+      // remain optional (their absence just leaves those views incomplete).
+      await Future.wait([
+        cache.refreshEntityDetails(),
+        cache.refreshGl(),
+        cache.refreshBankAccounts(),
+      ]);
+      unawaited(cache.refreshLockedMonths());
+      unawaited(cache.refreshContacts());
       if (!mounted) return;
 
-      // Only the first 5 are required; budget (index 5), locked-months (index 6), and contacts (index 7) are optional.
-      if (results.take(5).any((r) => r.statusCode != 200)) {
+      // Only transactions/closing-balances (0-1) are required; budget (2) is optional.
+      if (results.take(2).any((r) => r.statusCode != 200) ||
+          cache.entityDetailsStatus == LoadStatus.error ||
+          cache.glStatus == LoadStatus.error ||
+          cache.bankAccountsStatus == LoadStatus.error) {
         setState(() => _loading = false);
         return;
       }
 
       setState(() {
-        _entityDetails = EntityDetails.fromJson(
-          jsonDecode(results[0].body) as Map<String, dynamic>,
-        );
-        _allTransactions = (jsonDecode(results[1].body) as List)
+        _allTransactions = (jsonDecode(results[0].body) as List)
             .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
             .toList();
-        final glList = (jsonDecode(results[2].body) as List)
-            .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _glMap = {for (final g in glList) g.id: g};
-        _bankAccounts = (jsonDecode(results[3].body) as List)
-            .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _closingBalances = (jsonDecode(results[4].body) as List)
+        _closingBalances = (jsonDecode(results[1].body) as List)
             .map((e) => ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
             .toList();
-        if (results[5].statusCode == 200) {
+        if (results[2].statusCode == 200) {
           _budget = BudgetEntry.fromJson(
-            jsonDecode(results[5].body) as Map<String, dynamic>,
+            jsonDecode(results[2].body) as Map<String, dynamic>,
           );
-        }
-        if (results[6].statusCode == 200) {
-          _lockedMonths = (jsonDecode(results[6].body) as List)
-              .map((e) => LockedMonthEntry.fromJson(e as Map<String, dynamic>))
-              .toList();
-        }
-        if (results[7].statusCode == 200) {
-          _contactNames = {
-            for (final e in jsonDecode(results[7].body) as List)
-              (e as Map<String, dynamic>)['id'] as String:
-                  e['name'] as String,
-          };
         }
         _loading = false;
       });
@@ -524,6 +518,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ReferenceDataCache>();
     if (_loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
