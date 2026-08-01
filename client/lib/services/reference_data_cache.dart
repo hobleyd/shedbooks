@@ -103,6 +103,22 @@ class ReferenceDataCache extends ChangeNotifier {
   List<LockedMonthEntry> get lockedMonths => List.unmodifiable(_lockedMonths);
   String? get lockedMonthsError => _lockedMonthsError;
 
+  /// CashFlow Manager import: external GL code → matched generalLedgerId.
+  ///
+  /// Populated as the user resolves unmatched codes while importing a
+  /// CashFlow Manager CSV. Kept here (rather than in the import screen's
+  /// state) so the mapping survives closing and reopening the importer
+  /// within the same session — re-importing the same or an updated file
+  /// does not re-prompt for codes already resolved. Not persisted to the
+  /// database; cleared on [reset] like everything else in this cache.
+  final Map<String, String> _cashflowManagerGlMappings = {};
+  Map<String, String> get cashflowManagerGlMappings =>
+      Map.unmodifiable(_cashflowManagerGlMappings);
+
+  void setCashflowManagerGlMapping(String externalCode, String generalLedgerId) {
+    _cashflowManagerGlMappings[externalCode] = generalLedgerId;
+  }
+
   /// The GST rate effective at [date] (defaults to now): the rate with the
   /// latest `effectiveFrom` that is not after [date]. Mirrors the server's
   /// `GetEffectiveGstRateUseCase` (`effective_from <= date ORDER BY
@@ -327,6 +343,7 @@ class ReferenceDataCache extends ChangeNotifier {
     _lockedMonthsStatus = LoadStatus.idle;
     _lockedMonths = [];
     _lockedMonthsError = null;
+    _cashflowManagerGlMappings.clear();
     notifyListeners();
   }
 }

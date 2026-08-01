@@ -77,3 +77,34 @@ int glDepth(List<GeneralLedgerEntry> all, String id) {
   }
   return depth;
 }
+
+/// Orders [accounts] so children are grouped immediately after their parent
+/// (recursively), with siblings at every level — including the top level —
+/// sorted by [GeneralLedgerEntry.label]. An account whose parent isn't
+/// present in [accounts] (e.g. filtered out by direction beforehand) is
+/// treated as a root rather than dropped, so callers can safely sort an
+/// already direction-filtered subset.
+List<GeneralLedgerEntry> sortGlHierarchically(List<GeneralLedgerEntry> accounts) {
+  final ids = accounts.map((g) => g.id).toSet();
+  final byParent = <String?, List<GeneralLedgerEntry>>{};
+  for (final g in accounts) {
+    final parentKey =
+        (g.parentId != null && ids.contains(g.parentId)) ? g.parentId : null;
+    byParent.putIfAbsent(parentKey, () => []).add(g);
+  }
+  for (final siblings in byParent.values) {
+    siblings.sort((a, b) => a.label.compareTo(b.label));
+  }
+
+  final result = <GeneralLedgerEntry>[];
+  void visit(GeneralLedgerEntry g) {
+    result.add(g);
+    for (final child in byParent[g.id] ?? const []) {
+      visit(child);
+    }
+  }
+  for (final root in byParent[null] ?? const []) {
+    visit(root);
+  }
+  return result;
+}

@@ -38,6 +38,7 @@ import '../services/api_client.dart';
 import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import 'import_cba_screen.dart';
+import 'import_cashflow_manager_screen.dart';
 import 'import_transactions_screen.dart';
 import '../widgets/pdf_report_components.dart';
 import '../widgets/transaction_form.dart';
@@ -723,6 +724,16 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     if (didImport == true) _load();
   }
 
+  Future<void> _openCashflowManagerImport() async {
+    final didImport = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ImportCashflowManagerScreen(),
+      ),
+    );
+    if (didImport == true) _load();
+  }
+
   // ── Inline edit ─────────────────────────────────────────────────────────────
 
   void _startEdit(TransactionEntry t) =>
@@ -950,6 +961,12 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                           const Icon(Icons.account_balance_outlined, size: 18),
                       onPressed: _openCbaImport,
                       child: const Text('CBA Transactions'),
+                    ),
+                    MenuItemButton(
+                      leadingIcon:
+                          const Icon(Icons.receipt_long_outlined, size: 18),
+                      onPressed: _openCashflowManagerImport,
+                      child: const Text('CashFlow Manager'),
                     ),
                   ],
                 );
