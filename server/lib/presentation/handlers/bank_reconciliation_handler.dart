@@ -23,6 +23,7 @@ import 'package:shelf/shelf.dart';
 
 import '../../application/bank_account/list_bank_accounts_use_case.dart';
 import '../../infrastructure/pdf/cba_statement_parser.dart';
+import '../../infrastructure/pdf/cba_term_deposit_notice_parser.dart';
 import '../audit_changes.dart';
 
 /// Shelf request handlers for /bank-reconciliation.
@@ -69,7 +70,8 @@ class BankReconciliationHandler {
 
     if (pdfBytes.isEmpty) return _badRequest('PDF bytes required');
 
-    final data = CbaStatementParser.parse(pdfBytes);
+    final data = CbaTermDepositNoticeParser.parse(pdfBytes) ??
+        CbaStatementParser.parse(pdfBytes);
     if (data == null) {
       return Response(
         422,
