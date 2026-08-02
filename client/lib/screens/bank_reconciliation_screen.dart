@@ -529,6 +529,20 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
+        // The screen is kept alive in an IndexedStack, so reset it now —
+        // otherwise returning to this tab later shows the just-finished
+        // results screen instead of prompting for a bank account.
+        setState(() {
+          _phase = _Phase.upload;
+          _statement = null;
+          _parseError = null;
+          _rows = [];
+          _reservedIds.clear();
+          _partialMatchIds.clear();
+          _selectedBankAccountId = null;
+          _openingCtrl.clear();
+          _closingCtrl.clear();
+        });
         context.go('/transactions');
       }
     } catch (e) {
