@@ -243,6 +243,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         _closingCtrl.text = _centsToDisplay(stmt.closingBalanceCents);
         _phase = _Phase.results;
         _parseError = null;
+        _buildAndMatchRows();
       } else {
         final msg = (jsonDecode(res.body) as Map?)?['error']?.toString() ??
             'Parse failed (${res.statusCode})';
@@ -546,7 +547,11 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
 
   // ── Matching phase ────────────────────────────────────────────────────────────
 
-  void _enterMatchingPhase() {
+  // Builds `_rows` from the parsed statement and runs auto-matching against
+  // ledger transactions. Called both right after a PDF is parsed (so the
+  // results screen shows an accurate computed closing balance immediately)
+  // and when entering the matching phase.
+  void _buildAndMatchRows() {
     final stmt = _statement;
     if (stmt == null) return;
 
@@ -572,7 +577,11 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     for (final row in _rows) {
       _matchRow(row);
     }
+  }
 
+  void _enterMatchingPhase() {
+    if (_statement == null) return;
+    _buildAndMatchRows();
     setState(() => _phase = _Phase.matching);
   }
 
@@ -1078,6 +1087,9 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
                 _phase = _Phase.upload;
                 _statement = null;
                 _parseError = null;
+                _rows = [];
+                _reservedIds.clear();
+                _partialMatchIds.clear();
               }),
               icon: const Icon(Icons.arrow_back, size: 16),
               label: const Text('Choose different file'),
