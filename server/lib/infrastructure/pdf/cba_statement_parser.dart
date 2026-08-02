@@ -106,6 +106,16 @@ class CbaStatementParser {
   static final _closingBalanceRe =
       RegExp(r'closing\s+balance', caseSensitive: false);
 
+  // CBA sometimes inserts a one-off EOFY disclosure row into the transaction
+  // table area, e.g. "CREDIT INTEREST EARNED on this account to June 30,
+  // 2026 is 0.13". Its leading day/month tokens ("01 Jul") coincidentally
+  // match the date-column pattern, so without this filter it gets treated
+  // as a bogus transaction — and the dollar figure quoted in the sentence
+  // then gets picked up by _extractFromRow's last-element balance fallback,
+  // corrupting the running-balance delta for it and the next real row.
+  static final _interestDisclosureRe =
+      RegExp(r'credit\s+interest\s+earned', caseSensitive: false);
+
   static final _periodRe = RegExp(
       r'(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})\s*[-–]\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})');
   static final _accountRe = RegExp(r'(\d{2}\s+\d{4}\s+\d{8})');
@@ -156,6 +166,12 @@ class CbaStatementParser {
         inTransactionTable = true;
         continue;
       }
+
+      // Skip the EOFY interest-earned disclosure row entirely — it is not a
+      // transaction and must not be allowed to become (or interrupt) a
+      // pending transaction. Its continuation line has no date tokens of its
+      // own, so it falls through harmlessly once pendingDate stays untouched.
+      if (_interestDisclosureRe.hasMatch(rowFull)) continue;
 
       if (_openingBalanceRe.hasMatch(rowFull)) {
         final cents = _parseBalanceFromRow(row);
