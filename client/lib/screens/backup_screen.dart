@@ -134,7 +134,14 @@ class _BackupScreenState extends State<BackupScreen> {
       if (!mounted) return;
 
       if (res.statusCode == 200) {
-        _setMessage('Restore completed successfully');
+        _setMessage('Restore completed successfully — reloading…');
+        // Every screen may be holding retained (StatefulShellRoute
+        // indexedStack) or cached state fetched before the restore; a full
+        // reload is the only reliable way to guarantee it reflects the
+        // newly-restored data. Auth0's session cookie survives this, so the
+        // user stays signed in.
+        await Future.delayed(const Duration(milliseconds: 800));
+        html.window.location.reload();
       } else {
         String err = 'Restore failed (${res.statusCode})';
         try {
