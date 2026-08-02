@@ -184,9 +184,15 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
 
     try {
       await _generatePdfWithProgress(progressNotifier);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to generate report: $e')),
+        );
+      }
     } finally {
       progressNotifier.dispose();
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
     }
   }
 
