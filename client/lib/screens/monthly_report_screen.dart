@@ -153,6 +153,13 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     });
   }
 
+  void _reorderBankStatement(int oldIndex, int newIndex) {
+    setState(() {
+      final item = _bankStatements.removeAt(oldIndex);
+      _bankStatements.insert(newIndex, item);
+    });
+  }
+
   @override
   void dispose() {
     _narrativeController.dispose();
@@ -601,14 +608,36 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                ..._bankStatements.asMap().entries.map((e) => ListTile(
-                      leading: const Icon(Icons.picture_as_pdf_outlined, color: Colors.red),
-                      title: Text(e.value.name, style: const TextStyle(fontSize: 14)),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
-                        onPressed: () => _removeBankStatement(e.key),
-                      ),
-                    )),
+                if (_bankStatements.isNotEmpty)
+                  ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    onReorderItem: _reorderBankStatement,
+                    children: _bankStatements
+                        .asMap()
+                        .entries
+                        .map((e) => ListTile(
+                              key: ObjectKey(e.value),
+                              leading: ReorderableDragStartListener(
+                                index: e.key,
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.drag_handle, color: Colors.black38),
+                                    SizedBox(width: 8),
+                                    Icon(Icons.picture_as_pdf_outlined, color: Colors.red),
+                                  ],
+                                ),
+                              ),
+                              title: Text(e.value.name, style: const TextStyle(fontSize: 14)),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                                onPressed: () => _removeBankStatement(e.key),
+                              ),
+                            ))
+                        .toList(),
+                  ),
                 OutlinedButton.icon(
                   onPressed: _pickBankStatements,
                   icon: const Icon(Icons.add),
