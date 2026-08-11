@@ -20,6 +20,7 @@ import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
 
+import 'package:excel/excel.dart' as xls;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
@@ -878,6 +879,73 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     );
   }
 
+  void _generateTransactionsXlsx() {
+    final txns = _isGlMode
+        ? _searchGlResults
+        : _isSearchMode
+            ? _searchResults
+            : _viewMonthTransactions;
+    final moneyIn = txns.where((t) => t.isCredit).toList();
+    final moneyOut = txns.where((t) => !t.isCredit).toList();
+    final periodLabel = _isGlMode
+        ? '${_searchGlPair!.incomeGl.description} $_searchYear'
+        : _isSearchMode
+            ? '${_searchContact!.name} $_searchYear'
+            : '${_monthNames[_viewMonth.month]} ${_viewMonth.year}';
+
+    final excel = xls.Excel.createExcel();
+    _writeTransactionSheet(excel, 'Money In', moneyIn);
+    _writeTransactionSheet(excel, 'Money Out', moneyOut);
+    excel.delete('Sheet1');
+
+    // excel.save() drives the browser download via the package's own
+    // web helper, which mis-builds the Blob and corrupts the file
+    // (it spreads the bytes into a JS array of numbers instead of a
+    // single binary blob part). Encode the bytes ourselves and reuse
+    // the working Blob/anchor pattern used for the ABA export above.
+    final bytes = excel.encode();
+    if (bytes == null) {
+      _showSnackbar('Failed to generate Excel file.');
+      return;
+    }
+    final blob = web.Blob(<JSAny>[Uint8List.fromList(bytes).toJS].toJS);
+    final url = web.URL.createObjectURL(blob);
+    (web.document.createElement('a') as web.HTMLAnchorElement)
+      ..href = url
+      ..download = 'transactions-$periodLabel.xlsx'
+      ..click();
+    web.URL.revokeObjectURL(url);
+  }
+
+  void _writeTransactionSheet(
+      xls.Excel excel, String sheetName, List<TransactionEntry> txns) {
+    final sheet = excel[sheetName];
+    sheet.appendRow(<xls.CellValue?>[
+      xls.TextCellValue('Date'),
+      xls.TextCellValue('Contact'),
+      xls.TextCellValue('GL Account'),
+      xls.TextCellValue('Description'),
+      xls.TextCellValue('Receipt #'),
+      xls.TextCellValue('Amount'),
+      xls.TextCellValue('GST'),
+      xls.TextCellValue('Total'),
+      xls.TextCellValue('Reconciled'),
+    ]);
+    for (final t in txns) {
+      sheet.appendRow(<xls.CellValue?>[
+        xls.TextCellValue(t.transactionDate),
+        xls.TextCellValue(_contactName(t.contactId) ?? '—'),
+        xls.TextCellValue(_glDescription(t.generalLedgerId) ?? '—'),
+        xls.TextCellValue(t.description),
+        xls.TextCellValue(t.receiptNumber),
+        xls.DoubleCellValue(t.amount / 100),
+        xls.DoubleCellValue(t.gstAmount / 100),
+        xls.DoubleCellValue(t.totalAmount / 100),
+        xls.TextCellValue(t.bankMatched ? 'Yes' : 'No'),
+      ]);
+    }
+  }
+
   void _showSnackbar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -938,6 +1006,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               const Spacer(),
               _buildSearchBar(),
               const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.download_outlined),
+                tooltip: 'Download Transactions (Excel)',
+                onPressed: _generateTransactionsXlsx,
+              ),
               Builder(builder: (context) {
                 final canImport = context.watch<AuthState>().isAdmin;
                 if (!canImport) return const SizedBox.shrink();
