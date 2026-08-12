@@ -42,16 +42,27 @@ class InvoicesScreen extends StatefulWidget {
 }
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
-  // Reference data
-  List<BankAccountSummary> _bankAccounts = [];
-
-  // GL accounts, GST rate, entity details and contacts are shared via the
-  // cache.
+  // GL accounts, GST rate, entity details, contacts and bank accounts are
+  // shared via the cache.
   List<GeneralLedgerEntry> get _glAccounts => context.read<ReferenceDataCache>().glEntries;
   double get _gstRate => context.read<ReferenceDataCache>().effectiveGstRate()?.rate ?? 0.10;
   EntityDetails? get _entityDetails => context.read<ReferenceDataCache>().entityDetails;
   Map<String, ContactEntry> get _contacts =>
       {for (final c in context.read<ReferenceDataCache>().contacts) c.id: c};
+  List<BankAccountSummary> get _bankAccounts =>
+      context.read<ReferenceDataCache>().bankAccountSummaries;
+
+  /// Resolves [_inlineBankAccount] by id against the current [_bankAccounts]
+  /// list rather than trusting object identity, since a cache refresh (e.g.
+  /// triggered by another screen) produces fresh instances for the same
+  /// underlying account — passing a stale instance straight into
+  /// DropdownButton's `value` fails its "exactly one matching item" check.
+  BankAccountSummary? get _resolvedInlineBankAccount {
+    final selected = _inlineBankAccount;
+    if (selected == null) return null;
+    final match = _bankAccounts.where((a) => a.id == selected.id);
+    return match.isEmpty ? null : match.first;
+  }
 
   // Invoice list
   List<InvoiceEntry> _invoices = [];
@@ -98,13 +109,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       final results = await Future.wait([
         client.get('/invoices/next-number'),
         client.get('/invoices'),
-        client.get('/bank-reconciliation/bank-accounts'),
       ]);
       await Future.wait([
         cache.refreshGl(),
         cache.refreshGstRates(),
         cache.refreshEntityDetails(),
         cache.refreshContacts(),
+        cache.refreshBankAccountSummaries(),
       ]);
 
       if (!mounted) return;
@@ -117,12 +128,6 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         final List<dynamic> data = jsonDecode(results[1].body);
         _invoices = data
             .map((e) => InvoiceEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-      if (results[2].statusCode == 200) {
-        final List<dynamic> data = jsonDecode(results[2].body);
-        _bankAccounts = data
-            .map((e) => BankAccountSummary.fromJson(e as Map<String, dynamic>))
             .toList();
       }
 
@@ -943,7 +948,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                               EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                         ),
                         child: DropdownButton<BankAccountSummary>(
-                          value: _inlineBankAccount,
+                          value: _resolvedInlineBankAccount,
                           isExpanded: true,
                           underline: const SizedBox.shrink(),
                           hint: const Text('Select account'),

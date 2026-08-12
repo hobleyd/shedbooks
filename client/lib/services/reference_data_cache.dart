@@ -20,6 +20,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/bank_account_entry.dart';
+import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
@@ -64,6 +65,16 @@ class ReferenceDataCache extends ChangeNotifier {
   String? _bankAccountsError;
   int _bankAccountsGen = 0;
 
+  // Minimal bank-account summaries from `/bank-reconciliation/bank-accounts`,
+  // a role-agnostic endpoint contributors can read even though the full
+  // `/bank-accounts` API (and [bankAccounts] above) is administrator-only.
+  // Kept as a separate cached list so contributor-facing screens (invoices,
+  // bank reconciliation) don't 403 by reusing the admin-only list.
+  LoadStatus _bankAccountSummariesStatus = LoadStatus.idle;
+  List<BankAccountSummary> _bankAccountSummaries = [];
+  String? _bankAccountSummariesError;
+  int _bankAccountSummariesGen = 0;
+
   LoadStatus _gstRatesStatus = LoadStatus.idle;
   List<GstRateEntry> _gstRates = [];
   String? _gstRatesError;
@@ -90,6 +101,11 @@ class ReferenceDataCache extends ChangeNotifier {
   LoadStatus get bankAccountsStatus => _bankAccountsStatus;
   List<BankAccountEntry> get bankAccounts => List.unmodifiable(_bankAccounts);
   String? get bankAccountsError => _bankAccountsError;
+
+  LoadStatus get bankAccountSummariesStatus => _bankAccountSummariesStatus;
+  List<BankAccountSummary> get bankAccountSummaries =>
+      List.unmodifiable(_bankAccountSummaries);
+  String? get bankAccountSummariesError => _bankAccountSummariesError;
 
   LoadStatus get gstRatesStatus => _gstRatesStatus;
   List<GstRateEntry> get gstRates => List.unmodifiable(_gstRates);
@@ -147,6 +163,12 @@ class ReferenceDataCache extends ChangeNotifier {
           ? Future.value()
           : _loadBankAccounts();
   Future<void> refreshBankAccounts() => _loadBankAccounts();
+
+  Future<void> ensureBankAccountSummariesLoaded() =>
+      _isLoadedOrLoading(_bankAccountSummariesStatus)
+          ? Future.value()
+          : _loadBankAccountSummaries();
+  Future<void> refreshBankAccountSummaries() => _loadBankAccountSummaries();
 
   Future<void> ensureGstRatesLoaded() => _isLoadedOrLoading(_gstRatesStatus)
       ? Future.value()
@@ -245,6 +267,33 @@ class ReferenceDataCache extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _loadBankAccountSummaries() async {
+    final epoch = _epoch;
+    final gen = ++_bankAccountSummariesGen;
+    _bankAccountSummariesStatus = LoadStatus.loading;
+    try {
+      final res = await _apiClient.get('/bank-reconciliation/bank-accounts');
+      if (epoch != _epoch || gen != _bankAccountSummariesGen) return;
+      if (res.statusCode != 200) {
+        _bankAccountSummariesStatus = LoadStatus.error;
+        _bankAccountSummariesError =
+            'Failed to load bank accounts (${res.statusCode})';
+      } else {
+        _bankAccountSummaries = (jsonDecode(res.body) as List)
+            .map((e) =>
+                BankAccountSummary.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _bankAccountSummariesStatus = LoadStatus.loaded;
+        _bankAccountSummariesError = null;
+      }
+    } catch (e) {
+      if (epoch != _epoch || gen != _bankAccountSummariesGen) return;
+      _bankAccountSummariesStatus = LoadStatus.error;
+      _bankAccountSummariesError = 'Failed to load bank accounts: $e';
+    }
+    notifyListeners();
+  }
+
   Future<void> _loadGstRates() async {
     final epoch = _epoch;
     final gen = ++_gstRatesGen;
@@ -334,6 +383,9 @@ class ReferenceDataCache extends ChangeNotifier {
     _bankAccountsStatus = LoadStatus.idle;
     _bankAccounts = [];
     _bankAccountsError = null;
+    _bankAccountSummariesStatus = LoadStatus.idle;
+    _bankAccountSummaries = [];
+    _bankAccountSummariesError = null;
     _gstRatesStatus = LoadStatus.idle;
     _gstRates = [];
     _gstRatesError = null;

@@ -80,15 +80,16 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   List<TransactionEntry> _allTransactions = [];
   List<InvoiceEntry> _unpaidInvoices = [];
   Set<String> _lockedMonths = {};
-  List<BankAccountSummary> _bankAccounts = [];
 
-  // Contacts and entity details are shared via the cache.
+  // Contacts, entity details and bank accounts are shared via the cache.
   Map<String, String> get _contactNames =>
       {for (final c in context.read<ReferenceDataCache>().contacts) c.id: c.name};
   ReceiptFormat get _moneyInFormat =>
       ReceiptFormat(context.read<ReferenceDataCache>().entityDetails?.moneyInReceiptFormat ?? '');
   ReceiptFormat get _moneyOutFormat =>
       ReceiptFormat(context.read<ReferenceDataCache>().entityDetails?.moneyOutReceiptFormat ?? '');
+  List<BankAccountSummary> get _bankAccounts =>
+      context.read<ReferenceDataCache>().bankAccountSummaries;
 
   // Previously-imported bank rows (from CSV import sessions).
   // Used as a fallback "already imported" signal when a PDF row cannot be
@@ -145,7 +146,6 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       final cache = context.read<ReferenceDataCache>();
       final results = await Future.wait([
         client.get('/transactions'),
-        client.get('/bank-reconciliation/bank-accounts'),
         client.get('/invoices?unpaid=true'),
         client.get('/bank-imports'),
       ]);
@@ -153,6 +153,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         cache.refreshLockedMonths(),
         cache.refreshEntityDetails(),
         cache.refreshContacts(),
+        cache.refreshBankAccountSummaries(),
       ]);
 
       final txRes = results[0];
@@ -167,20 +168,13 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           .map((e) => '${e.monthYear}:${e.bankAccountId}')
           .toSet();
 
-      final baRes = results[1];
-      if (baRes.statusCode == 200) {
-        final list = jsonDecode(baRes.body) as List<dynamic>;
-        _bankAccounts = list
-            .map((j) =>
-                BankAccountSummary.fromJson(j as Map<String, dynamic>))
-            .toList();
-        // Pre-select if only one bank account exists.
-        if (_bankAccounts.length == 1 && _selectedBankAccountId == null) {
-          _selectedBankAccountId = _bankAccounts.first.id;
-        }
+      // Pre-select if only one bank account exists.
+      if (cache.bankAccountSummaries.length == 1 &&
+          _selectedBankAccountId == null) {
+        _selectedBankAccountId = cache.bankAccountSummaries.first.id;
       }
 
-      final invRes = results[2];
+      final invRes = results[1];
       if (invRes.statusCode == 200) {
         final list = jsonDecode(invRes.body) as List<dynamic>;
         _unpaidInvoices = list
@@ -188,7 +182,7 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
             .toList();
       }
 
-      final biRes = results[3];
+      final biRes = results[2];
       if (biRes.statusCode == 200) {
         final list = jsonDecode(biRes.body) as List<dynamic>;
         _importedRowKeys = {

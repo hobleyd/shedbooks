@@ -32,6 +32,7 @@ import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/budget_pdf_report.dart';
 import '../widgets/pdf_report_components.dart';
@@ -73,6 +74,15 @@ class _BudgetScreenState extends State<BudgetScreen>
 
   late TabController _tabController;
 
+  // GL accounts live in the shared [ReferenceDataCache]. This screen keeps
+  // its own snapshot (rather than reading the cache live in every build) so
+  // that the per-account TextEditingControllers/FocusNodes in [_controllers]
+  // /[_focusNodes] stay in sync with the accounts actually rendered — a new
+  // GL account added on another screen is picked up via [_onGlAccountsChanged]
+  // below, which adds controllers for it before the next rebuild instead of
+  // relying on an untracked lookup that would throw.
+  late final ReferenceDataCache _refCache;
+
   // Report state.
   int _reportMonth = DateTime.now().month;
   bool _reportYtd = true;
@@ -81,15 +91,36 @@ class _BudgetScreenState extends State<BudgetScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this, initialIndex: 0);
+    _refCache = context.read<ReferenceDataCache>();
+    _refCache.addListener(_onGlAccountsChanged);
     _load();
   }
 
   @override
   void dispose() {
+    _refCache.removeListener(_onGlAccountsChanged);
     _tabController.dispose();
     _disposeControllers();
     _disposeFocusNodes();
     super.dispose();
+  }
+
+  /// Adds controllers/focus nodes for any GL account that appeared in the
+  /// shared cache after this screen's initial load (e.g. created on the
+  /// General Ledger screen while this one was retained on the nav stack).
+  void _onGlAccountsChanged() {
+    if (!mounted) return;
+    final latest = _refCache.glEntries;
+    final currentIds = _glAccounts.map((g) => g.id).toSet();
+    final newAccounts = latest.where((g) => !currentIds.contains(g.id)).toList();
+    if (newAccounts.isEmpty) return;
+    setState(() {
+      _glAccounts = latest;
+      for (final gl in newAccounts) {
+        _controllers[gl.id] = _buildControllersFor(gl.id, _budget);
+        _focusNodes[gl.id] = _buildFocusNodesFor(gl.id);
+      }
+    });
   }
 
   void _disposeControllers() {
@@ -119,36 +150,36 @@ class _BudgetScreenState extends State<BudgetScreen>
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
+      final httpResults = Future.wait([
         client.get('/budgets'),
-        client.get('/general-ledger'),
         client.get('/transactions'),
         client.get('/entity-details'),
       ]);
+      final glLoad = _refCache.ensureGlLoaded();
+      final results = await httpResults;
+      await glLoad;
 
       if (!mounted) return;
 
-      if (results[1].statusCode != 200) {
+      if (_refCache.glStatus == LoadStatus.error) {
         setState(() {
-          _loadError = 'Failed to load general ledger';
+          _loadError = _refCache.glError ?? 'Failed to load general ledger';
           _loading = false;
         });
         return;
       }
 
       final years = (jsonDecode(results[0].body) as List).cast<int>();
-      final glList = (jsonDecode(results[1].body) as List)
-          .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-      final transactions = results[2].statusCode == 200
-          ? (jsonDecode(results[2].body) as List)
+      final glList = _refCache.glEntries;
+      final transactions = results[1].statusCode == 200
+          ? (jsonDecode(results[1].body) as List)
               .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
               .toList()
           : <TransactionEntry>[];
       EntityDetails? entityDetails;
-      if (results[3].statusCode == 200) {
+      if (results[2].statusCode == 200) {
         entityDetails = EntityDetails.fromJson(
-            jsonDecode(results[3].body) as Map<String, dynamic>);
+            jsonDecode(results[2].body) as Map<String, dynamic>);
       }
 
       // Default to current year; fall back to latest available year.
@@ -202,38 +233,47 @@ class _BudgetScreenState extends State<BudgetScreen>
 
   void _initControllers(BudgetEntry budget) {
     for (final gl in _glAccounts) {
-      final months = budget.lines[gl.id] ?? List.filled(12, 0);
-      _controllers[gl.id] = List.generate(12, (i) {
-        final cents = i < months.length ? months[i] : 0;
-        return TextEditingController(
-          text: cents == 0 ? '' : _centsToDisplay(cents),
-        );
-      });
+      _controllers[gl.id] = _buildControllersFor(gl.id, budget);
     }
+  }
+
+  List<TextEditingController> _buildControllersFor(
+      String glId, BudgetEntry? budget) {
+    final months = budget?.lines[glId] ?? List.filled(12, 0);
+    return List.generate(12, (i) {
+      final cents = i < months.length ? months[i] : 0;
+      return TextEditingController(
+        text: cents == 0 ? '' : _centsToDisplay(cents),
+      );
+    });
   }
 
   void _initFocusNodes() {
     for (final gl in _glAccounts) {
-      _focusNodes[gl.id] = List.generate(12, (monthIdx) {
-        final node = FocusNode();
-        node.addListener(() {
-          if (node.hasFocus) {
-            final ctrl = _controllers[gl.id]?[monthIdx];
-            if (ctrl != null) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (node.hasFocus) {
-                  ctrl.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: ctrl.text.length,
-                  );
-                }
-              });
-            }
-          }
-        });
-        return node;
-      });
+      _focusNodes[gl.id] = _buildFocusNodesFor(gl.id);
     }
+  }
+
+  List<FocusNode> _buildFocusNodesFor(String glId) {
+    return List.generate(12, (monthIdx) {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus) {
+          final ctrl = _controllers[glId]?[monthIdx];
+          if (ctrl != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (node.hasFocus) {
+                ctrl.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: ctrl.text.length,
+                );
+              }
+            });
+          }
+        }
+      });
+      return node;
+    });
   }
 
   /// Returns GL ids in the same order they appear in the edit grid

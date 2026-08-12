@@ -117,7 +117,16 @@ class ImportTransactionsScreen extends StatefulWidget {
 class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
   bool _loading = true;
   String? _loadError;
-  List<GeneralLedgerEntry> _glEntries = [];
+
+  // GL accounts live in the shared [ReferenceDataCache] so that an account
+  // added on another screen is reflected here immediately, even though this
+  // screen's State can be retained on the Navigator stack while the user
+  // visits other screens.
+  List<GeneralLedgerEntry> get _glEntries => context.read<ReferenceDataCache>().glEntries;
+
+  // _contacts is only used as a save-time dedup fallback, immediately
+  // overridden by a fresh fetch right before use in _save() — no
+  // user-facing dropdown reads it, so it doesn't need the cache.
   List<ContactEntry> _contacts = [];
 
   String? _fileName;
@@ -155,27 +164,21 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/general-ledger'),
-        client.get('/contacts'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final contactsRes = await client.get('/contacts');
+      await cache.ensureGlLoaded();
       if (!mounted) return;
-      if (results.any((r) => r.statusCode != 200)) {
+      if (cache.glStatus == LoadStatus.error || contactsRes.statusCode != 200) {
         setState(() {
           _loadError = 'Failed to load reference data';
           _loading = false;
         });
         return;
       }
-      final glEntries = (jsonDecode(results[0].body) as List)
-          .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.label.compareTo(b.label));
-      final contacts = (jsonDecode(results[1].body) as List)
+      final contacts = (jsonDecode(contactsRes.body) as List)
           .map((e) => ContactEntry.fromJson(e as Map<String, dynamic>))
           .toList();
       setState(() {
-        _glEntries = glEntries;
         _contacts = contacts;
         _loading = false;
       });
@@ -1051,6 +1054,10 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Registers this screen as a listener of the shared cache so it rebuilds
+    // (and the GL dropdowns reflect new accounts) whenever GL accounts
+    // change on another screen while this one is retained on the stack.
+    context.watch<ReferenceDataCache>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Import Transactions'),

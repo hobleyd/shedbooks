@@ -28,6 +28,7 @@ import '../models/general_ledger_entry.dart';
 import '../models/invoice_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/cba_receipt_parser.dart';
 import '../utils/receipt_format.dart';
 import '../widgets/bank_match_widgets.dart';
@@ -78,9 +79,15 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
 
   List<TransactionEntry> _allTransactions = [];
   List<InvoiceEntry> _unpaidInvoices = [];
-  List<ContactEntry> _contacts = [];
-  List<GeneralLedgerEntry> _glEntries = [];
-  Map<String, String> _contactNames = {}; // contactId → display name
+
+  // Contacts and GL accounts live in the shared [ReferenceDataCache] so that
+  // edits made on other screens (e.g. adding a contact or GL account) are
+  // reflected here immediately, even though this screen's State can be
+  // retained on the Navigator stack while the user visits other screens.
+  List<ContactEntry> get _contacts => context.read<ReferenceDataCache>().contacts;
+  List<GeneralLedgerEntry> get _glEntries => context.read<ReferenceDataCache>().glEntries;
+  Map<String, String> get _contactNames =>
+      {for (final c in _contacts) c.id: c.name}; // contactId → display name
 
   ReceiptFormat _moneyInFormat = const ReceiptFormat('');
   ReceiptFormat _moneyOutFormat = const ReceiptFormat('');
@@ -125,26 +132,18 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           .map((j) => TransactionEntry.fromJson(j as Map<String, dynamic>))
           .toList();
 
-      final ctRes = await client.get('/contacts');
-      if (ctRes.statusCode != 200) {
-        throw Exception('Failed to load contacts (${ctRes.statusCode})');
+      final cache = context.read<ReferenceDataCache>();
+      await Future.wait([
+        cache.ensureContactsLoaded(),
+        cache.ensureGlLoaded(),
+      ]);
+      if (!mounted) return;
+      if (cache.contactsStatus == LoadStatus.error) {
+        throw Exception(cache.contactsError ?? 'Failed to load contacts');
       }
-      final ctList = jsonDecode(ctRes.body) as List<dynamic>;
-      _contacts = ctList
-          .map((j) => ContactEntry.fromJson(j as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
-      _contactNames = {for (final c in _contacts) c.id: c.name};
-
-      final glRes = await client.get('/general-ledger');
-      if (glRes.statusCode != 200) {
-        throw Exception('Failed to load GL accounts (${glRes.statusCode})');
+      if (cache.glStatus == LoadStatus.error) {
+        throw Exception(cache.glError ?? 'Failed to load GL accounts');
       }
-      final glList = jsonDecode(glRes.body) as List<dynamic>;
-      _glEntries = glList
-          .map((j) => GeneralLedgerEntry.fromJson(j as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) => a.label.compareTo(b.label));
 
       final entityRes = await client.get('/entity-details');
       if (entityRes.statusCode == 200) {
@@ -761,6 +760,10 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Registers this screen as a listener of the shared cache so it rebuilds
+    // (and the Contact dropdown reflects new contacts) whenever contacts
+    // change on another screen while this one is retained on the stack.
+    context.watch<ReferenceDataCache>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Import CBA Transactions'),
