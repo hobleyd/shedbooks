@@ -450,7 +450,8 @@ class TransactionFormState extends State<TransactionForm> {
     );
   }
 
-  Widget _buildContactField({InputDecoration? decoration}) {
+  Widget _buildContactField(
+      {InputDecoration? decoration, bool stretch = false}) {
     final fieldDecoration = (decoration ??
             const InputDecoration(
               labelText: 'Contact',
@@ -466,74 +467,82 @@ class TransactionFormState extends State<TransactionForm> {
           : null,
     );
 
+    final autocomplete = Autocomplete<ContactEntry>(
+      key: ValueKey(_contactResetKey),
+      initialValue: _contactTypedText.isNotEmpty
+          ? TextEditingValue(text: _contactTypedText)
+          : null,
+      displayStringForOption: (c) => c.name,
+      optionsBuilder: (textEditingValue) {
+        if (textEditingValue.text.isEmpty) return widget.contacts;
+        final q = textEditingValue.text.toLowerCase();
+        return widget.contacts.where((c) => c.name.toLowerCase().contains(q));
+      },
+      onSelected: (contact) => setState(() {
+        _selectedContact = contact;
+        _contactTypedText = contact.name;
+      }),
+      fieldViewBuilder: (context, textController, focusNode, _) {
+        return TextFormField(
+          controller: textController,
+          focusNode: focusNode,
+          enabled: !widget.isSaving,
+          expands: stretch,
+          maxLines: stretch ? null : 1,
+          textAlignVertical: stretch ? TextAlignVertical.center : null,
+          onChanged: (value) {
+            setState(() {
+              _contactTypedText = value;
+              if (_selectedContact != null && value != _selectedContact!.name) {
+                _selectedContact = null;
+              }
+            });
+          },
+          decoration: fieldDecoration,
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(4),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 400),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (_, i) {
+                  final c = options.elementAt(i);
+                  return ListTile(
+                    dense: true,
+                    title: Text(c.name),
+                    subtitle: Text(
+                        c.contactType == ContactType.company
+                            ? 'Company'
+                            : 'Person',
+                        style: const TextStyle(fontSize: 11)),
+                    onTap: () => onSelected(c),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Autocomplete<ContactEntry>(
-          key: ValueKey(_contactResetKey),
-          initialValue: _contactTypedText.isNotEmpty
-              ? TextEditingValue(text: _contactTypedText)
-              : null,
-          displayStringForOption: (c) => c.name,
-          optionsBuilder: (textEditingValue) {
-            if (textEditingValue.text.isEmpty) return widget.contacts;
-            final q = textEditingValue.text.toLowerCase();
-            return widget.contacts
-                .where((c) => c.name.toLowerCase().contains(q));
-          },
-          onSelected: (contact) => setState(() {
-            _selectedContact = contact;
-            _contactTypedText = contact.name;
-          }),
-          fieldViewBuilder: (context, textController, focusNode, _) {
-            return TextFormField(
-              controller: textController,
-              focusNode: focusNode,
-              enabled: !widget.isSaving,
-              onChanged: (value) {
-                setState(() {
-                  _contactTypedText = value;
-                  if (_selectedContact != null &&
-                      value != _selectedContact!.name) {
-                    _selectedContact = null;
-                  }
-                });
-              },
-              decoration: fieldDecoration,
-            );
-          },
-          optionsViewBuilder: (context, onSelected, options) {
-            return Align(
-              alignment: Alignment.topLeft,
-              child: Material(
-                elevation: 4,
-                borderRadius: BorderRadius.circular(4),
-                child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxHeight: 220, maxWidth: 400),
-                  child: ListView.builder(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    itemCount: options.length,
-                    itemBuilder: (_, i) {
-                      final c = options.elementAt(i);
-                      return ListTile(
-                        dense: true,
-                        title: Text(c.name),
-                        subtitle: Text(
-                            c.contactType == ContactType.company
-                                ? 'Company'
-                                : 'Person',
-                            style: const TextStyle(fontSize: 11)),
-                        onTap: () => onSelected(c),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
+        // In the compact layout the Row stretches this Column to match
+        // whichever sibling field is tallest; Expanded passes that extra
+        // height on to the actual input so its visible border fills the
+        // allocated space instead of leaving blank room below it. The full
+        // layout gives this Column an unbounded height, where Expanded would
+        // crash, so only opt in when the caller says it's safe to.
+        stretch ? Expanded(child: autocomplete) : autocomplete,
         if (_hasUnmatchedContact)
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 2),
@@ -795,6 +804,15 @@ class TransactionFormState extends State<TransactionForm> {
 
   // ── Compact (inline edit) layout ───────────────────────────────────────────
 
+  /// Forces [child] to fill whatever height the ambient stretched Row gives
+  /// it. `TextFormField` and a bare `Text` inside `InputDecorator` don't
+  /// reliably grow to fill a tight cross-axis constraint from
+  /// [CrossAxisAlignment.stretch] on their own — only [Expanded] inside a
+  /// bounded [Column] reliably forces it, regardless of the child's own
+  /// layout preferences.
+  static Widget _stretch(Widget child) =>
+      Column(children: [Expanded(child: child)]);
+
   Widget _buildCompactLayout() {
     final isMoneyOut = _isMoneyOut;
     const dec = InputDecoration(
@@ -811,86 +829,110 @@ class TransactionFormState extends State<TransactionForm> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Row 1: Date | Contact | GL Account
-          Row(
-            children: [
-              if (isMoneyOut) const SizedBox(width: 40),
-              // Fixed height: InputDecorator wrapping a plain Text (as the
-              // date field does) renders taller than one wrapping a real
-              // input widget, even with identical decoration — pin it to
-              // match every other compact field in this row/the one below.
-              SizedBox(width: 140, height: 40, child: _buildDateFieldCompact()),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: _buildContactField(
-                      decoration: dec.copyWith(labelText: 'Contact'))),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GlAccountDropdown(
-                  allEntries: widget.glEntries,
-                  value: _selectedGl,
-                  decoration: dec.copyWith(labelText: 'GL Account'),
-                  directionFilter:
-                      isMoneyOut ? GlDirection.moneyOut : GlDirection.moneyIn,
-                  compact: true,
-                  onChanged: widget.isSaving ? null : _onGlChangedCompact,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Row 2: Account | Receipt | Description | Total | Amt ex GST | GST
-          // IntrinsicHeight + stretch keeps the account dropdown the same
-          // height as the surrounding text fields (see Row 1 above).
+          // IntrinsicHeight + stretch lets whichever field naturally needs
+          // the most room (GL Account's DropdownButton and Contact's
+          // Autocomplete both resist being compressed below their content
+          // height) define the row height, and every other field stretches
+          // to match — rather than forcing an arbitrary fixed height that
+          // some fields can't actually be compressed to.
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildAccountDropdown(width: 140, compact: true),
+                if (isMoneyOut) const SizedBox(width: 40),
+                SizedBox(
+                  width: 140,
+                  child: _stretch(_buildDateFieldCompact()),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildContactField(
+                    decoration: dec.copyWith(labelText: 'Contact'),
+                    stretch: true,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _stretch(GlAccountDropdown(
+                    allEntries: widget.glEntries,
+                    value: _selectedGl,
+                    decoration: dec.copyWith(labelText: 'GL Account'),
+                    directionFilter:
+                        isMoneyOut ? GlDirection.moneyOut : GlDirection.moneyIn,
+                    compact: true,
+                    onChanged: widget.isSaving ? null : _onGlChangedCompact,
+                  )),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Row 2: Account | Receipt | Description | Total | Amt ex GST | GST
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _stretch(_buildAccountDropdown(width: 140, compact: true)),
                 const SizedBox(width: 8),
                 if (isMoneyOut) ...[
                   SizedBox(
                     width: 160,
-                    child: _isCash
+                    child: _stretch(_isCash
                         ? TextFormField(
                             controller: _cashReceiptController,
                             enabled: !widget.isSaving,
+                            expands: true,
+                            maxLines: null,
+                            textAlignVertical: TextAlignVertical.center,
                             style: const TextStyle(fontSize: 13),
                             decoration: dec.copyWith(labelText: 'Receipt No.'),
                           )
                         : TextFormField(
                             controller: _receiptOutController,
                             enabled: !widget.isSaving,
+                            expands: true,
+                            maxLines: null,
+                            textAlignVertical: TextAlignVertical.center,
                             style: const TextStyle(fontSize: 13),
                             decoration: dec.copyWith(labelText: 'Receipt'),
-                          ),
+                          )),
                   ),
                   const SizedBox(width: 8),
                 ] else if (_isCash) ...[
                   SizedBox(
                     width: 160,
-                    child: TextFormField(
+                    child: _stretch(TextFormField(
                       controller: _cashReceiptController,
                       enabled: !widget.isSaving,
+                      expands: true,
+                      maxLines: null,
+                      textAlignVertical: TextAlignVertical.center,
                       style: const TextStyle(fontSize: 13),
                       decoration: dec.copyWith(labelText: 'Receipt No.'),
-                    ),
+                    )),
                   ),
                   const SizedBox(width: 8),
                 ],
                 Expanded(
-                  child: TextFormField(
+                  child: _stretch(TextFormField(
                     controller: _descriptionController,
                     enabled: !widget.isSaving,
+                    expands: true,
+                    maxLines: null,
+                    textAlignVertical: TextAlignVertical.center,
                     style: const TextStyle(fontSize: 13),
                     decoration: dec.copyWith(labelText: 'Description'),
-                  ),
+                  )),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 110,
-                  child: TextFormField(
+                  child: _stretch(TextFormField(
                     controller: _totalController,
                     enabled: !widget.isSaving,
+                    expands: true,
+                    maxLines: null,
+                    textAlignVertical: TextAlignVertical.center,
                     style: const TextStyle(fontSize: 13),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
@@ -900,14 +942,17 @@ class TransactionFormState extends State<TransactionForm> {
                     onChanged: _handleTotalChanged,
                     decoration:
                         dec.copyWith(labelText: 'Total', prefixText: '\$ '),
-                  ),
+                  )),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 110,
-                  child: TextFormField(
+                  child: _stretch(TextFormField(
                     controller: _amountController,
                     enabled: !widget.isSaving,
+                    expands: true,
+                    maxLines: null,
+                    textAlignVertical: TextAlignVertical.center,
                     style: const TextStyle(fontSize: 13),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
@@ -917,14 +962,17 @@ class TransactionFormState extends State<TransactionForm> {
                     onChanged: _handleAmountChanged,
                     decoration: dec.copyWith(
                         labelText: 'Amt ex GST', prefixText: '\$ '),
-                  ),
+                  )),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 90,
-                  child: TextFormField(
+                  child: _stretch(TextFormField(
                     controller: _gstController,
                     enabled: !widget.isSaving && _gstApplicable,
+                    expands: true,
+                    maxLines: null,
+                    textAlignVertical: TextAlignVertical.center,
                     style: const TextStyle(fontSize: 13),
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
@@ -938,7 +986,7 @@ class TransactionFormState extends State<TransactionForm> {
                       fillColor: _gstApplicable ? null : Colors.grey.shade100,
                       filled: !_gstApplicable,
                     ),
-                  ),
+                  )),
                 ),
               ],
             ),
@@ -978,25 +1026,33 @@ class TransactionFormState extends State<TransactionForm> {
       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       floatingLabelBehavior: FloatingLabelBehavior.always,
     );
-    return InkWell(
-      onTap: widget.isSaving
-          ? null
-          : () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _date,
-                firstDate: DateTime(2020),
-                lastDate: DateTime(2035),
-              );
-              if (picked != null) setState(() => _date = picked);
-            },
-      child: InputDecorator(
-        decoration: dec.copyWith(labelText: 'Date'),
-        child: Text(
+    // A bare Text-in-InputDecorator doesn't reliably grow to fill a tight
+    // stretched-row height the way a TextFormField does (see _stretch above)
+    // — using a read-only TextFormField here instead gives Date the same
+    // sizing behaviour as every other compact field. `key: ValueKey(_date)`
+    // forces a fresh element (and thus a fresh `initialValue`) whenever the
+    // date picker or reset() changes `_date`, since TextFormField otherwise
+    // only reads `initialValue` once, at construction.
+    return TextFormField(
+      key: ValueKey(_date),
+      readOnly: true,
+      expands: true,
+      maxLines: null,
+      textAlignVertical: TextAlignVertical.center,
+      initialValue:
           '${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}/${_date.year}',
-          style: const TextStyle(fontSize: 13),
-        ),
-      ),
+      style: const TextStyle(fontSize: 13),
+      enabled: !widget.isSaving,
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: _date,
+          firstDate: DateTime(2020),
+          lastDate: DateTime(2035),
+        );
+        if (picked != null) setState(() => _date = picked);
+      },
+      decoration: dec.copyWith(labelText: 'Date'),
     );
   }
 }
