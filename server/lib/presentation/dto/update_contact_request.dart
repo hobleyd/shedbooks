@@ -25,6 +25,7 @@ class UpdateContactRequest {
   final String? abn;
   final String? bsb;
   final String? accountNumber;
+  final String? address;
 
   const UpdateContactRequest({
     required this.name,
@@ -33,6 +34,7 @@ class UpdateContactRequest {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.address,
   });
 
   factory UpdateContactRequest.fromJson(Map<String, dynamic> json) {
@@ -42,6 +44,7 @@ class UpdateContactRequest {
     final abn = json['abn'];
     final bsb = json['bsb'];
     final accountNumber = json['accountNumber'];
+    final address = json['address'];
 
     if (name is! String) throw const FormatException('name must be a string');
     if (contactTypeRaw is! String) {
@@ -58,6 +61,9 @@ class UpdateContactRequest {
     }
     if (accountNumber != null && accountNumber is! String) {
       throw const FormatException('accountNumber must be a string');
+    }
+    if (address != null && address is! String) {
+      throw const FormatException('address must be a string');
     }
 
     final ContactType contactType;
@@ -76,6 +82,7 @@ class UpdateContactRequest {
       abn: abn as String?,
       bsb: bsb as String?,
       accountNumber: accountNumber as String?,
+      address: address as String?,
     );
   }
 }

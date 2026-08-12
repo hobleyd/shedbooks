@@ -33,6 +33,7 @@ class ContactPickerController extends ChangeNotifier {
 
   final TextEditingController nameController = TextEditingController();
   final TextEditingController abnController = TextEditingController();
+  final TextEditingController addressController = TextEditingController();
   ContactType contactType = ContactType.person;
   bool gstRegistered = false;
   AbnLookupState abnLookupState = AbnLookupState.idle;
@@ -54,6 +55,7 @@ class ContactPickerController extends ChangeNotifier {
     if (contact != null) {
       nameController.text = contact.name;
       abnController.text = contact.abn ?? '';
+      addressController.text = contact.address ?? '';
       contactType = contact.contactType;
       gstRegistered = contact.gstRegistered;
     } else {
@@ -75,15 +77,38 @@ class ContactPickerController extends ChangeNotifier {
   void clear() {
     nameController.clear();
     abnController.clear();
+    addressController.clear();
     contactType = onlyCompanies ? ContactType.company : ContactType.person;
     gstRegistered = false;
     abnLookupState = AbnLookupState.idle;
+  }
+
+  /// Changes the contact type for a not-yet-saved contact, clearing the ABN
+  /// and GST registration when switching to [ContactType.person] (which
+  /// cannot have either). Notifies listeners so dependents recompute
+  /// anything derived from [gstRegistered] (e.g. invoice line-item GST).
+  void setContactType(ContactType type) {
+    contactType = type;
+    if (type == ContactType.person) {
+      gstRegistered = false;
+      abnController.clear();
+      abnLookupState = AbnLookupState.idle;
+    }
+    notifyListeners();
+  }
+
+  /// Sets GST registration for a not-yet-saved contact and notifies
+  /// listeners so dependents recompute anything derived from it.
+  void setGstRegistered(bool value) {
+    gstRegistered = value;
+    notifyListeners();
   }
 
   @override
   void dispose() {
     nameController.dispose();
     abnController.dispose();
+    addressController.dispose();
     super.dispose();
   }
 }
@@ -174,10 +199,8 @@ class _ContactPickerState extends State<ContactPicker> {
           setState(() => widget.controller.abnLookupState = AbnLookupState.notFound);
           return;
         }
-        setState(() {
-          widget.controller.gstRegistered = data['gstRegistered'] as bool;
-          widget.controller.abnLookupState = AbnLookupState.found;
-        });
+        widget.controller.abnLookupState = AbnLookupState.found;
+        widget.controller.setGstRegistered(data['gstRegistered'] as bool);
       } else {
         setState(() => widget.controller.abnLookupState = AbnLookupState.error);
       }
@@ -302,14 +325,7 @@ class _ContactPickerState extends State<ContactPicker> {
                       onChanged: (widget.enabled && isNew)
                           ? (value) {
                               if (value == null) return;
-                              setState(() {
-                                controller.contactType = value;
-                                if (value == ContactType.person) {
-                                  controller.gstRegistered = false;
-                                  controller.abnController.clear();
-                                  controller.abnLookupState = AbnLookupState.idle;
-                                }
-                              });
+                              controller.setContactType(value);
                             }
                           : null,
                     ),
@@ -327,14 +343,24 @@ class _ContactPickerState extends State<ContactPicker> {
                 title: const Text('GST Registered'),
                 value: controller.gstRegistered,
                 onChanged: (widget.enabled && isNew)
-                    ? (value) {
-                        setState(() => controller.gstRegistered = value ?? false);
-                      }
+                    ? (value) => controller.setGstRegistered(value ?? false)
                     : null,
                 controlAffinity: ListTileControlAffinity.leading,
                 contentPadding: EdgeInsets.zero,
               ),
             ],
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: controller.addressController,
+              enabled: widget.enabled,
+              minLines: 3,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: 'Address',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+            ),
           ],
         ),
       ),

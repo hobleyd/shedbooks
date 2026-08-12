@@ -27,6 +27,7 @@ class ContactResponse {
   final String? abn;
   final String? bsb;
   final String? accountNumber;
+  final String? address;
   final String createdAt;
   final String updatedAt;
 
@@ -38,6 +39,7 @@ class ContactResponse {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.address,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -51,6 +53,7 @@ class ContactResponse {
       abn: entity.abn,
       bsb: entity.bsb,
       accountNumber: entity.accountNumber,
+      address: entity.address,
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
     );
@@ -64,6 +67,7 @@ class ContactResponse {
         'abn': abn,
         'bsb': bsb,
         'accountNumber': accountNumber,
+        'address': address,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };

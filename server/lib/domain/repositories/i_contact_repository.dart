@@ -28,6 +28,7 @@ abstract interface class IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    String? address,
   });
 
   /// Returns a contact by [id] within [entityId], or null if not found / deleted.
@@ -47,6 +48,7 @@ abstract interface class IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    String? address,
   });
 
   /// Soft-deletes the contact with [id] within [entityId].

@@ -34,6 +34,9 @@ class ContactEntry {
   /// Account number (6-10 digits) for ABA payments.
   final String? accountNumber;
 
+  /// Multi-line postal/billing address, used on invoices raised against this contact.
+  final String? address;
+
   const ContactEntry({
     required this.id,
     required this.name,
@@ -42,6 +45,7 @@ class ContactEntry {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.address,
   });
 
   factory ContactEntry.fromJson(Map<String, dynamic> json) {
@@ -53,6 +57,7 @@ class ContactEntry {
       abn: json['abn'] as String?,
       bsb: json['bsb'] as String?,
       accountNumber: json['accountNumber'] as String?,
+      address: json['address'] as String?,
     );
   }
 }

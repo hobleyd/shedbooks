@@ -103,6 +103,7 @@ class ContactHandler {
         abn: dto.abn,
         bsb: dto.bsb,
         accountNumber: dto.accountNumber,
+        address: dto.address,
       );
       _auditChanges(request)?.set(_contactSnapshot(contact, redact: true));
       final role = _userRole(request);
@@ -175,6 +176,7 @@ class ContactHandler {
         abn: dto.abn,
         bsb: isAuthorized ? dto.bsb : before?.bsb,
         accountNumber: isAuthorized ? dto.accountNumber : before?.accountNumber,
+        address: dto.address,
       );
       if (before != null) {
         final bSnap = _contactSnapshot(before, redact: true);
@@ -284,6 +286,7 @@ class ContactHandler {
         abn: c.abn,
         bsb: null,
         accountNumber: null,
+        address: c.address,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
         deletedAt: c.deletedAt,
@@ -301,6 +304,7 @@ class ContactHandler {
         'bsb': redact ? (c.bsb != null ? '***' : null) : c.bsb,
         'accountNumber':
             redact ? (c.accountNumber != null ? '***' : null) : c.accountNumber,
+        'address': c.address,
       };
 
   static Response _orgRequired() => Response.unauthorized(

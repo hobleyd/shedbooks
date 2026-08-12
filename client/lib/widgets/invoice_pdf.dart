@@ -32,6 +32,7 @@ class InvoicePdf {
     required String contactName,
     required String contactAbn,
     required bool contactGstRegistered,
+    String contactAddress = '',
     required String invoiceNumber,
     required DateTime invoiceDate,
     required List<InvoiceLineItem> lineItems,
@@ -108,6 +109,14 @@ class InvoicePdf {
                           style: pw.TextStyle(
                               fontSize: 12, fontWeight: pw.FontWeight.bold),
                         ),
+                        if (contactAddress.trim().isNotEmpty) ...[
+                          pw.SizedBox(height: 2),
+                          pw.Text(
+                            contactAddress.trim(),
+                            style: const pw.TextStyle(
+                                fontSize: 9, color: PdfColors.grey700),
+                          ),
+                        ],
                         if (contactAbn.isNotEmpty) ...[
                           pw.SizedBox(height: 2),
                           pw.Text(

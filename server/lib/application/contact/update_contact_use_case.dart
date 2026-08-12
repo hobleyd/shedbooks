@@ -34,6 +34,7 @@ class UpdateContactUseCase {
     String? abn,
     String? bsb,
     String? accountNumber,
+    String? address,
   }) async {
     if (name.trim().isEmpty) {
       throw const ContactValidationException('Name must not be empty');
@@ -79,6 +80,7 @@ class UpdateContactUseCase {
       abn: contactType == ContactType.company ? abn?.trim() : null,
       bsb: bsb?.trim(),
       accountNumber: accountNumber?.trim(),
+      address: address?.trim().isEmpty ?? true ? null : address!.trim(),
     );
   }
 }

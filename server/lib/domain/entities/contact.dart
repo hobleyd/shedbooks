@@ -43,6 +43,9 @@ class Contact {
   /// Bank account number (6-10 digits) for ABA payments.
   final String? accountNumber;
 
+  /// Multi-line postal/billing address, used on invoices raised against this contact.
+  final String? address;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -60,6 +63,7 @@ class Contact {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.address,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,

@@ -42,13 +42,14 @@ class PostgresContactRepository implements IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    String? address,
   }) async {
     final id = _uuid.v4();
     final result = await _pool.execute(
       Sql.named('''
-        INSERT INTO contacts (id, entity_id, name, contact_type, gst_registered, abn, bsb, account_number)
-        VALUES (@id::uuid, @entityId, @name, @contactType::contact_type, @gstRegistered, @abn, @bsb, @accountNumber)
-        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
+        INSERT INTO contacts (id, entity_id, name, contact_type, gst_registered, abn, bsb, account_number, address)
+        VALUES (@id::uuid, @entityId, @name, @contactType::contact_type, @gstRegistered, @abn, @bsb, @accountNumber, @address)
+        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
@@ -59,6 +60,7 @@ class PostgresContactRepository implements IContactRepository {
         'abn': abn,
         'bsb': bsb != null ? _enc.encrypt(bsb) : null,
         'accountNumber': accountNumber != null ? _enc.encrypt(accountNumber) : null,
+        'address': address,
       },
     );
     return _mapRow(result.first.toColumnMap());
@@ -68,7 +70,7 @@ class PostgresContactRepository implements IContactRepository {
   Future<Contact?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
+        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
         FROM contacts
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -85,7 +87,7 @@ class PostgresContactRepository implements IContactRepository {
   Future<List<Contact>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
+        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
         FROM contacts
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -107,6 +109,7 @@ class PostgresContactRepository implements IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    String? address,
   }) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -117,11 +120,12 @@ class PostgresContactRepository implements IContactRepository {
             abn            = @abn,
             bsb            = @bsb,
             account_number = @accountNumber,
+            address        = @address,
             updated_at     = NOW()
         WHERE id = @id::uuid
           AND entity_id = @entityId
           AND deleted_at IS NULL
-        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, created_at, updated_at, deleted_at
+        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
@@ -132,6 +136,7 @@ class PostgresContactRepository implements IContactRepository {
         'abn': abn,
         'bsb': bsb != null ? _enc.encrypt(bsb) : null,
         'accountNumber': accountNumber != null ? _enc.encrypt(accountNumber) : null,
+        'address': address,
       },
     );
 
@@ -167,6 +172,7 @@ class PostgresContactRepository implements IContactRepository {
       accountNumber: row['account_number'] != null
           ? _enc.decrypt(row['account_number'] as String)
           : null,
+      address: row['address'] as String?,
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,

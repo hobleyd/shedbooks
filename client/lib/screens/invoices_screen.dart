@@ -64,12 +64,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   String? _editingId;
   String? _editingContactName;
   bool _editingContactGstRegistered = false;
+  ContactEntry? _editingContact;
   bool _inlineSaving = false;
   bool _inlineLoadingDetails = false;
 
   // Inline form controllers (created on open, disposed on close)
   ContactPickerController? _inlineContactController;
   TextEditingController? _inlineNumberController;
+  TextEditingController? _editingAddressController;
   DateTime _inlineDate = DateTime.now();
   BankAccountSummary? _inlineBankAccount;
   List<InvoiceLineItem> _inlineLineItems = [];
@@ -162,7 +164,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   void _startAdd() {
     _disposeInlineControllers();
-    final controller = ContactPickerController(onlyCompanies: true);
+    final controller = ContactPickerController();
     controller.addListener(_updateInlineCalculations);
     setState(() {
       _addingNew = true;
@@ -179,12 +181,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   Future<void> _startEdit(InvoiceEntry inv) async {
     _disposeInlineControllers();
+    final contact = _contacts[inv.contactId];
     setState(() {
       _editingId = inv.id;
-      _editingContactName =
-          _contacts[inv.contactId]?.name ?? inv.contactId;
-      _editingContactGstRegistered =
-          _contacts[inv.contactId]?.gstRegistered ?? false;
+      _editingContact = contact;
+      _editingContactName = contact?.name ?? inv.contactId;
+      _editingContactGstRegistered = contact?.gstRegistered ?? false;
+      _editingAddressController =
+          TextEditingController(text: contact?.address ?? '');
       _addingNew = false;
       _inlineLoadingDetails = true;
       _inlineSaving = false;
@@ -242,6 +246,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       _addingNew = false;
       _editingId = null;
       _editingContactName = null;
+      _editingContact = null;
       _inlineLoadingDetails = false;
       _inlineSaving = false;
     });
@@ -253,6 +258,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     _inlineContactController = null;
     _inlineNumberController?.dispose();
     _inlineNumberController = null;
+    _editingAddressController?.dispose();
+    _editingAddressController = null;
     for (final item in _inlineLineItems) {
       item.dispose();
     }
@@ -324,6 +331,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
     setState(() => _inlineSaving = true);
 
+    String? addressError;
+
     try {
       final client = context.read<ApiClient>();
 
@@ -349,15 +358,24 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   'Update failed (${res.statusCode})';
           throw Exception(err);
         }
+        final contact = _editingContact;
+        if (contact != null) {
+          addressError = await _persistContactAddressIfChanged(
+            contact: contact,
+            newAddress: _editingAddressController?.text ?? '',
+          );
+        }
       } else {
         final controller = _inlineContactController!;
         String contactId;
         if (controller.isNew) {
+          final isCompany = controller.contactType == ContactType.company;
           final contactBody = jsonEncode({
             'name': controller.nameController.text.trim(),
-            'contactType': ContactType.company.name,
+            'contactType': controller.contactType.name,
             'gstRegistered': controller.gstRegistered,
-            'abn': controller.abnController.text.trim(),
+            if (isCompany) 'abn': controller.abnController.text.trim(),
+            'address': controller.addressController.text.trim(),
           });
           final res = await client.post('/contacts', contactBody);
           if (!mounted) return;
@@ -366,6 +384,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           context.read<ReferenceDataCache>().refreshContacts();
         } else {
           contactId = controller.selectedContact!.id;
+          addressError = await _persistContactAddressIfChanged(
+            contact: controller.selectedContact!,
+            newAddress: controller.addressController.text,
+          );
         }
 
         final body = jsonEncode({
@@ -395,13 +417,52 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       _cancelInline();
       await _refreshInvoices();
       if (mounted) {
-        _showSnackbar(isEdit ? 'Invoice updated.' : 'Invoice saved.');
+        final savedMsg = isEdit ? 'Invoice updated.' : 'Invoice saved.';
+        _showSnackbar(addressError == null
+            ? savedMsg
+            : '$savedMsg Contact address could not be updated: $addressError');
       }
     } catch (e) {
       if (mounted) {
         setState(() => _inlineSaving = false);
         _showSnackbar(isEdit ? 'Failed to update: $e' : 'Failed to save: $e');
       }
+    }
+  }
+
+  /// Persists [newAddress] onto [contact] if it differs from the contact's
+  /// current address. The full contact is resent (PUT replaces the whole
+  /// record) so bank details and other fields are preserved unchanged.
+  ///
+  /// Returns null on success (or if there was nothing to persist), or an
+  /// error message describing why the address could not be saved.
+  Future<String?> _persistContactAddressIfChanged({
+    required ContactEntry contact,
+    required String newAddress,
+  }) async {
+    final trimmed = newAddress.trim();
+    if (trimmed == (contact.address ?? '').trim()) return null;
+
+    try {
+      final client = context.read<ApiClient>();
+      final body = jsonEncode({
+        'name': contact.name,
+        'contactType': contact.contactType.name,
+        'gstRegistered': contact.gstRegistered,
+        'abn': contact.abn,
+        'bsb': contact.bsb,
+        'accountNumber': contact.accountNumber,
+        'address': trimmed,
+      });
+      final res = await client.put('/contacts/${contact.id}', body);
+      if (res.statusCode == 200) {
+        if (mounted) context.read<ReferenceDataCache>().refreshContacts();
+        return null;
+      }
+      return (jsonDecode(res.body) as Map?)?['error']?.toString() ??
+          'update failed (${res.statusCode})';
+    } catch (e) {
+      return '$e';
     }
   }
 
@@ -472,6 +533,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         contactName: contact?.name ?? '',
         contactAbn: contact?.abn ?? '',
         contactGstRegistered: contact?.gstRegistered ?? false,
+        contactAddress: contact?.address ?? '',
         invoiceNumber: inv.invoiceNumber,
         invoiceDate: DateTime.parse(inv.invoiceDate),
         lineItems: lineItems,
@@ -799,9 +861,26 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               if (isEdit)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    'Contact: ${_editingContactName ?? ''}',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Contact: ${_editingContactName ?? ''}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _editingAddressController,
+                        minLines: 3,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Address',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                          isDense: true,
+                        ),
+                      ),
+                    ],
                   ),
                 )
               else

@@ -169,5 +169,83 @@ void main() {
         throwsA(isA<ContactNotFoundException>()),
       );
     });
+
+    test('trims whitespace from address before persisting', () async {
+      // Arrange
+      when(
+        () => repository.update(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          address: '1 Main St\nSydney NSW 2000',
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: 'entity-1',
+        name: 'Acme Pty Ltd',
+        contactType: ContactType.company,
+        gstRegistered: true,
+        abn: '51824753556',
+        address: '  1 Main St\nSydney NSW 2000  ',
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          address: '1 Main St\nSydney NSW 2000',
+        ),
+      ).called(1);
+    });
+
+    test('passes null address when address is blank or omitted', () async {
+      // Arrange
+      when(
+        () => repository.update(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          address: null,
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: 'entity-1',
+        name: 'Acme Pty Ltd',
+        contactType: ContactType.company,
+        gstRegistered: true,
+        abn: '51824753556',
+        address: '   ',
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          address: null,
+        ),
+      ).called(1);
+    });
   });
 }

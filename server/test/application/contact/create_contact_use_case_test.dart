@@ -216,5 +216,74 @@ void main() {
         ),
       ).called(1);
     });
+
+    test('trims whitespace from address before persisting', () async {
+      // Arrange
+      when(
+        () => repository.create(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          address: '1 Main St\nSydney NSW 2000',
+        ),
+      ).thenAnswer((_) async => tCompany);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        name: 'Acme Corp',
+        contactType: ContactType.company,
+        gstRegistered: true,
+        abn: '51824753556',
+        address: '  1 Main St\nSydney NSW 2000  ',
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          address: '1 Main St\nSydney NSW 2000',
+        ),
+      ).called(1);
+    });
+
+    test('passes null address when address is blank or omitted', () async {
+      // Arrange
+      when(
+        () => repository.create(
+          entityId: tEntityId,
+          name: 'Jane Smith',
+          contactType: ContactType.person,
+          gstRegistered: false,
+          address: null,
+        ),
+      ).thenAnswer((_) async => tPerson);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        name: 'Jane Smith',
+        contactType: ContactType.person,
+        gstRegistered: false,
+        address: '   ',
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: tEntityId,
+          name: 'Jane Smith',
+          contactType: ContactType.person,
+          gstRegistered: false,
+          address: null,
+        ),
+      ).called(1);
+    });
   });
 }
