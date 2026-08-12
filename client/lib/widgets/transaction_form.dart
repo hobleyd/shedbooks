@@ -389,6 +389,29 @@ class TransactionFormState extends State<TransactionForm> {
     });
   }
 
+  /// On Money-Out, cash and non-cash accounts show different receipt fields
+  /// ([_cashReceiptController] vs [_receiptOutController]) for what is
+  /// conceptually the same field, so switching between them swaps which
+  /// one is visible — carry the already-typed text across so it doesn't
+  /// appear to vanish. [_receiptOutController] is unrelated on Money-In
+  /// (it's pre-filled with the next Money-Out receipt number regardless of
+  /// direction, ready for if the GL account picked turns out to be
+  /// Money-Out) so this carry-over must not run there.
+  void _onBankAccountChanged(String? id) {
+    setState(() {
+      final wasCash = _isCash;
+      _selectedBankAccountId = id;
+      final isCashNow = _isCash;
+      if (_isMoneyOut && wasCash != isCashNow) {
+        if (isCashNow && _cashReceiptController.text.isEmpty) {
+          _cashReceiptController.text = _receiptOutController.text;
+        } else if (!isCashNow && _receiptOutController.text.isEmpty) {
+          _receiptOutController.text = _cashReceiptController.text;
+        }
+      }
+    });
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -794,9 +817,7 @@ class TransactionFormState extends State<TransactionForm> {
                         style: TextStyle(fontSize: fontSize)),
                   ))
               .toList(),
-          onChanged: widget.isSaving
-              ? null
-              : (id) => setState(() => _selectedBankAccountId = id),
+          onChanged: widget.isSaving ? null : _onBankAccountChanged,
         ),
       ),
     );
@@ -839,7 +860,6 @@ class TransactionFormState extends State<TransactionForm> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (isMoneyOut) const SizedBox(width: 40),
                 SizedBox(
                   width: 140,
                   child: _stretch(_buildDateFieldCompact()),
@@ -894,7 +914,7 @@ class TransactionFormState extends State<TransactionForm> {
                             maxLines: null,
                             textAlignVertical: TextAlignVertical.center,
                             style: const TextStyle(fontSize: 13),
-                            decoration: dec.copyWith(labelText: 'Receipt'),
+                            decoration: dec.copyWith(labelText: 'Receipt No.'),
                           )),
                   ),
                   const SizedBox(width: 8),
@@ -995,7 +1015,6 @@ class TransactionFormState extends State<TransactionForm> {
           // Save / Cancel
           Row(
             children: [
-              if (isMoneyOut) const SizedBox(width: 40),
               OutlinedButton(
                 onPressed: widget.isSaving ? null : widget.onCancel,
                 child: const Text('Cancel'),
