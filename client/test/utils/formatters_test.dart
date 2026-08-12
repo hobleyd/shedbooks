@@ -62,34 +62,38 @@ void main() {
       expect(Formatters.budgetPctLabel(0, 5000), equals(''));
     });
 
-    test('normal positive — actual equals budget gives 100%', () {
-      expect(Formatters.budgetPctLabel(10000, 10000), equals('100%'));
+    test('normal positive — actual equals budget gives 0% variance', () {
+      expect(Formatters.budgetPctLabel(10000, 10000), equals('0%'));
     });
 
-    test('actual exceeds budget — shows plain percentage', () {
-      expect(Formatters.budgetPctLabel(10000, 15000), equals('150%'));
+    test('actual exceeds budget — shows plain percentage over', () {
+      // (15000 - 10000) / 10000 * 100 = 50%
+      expect(Formatters.budgetPctLabel(10000, 15000), equals('50%'));
     });
 
     test('actual below budget — wrapped in parens', () {
+      // (5000 - 10000) / 10000 * 100 = -50%, abs = 50%
       expect(Formatters.budgetPctLabel(10000, 5000), equals('(50%)'));
     });
 
-    test('actual zero — wrapped in parens showing 0%', () {
-      expect(Formatters.budgetPctLabel(10000, 0), equals('(0%)'));
+    test('actual zero — wrapped in parens showing 100% variance', () {
+      // (0 - 10000) / 10000 * 100 = -100%, abs = 100%
+      expect(Formatters.budgetPctLabel(10000, 0), equals('(100%)'));
     });
 
     test('percentage above 999 — shows >999%', () {
+      // (64609 - 2300) / 2300 * 100 = 2709% (approx)
       expect(Formatters.budgetPctLabel(2300, 64609), equals('>999%'));
     });
 
     test('percentage exactly 999 — shows 999% (not capped)', () {
-      // 99900 / 10000 * 100 = 999%
-      expect(Formatters.budgetPctLabel(10000, 99900), equals('999%'));
+      // (109900 - 10000) / 10000 * 100 = 999%
+      expect(Formatters.budgetPctLabel(10000, 109900), equals('999%'));
     });
 
     test('percentage just over 999 — shows >999%', () {
-      // 100100 / 10000 * 100 = 1001%
-      expect(Formatters.budgetPctLabel(10000, 100100), equals('>999%'));
+      // (110000 - 10000) / 10000 * 100 = 1000%
+      expect(Formatters.budgetPctLabel(10000, 110000), equals('>999%'));
     });
   });
 }

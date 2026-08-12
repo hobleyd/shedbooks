@@ -1060,10 +1060,15 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
     final row = widget.row;
 
     _descController = TextEditingController(text: row.description);
+    // Money-In (credit) transactions created from a bank import are always
+    // "Bank Transfer" — a sequential cash-style receipt number only applies
+    // to cash transactions, which never come from a bank statement.
     _receiptController = TextEditingController(
-      text: row.parsedReceipts.length == 1
-          ? row.parsedReceipts.first
-          : widget.nextReceipt,
+      text: row.isBankDebit
+          ? (row.parsedReceipts.length == 1
+              ? row.parsedReceipts.first
+              : widget.nextReceipt)
+          : 'Bank Transfer',
     );
     _totalController = TextEditingController(
       text: _centsToField(row.amountCents),
@@ -1133,8 +1138,9 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
       setState(() => _error = 'Please select a GL account.');
       return;
     }
-    final receipt = _receiptController.text.trim();
-    if (receipt.isEmpty) {
+    final receipt =
+        widget.row.isBankDebit ? _receiptController.text.trim() : 'Bank Transfer';
+    if (widget.row.isBankDebit && receipt.isEmpty) {
       setState(() => _error = 'Receipt number is required.');
       return;
     }
@@ -1276,13 +1282,16 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
               ),
               const SizedBox(height: 12),
 
-              // Receipt
-              _label('Receipt Number *'),
-              TextField(
-                controller: _receiptController,
-                decoration: const InputDecoration(isDense: true),
-              ),
-              const SizedBox(height: 12),
+              // Receipt — Money-In (credit) transactions from a bank import are
+              // always "Bank Transfer"; only Money-Out needs a receipt number.
+              if (widget.row.isBankDebit) ...[
+                _label('Receipt Number *'),
+                TextField(
+                  controller: _receiptController,
+                  decoration: const InputDecoration(isDense: true),
+                ),
+                const SizedBox(height: 12),
+              ],
 
               // Description
               _label('Description'),

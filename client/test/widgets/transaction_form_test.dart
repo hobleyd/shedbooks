@@ -17,6 +17,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shedbooks_client/models/bank_account_summary.dart';
 import 'package:shedbooks_client/models/contact_entry.dart';
 import 'package:shedbooks_client/models/general_ledger_entry.dart';
 import 'package:shedbooks_client/models/transaction_entry.dart';
@@ -59,9 +60,45 @@ final _tx = TransactionEntry(
   transactionDate: '2026-04-01',
 );
 
+const _glIn = GeneralLedgerEntry(
+  id: 'gl4',
+  label: 'Membership Fees',
+  description: 'Membership Fees',
+  gstApplicable: true,
+  direction: GlDirection.moneyIn,
+);
+
 const _contacts = [
   ContactEntry(id: 'c1', name: 'Acme', contactType: ContactType.company, gstRegistered: true),
 ];
+
+const _bankCash = BankAccountSummary(
+  id: 'cash1',
+  accountName: 'Cash',
+  bankName: 'Cash',
+  bsb: '000000',
+  accountNumber: '000000000',
+  accountType: 'cash',
+);
+const _bankA = BankAccountSummary(
+  id: 'bank1',
+  accountName: 'Everyday Account',
+  bankName: 'CBA',
+  bsb: '062000',
+  accountNumber: '12345678',
+  accountType: 'transaction',
+);
+const _bankB = BankAccountSummary(
+  id: 'bank2',
+  accountName: 'Savings Account',
+  bankName: 'CBA',
+  bsb: '062000',
+  accountNumber: '87654321',
+  accountType: 'savings',
+);
+// Two non-cash accounts — deliberately ambiguous, so the form must not
+// silently default to either one; the user has to pick.
+const _multiBankAccounts = [_bankCash, _bankA, _bankB];
 
 Widget _editHarness() => MaterialApp(
       home: Scaffold(
@@ -93,6 +130,27 @@ Widget _addHarness() => MaterialApp(
       ),
     );
 
+/// Compact "Add transaction" harness with multiple bank accounts, so the
+/// account dropdown has real choices instead of just Cash.
+Widget _multiAccountHarness(
+  GlDirection direction, {
+  void Function(TransactionFormData)? onSave,
+}) =>
+    MaterialApp(
+      home: Scaffold(
+        body: TransactionForm(
+          contacts: _contacts,
+          glEntries: const [_gl, _glNoGst, _glIn],
+          bankAccounts: _multiBankAccounts,
+          nextMoneyOutReceipt: 'P-26002',
+          initialDirection: direction,
+          compact: true,
+          isSaving: false,
+          onSave: onSave ?? (_) {},
+        ),
+      ),
+    );
+
 Finder _fieldLabeled(String label) => find.ancestor(
       of: find.text(label),
       matching: find.byType(TextFormField),
@@ -102,6 +160,13 @@ Future<void> _selectGlAccount(WidgetTester tester, String description) async {
   await tester.tap(find.byType(DropdownButton<GeneralLedgerEntry>));
   await tester.pumpAndSettle();
   await tester.tap(find.text(description).last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _selectAccount(WidgetTester tester, String accountName) async {
+  await tester.tap(find.byType(DropdownButton<String>));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(accountName).last);
   await tester.pumpAndSettle();
 }
 
@@ -226,6 +291,103 @@ void main() {
 
       expect(find.widgetWithText(TextFormField, '100.00'), findsOneWidget); // Amount unchanged
       expect(find.widgetWithText(TextFormField, '120.00'), findsOneWidget); // Total = 100 + 20
+    });
+  });
+
+  group('Account dropdown (replaces the Cash checkbox)', () {
+    testWidgets('Money-In: selecting Cash shows the receipt number field',
+        (tester) async {
+      await tester.pumpWidget(_multiAccountHarness(GlDirection.moneyIn));
+      await tester.pumpAndSettle();
+
+      expect(_fieldLabeled('Receipt No.'), findsNothing);
+
+      await _selectAccount(tester, 'Cash');
+
+      expect(_fieldLabeled('Receipt No.'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Money-In: selecting a bank account hides the receipt field and '
+        'submits receiptNumber "Bank Transfer"', (tester) async {
+      TransactionFormData? captured;
+      await tester.pumpWidget(
+        _multiAccountHarness(GlDirection.moneyIn, onSave: (d) => captured = d),
+      );
+      await tester.pumpAndSettle();
+
+      await _selectAccount(tester, 'Everyday Account');
+      expect(_fieldLabeled('Receipt No.'), findsNothing);
+
+      await _selectGlAccount(tester, 'Membership Fees');
+      await tester.enterText(_fieldLabeled('Contact'), 'Acme');
+      await tester.enterText(_fieldLabeled('Total'), '110.00');
+      await tester.pump();
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(captured, isNotNull);
+      expect(captured!.receiptNumber, 'Bank Transfer');
+      expect(captured!.isCash, isFalse);
+      expect(captured!.bankAccountId, 'bank1');
+    });
+
+    testWidgets(
+        'Money-Out: receipt number text survives switching between accounts',
+        (tester) async {
+      await tester.pumpWidget(_multiAccountHarness(GlDirection.moneyOut));
+      await tester.pumpAndSettle();
+
+      await _selectAccount(tester, 'Cash');
+      expect(_fieldLabeled('Receipt No.'), findsOneWidget);
+      await tester.enterText(_fieldLabeled('Receipt No.'), 'CASH-999');
+      await tester.pump();
+
+      // Switching to a bank account swaps to the auto-generated receipt
+      // field — it must still hold its own untouched value.
+      await _selectAccount(tester, 'Everyday Account');
+      expect(find.widgetWithText(TextFormField, 'P-26002'), findsOneWidget);
+
+      // Switching back to Cash must NOT have cleared what was typed earlier.
+      await _selectAccount(tester, 'Cash');
+      expect(find.widgetWithText(TextFormField, 'CASH-999'), findsOneWidget);
+    });
+
+    testWidgets(
+        'editing a transaction whose bankAccountId is not in the current '
+        'account list does not crash', (tester) async {
+      final txStaleAccount = TransactionEntry(
+        id: 't9',
+        contactId: 'c1',
+        generalLedgerId: 'gl1',
+        receiptNumber: 'REC-777',
+        description: '',
+        transactionType: 'debit',
+        amount: 5000,
+        gstAmount: 500,
+        totalAmount: 5500,
+        transactionDate: '2026-04-01',
+        bankAccountId: 'deleted-account-id',
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: TransactionForm(
+            contacts: _contacts,
+            glEntries: const [_gl, _glOther, _glNoGst],
+            bankAccounts: _multiBankAccounts,
+            nextMoneyOutReceipt: 'P-26002',
+            initial: txStaleAccount,
+            compact: true,
+            isSaving: false,
+            onSave: (_) {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
     });
   });
 }

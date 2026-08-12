@@ -63,7 +63,11 @@ class MarkInvoicePaidUseCase {
     }
 
     // Mark created transactions as bank-matched.
-    await _transactionRepository.bankMatch(createdIds, entityId: entityId);
+    await _transactionRepository.bankMatch(
+      createdIds,
+      entityId: entityId,
+      bankAccountId: invoice.bankAccountId,
+    );
 
     return _invoiceRepository.markPaid(invoiceId,
         entityId: entityId, paidAt: DateTime.now().toUtc());

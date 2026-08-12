@@ -39,6 +39,7 @@ class CreateTransactionUseCase {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    String? bankAccountId,
   }) async {
     TransactionValidator.validate(
       amount: amount,
@@ -62,6 +63,7 @@ class CreateTransactionUseCase {
       description: description.trim(),
       transactionDate: transactionDate,
       isCash: isCash,
+      bankAccountId: bankAccountId,
     );
   }
 

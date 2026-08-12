@@ -19,7 +19,10 @@
 class BankMatchRequest {
   final List<String> transactionIds;
 
-  const BankMatchRequest({required this.transactionIds});
+  /// The bank account these transactions were reconciled against, if known.
+  final String? bankAccountId;
+
+  const BankMatchRequest({required this.transactionIds, this.bankAccountId});
 
   factory BankMatchRequest.fromJson(Map<String, dynamic> json) {
     final ids = json['transactionIds'];
@@ -28,6 +31,7 @@ class BankMatchRequest {
     }
     return BankMatchRequest(
       transactionIds: ids.cast<String>(),
+      bankAccountId: json['bankAccountId'] as String?,
     );
   }
 }

@@ -30,6 +30,7 @@ class TransactionEntry {
   final bool bankMatched;
   final bool isCash;
   final String? abaBatchName;
+  final String? bankAccountId;
 
   const TransactionEntry({
     required this.id,
@@ -45,6 +46,7 @@ class TransactionEntry {
     this.bankMatched = false,
     this.isCash = false,
     this.abaBatchName,
+    this.bankAccountId,
   });
 
   factory TransactionEntry.fromJson(Map<String, dynamic> json) => TransactionEntry(
@@ -61,11 +63,13 @@ class TransactionEntry {
         bankMatched: (json['bankMatched'] as bool?) ?? false,
         isCash: (json['isCash'] as bool?) ?? false,
         abaBatchName: json['abaBatchName'] as String?,
+        bankAccountId: json['bankAccountId'] as String?,
       );
 
   bool get isCredit => transactionType == 'credit';
 
-  TransactionEntry copyWith({bool? bankMatched}) => TransactionEntry(
+  TransactionEntry copyWith({bool? bankMatched, String? bankAccountId}) =>
+      TransactionEntry(
         id: id,
         contactId: contactId,
         generalLedgerId: generalLedgerId,
@@ -79,5 +83,6 @@ class TransactionEntry {
         bankMatched: bankMatched ?? this.bankMatched,
         isCash: isCash,
         abaBatchName: abaBatchName,
+        bankAccountId: bankAccountId ?? this.bankAccountId,
       );
 }

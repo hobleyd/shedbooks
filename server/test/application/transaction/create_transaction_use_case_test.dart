@@ -442,5 +442,56 @@ void main() {
         ),
       ).called(1);
     });
+
+    test('passes bankAccountId through to the repository', () async {
+      // Arrange
+      const tBankAccountId = '00000000-0000-0000-0000-000000000009';
+      when(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankAccountId: tBankAccountId,
+        ),
+      ).thenAnswer((_) async => tTransaction);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        contactId: 'c1',
+        generalLedgerId: 'g1',
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        description: '',
+        transactionDate: tDate,
+        bankAccountId: tBankAccountId,
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankAccountId: tBankAccountId,
+        ),
+      ).called(1);
+    });
   });
 }

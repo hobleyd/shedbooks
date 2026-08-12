@@ -114,6 +114,7 @@ class TransactionHandler {
         description: dto.description,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash,
+        bankAccountId: dto.bankAccountId,
       );
       final contactLabel = await _contactLabel(transaction.contactId, entityId);
       final glLabel = await _glLabel(transaction.generalLedgerId, entityId);
@@ -183,6 +184,7 @@ class TransactionHandler {
         description: dto.description,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash,
+        bankAccountId: dto.bankAccountId,
       );
       if (before != null) {
         final beforeContactLabel = await _contactLabel(before.contactId, entityId);
@@ -253,7 +255,11 @@ class TransactionHandler {
     }
 
     try {
-      await _bankMatch.execute(ids: dto.transactionIds, entityId: entityId);
+      await _bankMatch.execute(
+        ids: dto.transactionIds,
+        entityId: entityId,
+        bankAccountId: dto.bankAccountId,
+      );
     } catch (e) {
       return _serverError('Failed to save bank matches: $e');
     }

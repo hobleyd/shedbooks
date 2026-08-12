@@ -42,6 +42,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    String? bankAccountId,
   }) async {
     try {
       final id = _uuid.v4();
@@ -50,18 +51,21 @@ class PostgresTransactionRepository implements ITransactionRepository {
           INSERT INTO transactions (
             id, entity_id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type, receipt_number, description, transaction_date,
-            is_cash, bank_matched
+            is_cash, bank_matched, bank_account_id
           )
           VALUES (
             @id::uuid, @entityId, @contactId::uuid, @generalLedgerId::uuid,
             @amount, @gstAmount, @transactionType::transaction_type,
             @receiptNumber, @description, @transactionDate::date,
-            @isCash, @isCash
+            @isCash, @isCash,
+            (SELECT id FROM bank_accounts
+             WHERE id = @bankAccountId::uuid AND entity_id = @entityId AND deleted_at IS NULL)
           )
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
+            created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
+            bank_account_id
         '''),
         parameters: {
           'id': id,
@@ -75,6 +79,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
           'isCash': isCash,
+          'bankAccountId': bankAccountId,
         },
       );
       return _mapRow(result.first.toColumnMap());
@@ -91,7 +96,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
+          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
+          bank_account_id
         FROM transactions
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -111,7 +117,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
+          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
+          bank_account_id
         FROM transactions
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -137,6 +144,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required DateTime transactionDate,
     bool isCash = false,
     bool bankMatched = false,
+    String? bankAccountId,
   }) async {
     try {
       final result = await _pool.execute(
@@ -152,6 +160,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
               transaction_date  = @transactionDate::date,
               is_cash           = @isCash,
               bank_matched      = @bankMatched,
+              bank_account_id   = (SELECT id FROM bank_accounts
+                                    WHERE id = @bankAccountId::uuid AND entity_id = @entityId AND deleted_at IS NULL),
               updated_at        = NOW()
           WHERE id = @id::uuid
             AND entity_id = @entityId
@@ -159,7 +169,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, description, transaction_date,
-            created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name
+            created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
+            bank_account_id
         '''),
         parameters: {
           'id': id,
@@ -174,6 +185,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
           'isCash': isCash,
           'bankMatched': bankMatched,
+          'bankAccountId': bankAccountId,
         },
       );
 
@@ -262,20 +274,30 @@ class PostgresTransactionRepository implements ITransactionRepository {
   }
 
   @override
-  Future<void> bankMatch(List<String> ids, {required String entityId}) async {
+  Future<void> bankMatch(
+    List<String> ids, {
+    required String entityId,
+    String? bankAccountId,
+  }) async {
     if (ids.isEmpty) return;
     await _pool.runTx((tx) async {
       for (final id in ids) {
         await tx.execute(
           Sql.named('''
             UPDATE transactions
-            SET bank_matched = TRUE,
-                updated_at   = NOW()
+            SET bank_matched    = TRUE,
+                bank_account_id = (SELECT id FROM bank_accounts
+                                    WHERE id = @bankAccountId::uuid AND entity_id = @entityId AND deleted_at IS NULL),
+                updated_at      = NOW()
             WHERE id = @id::uuid
               AND entity_id = @entityId
               AND deleted_at IS NULL
           '''),
-          parameters: {'id': id, 'entityId': entityId},
+          parameters: {
+            'id': id,
+            'entityId': entityId,
+            'bankAccountId': bankAccountId,
+          },
         );
       }
     });
@@ -306,6 +328,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
       bankMatched: row['bank_matched'] as bool? ?? false,
       isCash: row['is_cash'] as bool? ?? false,
       abaBatchName: row['aba_batch_name'] as String?,
+      bankAccountId: row['bank_account_id']?.toString(),
     );
   }
 

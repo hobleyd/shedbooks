@@ -375,5 +375,132 @@ void main() {
         throwsA(isA<TransactionValidationException>()),
       );
     });
+
+    test('passes an explicit bankAccountId through to the repository', () async {
+      // Arrange — tExisting has no bankAccountId recorded.
+      const tBankAccountId = '00000000-0000-0000-0000-000000000009';
+      when(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: tBankAccountId,
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: tEntityId,
+        contactId: tExisting.contactId,
+        generalLedgerId: tExisting.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        description: '',
+        transactionDate: tDate,
+        bankAccountId: tBankAccountId,
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: tBankAccountId,
+        ),
+      ).called(1);
+    });
+
+    test('preserves the existing bankAccountId when none is supplied', () async {
+      // Arrange — tExisting.bankAccountId is null; omitting the param must not
+      // overwrite a previously-set reconciliation match with null.
+      final tExistingMatched = Transaction(
+        id: tId,
+        contactId: tExisting.contactId,
+        generalLedgerId: tExisting.generalLedgerId,
+        amount: tExisting.amount,
+        gstAmount: tExisting.gstAmount,
+        transactionType: tExisting.transactionType,
+        receiptNumber: tExisting.receiptNumber,
+        description: tExisting.description,
+        transactionDate: tExisting.transactionDate,
+        createdAt: tExisting.createdAt,
+        updatedAt: tExisting.updatedAt,
+        bankAccountId: '00000000-0000-0000-0000-000000000008',
+      );
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tExistingMatched);
+      when(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: '00000000-0000-0000-0000-000000000008',
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: tEntityId,
+        contactId: tExisting.contactId,
+        generalLedgerId: tExisting.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        description: '',
+        transactionDate: tDate,
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: '00000000-0000-0000-0000-000000000008',
+        ),
+      ).called(1);
+    });
   });
 }

@@ -65,6 +65,12 @@ class Transaction {
   /// The WMS ABA batch name this transaction was included in (e.g. WMS260620001), if any.
   final String? abaBatchName;
 
+  /// FK — the bank account (or the entity's system Cash account) this
+  /// transaction relates to, if known. Set explicitly on create/edit, or
+  /// when the transaction is bank-matched during reconciliation; null for
+  /// legacy transactions recorded before this was tracked.
+  final String? bankAccountId;
+
   const Transaction({
     required this.id,
     required this.contactId,
@@ -81,6 +87,7 @@ class Transaction {
     this.bankMatched = false,
     this.isCash = false,
     this.abaBatchName,
+    this.bankAccountId,
   });
 
   bool get isDeleted => deletedAt != null;

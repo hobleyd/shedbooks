@@ -22,6 +22,7 @@ class BankAccountSummary {
   final String bankName;
   final String bsb;
   final String accountNumber;
+  final String accountType;
 
   const BankAccountSummary({
     required this.id,
@@ -29,6 +30,7 @@ class BankAccountSummary {
     required this.bankName,
     required this.bsb,
     required this.accountNumber,
+    this.accountType = 'transaction',
   });
 
   factory BankAccountSummary.fromJson(Map<String, dynamic> json) =>
@@ -38,9 +40,13 @@ class BankAccountSummary {
         bankName: json['bankName'] as String? ?? '',
         bsb: json['bsb'] as String? ?? '',
         accountNumber: json['accountNumber'] as String? ?? '',
+        accountType: json['accountType'] as String? ?? 'transaction',
       );
 
   /// BSB formatted as XXX-XXX for display.
   String get bsbFormatted =>
       bsb.length == 6 ? '${bsb.substring(0, 3)}-${bsb.substring(3)}' : bsb;
+
+  /// Whether this is the entity's system Cash account.
+  bool get isCash => accountType == 'cash';
 }

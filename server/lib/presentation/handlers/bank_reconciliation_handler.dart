@@ -51,6 +51,7 @@ class BankReconciliationHandler {
               'bankName': a.bankName,
               'bsb': a.bsb,
               'accountNumber': a.accountNumber,
+              'accountType': a.accountType.name,
             })
         .toList();
     return Response.ok(jsonEncode(payload), headers: _jsonHeaders);

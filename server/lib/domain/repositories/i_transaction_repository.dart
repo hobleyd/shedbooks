@@ -32,6 +32,7 @@ abstract interface class ITransactionRepository {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    String? bankAccountId,
   });
 
   /// Returns a transaction by [id] within [entityId], or null if not found / deleted.
@@ -56,6 +57,7 @@ abstract interface class ITransactionRepository {
     required DateTime transactionDate,
     bool isCash = false,
     bool bankMatched = false,
+    String? bankAccountId,
   });
 
   /// Soft-deletes the transaction with [id] within [entityId].
@@ -73,9 +75,14 @@ abstract interface class ITransactionRepository {
     required String entityId,
   });
 
-  /// Marks all transactions in [ids] as bank-matched within [entityId].
+  /// Marks all transactions in [ids] as bank-matched within [entityId], recording
+  /// [bankAccountId] as the account they were reconciled against (if known).
   /// Silently ignores IDs that do not exist or are already matched.
-  Future<void> bankMatch(List<String> ids, {required String entityId});
+  Future<void> bankMatch(
+    List<String> ids, {
+    required String entityId,
+    String? bankAccountId,
+  });
 
   /// Stamps [batchName] on all transactions in [ids] within [entityId].
   Future<void> stampAbaBatch(

@@ -30,6 +30,7 @@ import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
+import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
@@ -98,6 +99,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   List<ContactEntry> get _contacts => context.read<ReferenceDataCache>().contacts;
   List<GeneralLedgerEntry> get _glEntries => context.read<ReferenceDataCache>().glEntries;
   List<BankAccountEntry> get _bankAccounts => context.read<ReferenceDataCache>().bankAccounts;
+  // Unlike [_bankAccounts] (admin-only), summaries are available to every
+  // authenticated role — used to populate the transaction form's account
+  // dropdown, which contributors also need when creating transactions.
+  List<BankAccountSummary> get _bankAccountSummaries =>
+      context.read<ReferenceDataCache>().bankAccountSummaries;
   EntityDetails? get _entityDetails => context.read<ReferenceDataCache>().entityDetails;
 
   /// A month is locked only when every bank account has it locked. When bank
@@ -194,6 +200,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         cache.refreshContacts(),
         cache.refreshGl(),
         cache.refreshBankAccounts(),
+        cache.refreshBankAccountSummaries(),
         cache.refreshEntityDetails(),
         cache.refreshLockedMonths(),
       ]);
@@ -679,7 +686,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         'description': data.description,
         'transactionDate':
             '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
-        if (data.isCash) 'isCash': true,
+        'isCash': data.isCash,
+        'bankAccountId': data.bankAccountId,
       });
 
       final res = await context.read<ApiClient>().post('/transactions', body);
@@ -788,7 +796,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         'description': data.description,
         'transactionDate':
             '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
-        if (data.isCash) 'isCash': true,
+        'isCash': data.isCash,
+        'bankAccountId': data.bankAccountId,
       });
 
       final res = await context.read<ApiClient>().put('/transactions/$_editingId', body);
@@ -1337,6 +1346,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             key: ValueKey(isMoneyOut ? 'add-out' : 'add-in'),
             contacts: _contacts,
             glEntries: _glEntries,
+            bankAccounts: _bankAccountSummaries,
             nextMoneyOutReceipt: _formatMoneyOutReceipt(),
             initialDirection:
                 isMoneyOut ? GlDirection.moneyOut : GlDirection.moneyIn,
@@ -1391,6 +1401,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             key: ValueKey('edit-${t.id}'),
             contacts: _contacts,
             glEntries: _glEntries,
+            bankAccounts: _bankAccountSummaries,
             nextMoneyOutReceipt: _formatMoneyOutReceipt(),
             initial: t,
             compact: true,

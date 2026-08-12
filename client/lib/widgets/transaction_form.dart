@@ -18,6 +18,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
@@ -36,6 +37,7 @@ class TransactionFormData {
   final String receiptNumber;
   final String description;
   final bool isCash;
+  final String? bankAccountId;
 
   const TransactionFormData({
     required this.date,
@@ -47,6 +49,7 @@ class TransactionFormData {
     required this.receiptNumber,
     required this.description,
     this.isCash = false,
+    this.bankAccountId,
   });
 }
 
@@ -60,6 +63,7 @@ class TransactionFormData {
 class TransactionForm extends StatefulWidget {
   final List<ContactEntry> contacts;
   final List<GeneralLedgerEntry> glEntries;
+  final List<BankAccountSummary> bankAccounts;
   final String nextMoneyOutReceipt;
   final TransactionEntry? initial;
   final GlDirection? initialDirection;
@@ -72,6 +76,7 @@ class TransactionForm extends StatefulWidget {
     super.key,
     required this.contacts,
     required this.glEntries,
+    this.bankAccounts = const [],
     required this.nextMoneyOutReceipt,
     this.initial,
     this.initialDirection,
@@ -105,10 +110,26 @@ class TransactionFormState extends State<TransactionForm> {
   /// the user just set is preserved.
   _AmountAnchor _anchor = _AmountAnchor.total;
 
-  bool _isCash = false;
-  String _paymentType = 'bankTransfer';
+  /// The account (or the entity's system Cash account) this transaction
+  /// relates to. Null means "not yet chosen" — only auto-defaulted when
+  /// there is exactly one non-cash account, otherwise the user must pick.
+  String? _selectedBankAccountId;
   final TextEditingController _cashReceiptController = TextEditingController();
   final TextEditingController _receiptOutController = TextEditingController();
+
+  String? get _cashAccountId =>
+      widget.bankAccounts.where((a) => a.isCash).map((a) => a.id).firstOrNull;
+
+  /// The single non-cash bank account, when there's exactly one — the only
+  /// case where defaulting the account selection is unambiguous.
+  String? get _singleNonCashAccountId {
+    final nonCash = widget.bankAccounts.where((a) => !a.isCash).toList();
+    return nonCash.length == 1 ? nonCash.first.id : null;
+  }
+
+  bool get _isCash =>
+      _selectedBankAccountId != null &&
+      _selectedBankAccountId == _cashAccountId;
 
   @override
   void initState() {
@@ -119,35 +140,28 @@ class TransactionFormState extends State<TransactionForm> {
       final contactMatches = widget.contacts.where((c) => c.id == t.contactId);
       _selectedContact = contactMatches.isEmpty ? null : contactMatches.first;
       _contactTypedText = _selectedContact?.name ?? '';
-      final glMatches = widget.glEntries.where((g) => g.id == t.generalLedgerId);
+      final glMatches =
+          widget.glEntries.where((g) => g.id == t.generalLedgerId);
       _selectedGl = glMatches.isEmpty ? null : glMatches.first;
       _amountController.text = _centsToString(t.amount);
       _gstController.text = _centsToString(t.gstAmount);
       _totalController.text = _centsToString(t.totalAmount);
       _descriptionController.text = t.description;
+      _selectedBankAccountId = t.bankAccountId ??
+          (t.isCash ? _cashAccountId : _singleNonCashAccountId);
       if (_selectedGl?.direction == GlDirection.moneyOut) {
-        _isCash = t.isCash;
         if (t.isCash) {
           _cashReceiptController.text = t.receiptNumber;
         } else {
           _receiptOutController.text = t.receiptNumber;
         }
-      } else {
-        switch (t.receiptNumber) {
-          case 'Bank Transfer':
-            _isCash = false;
-            _paymentType = 'bankTransfer';
-          case 'Square':
-            _isCash = false;
-            _paymentType = 'square';
-          default:
-            _isCash = t.isCash;
-            _cashReceiptController.text = t.receiptNumber;
-        }
+      } else if (t.isCash) {
+        _cashReceiptController.text = t.receiptNumber;
       }
     } else {
       _date = DateTime.now();
       _receiptOutController.text = widget.nextMoneyOutReceipt;
+      _selectedBankAccountId = _singleNonCashAccountId;
     }
   }
 
@@ -163,7 +177,8 @@ class TransactionFormState extends State<TransactionForm> {
   }
 
   bool get _isMoneyOut {
-    if (_selectedGl != null) return _selectedGl!.direction == GlDirection.moneyOut;
+    if (_selectedGl != null)
+      return _selectedGl!.direction == GlDirection.moneyOut;
     if (widget.compact) {
       if (widget.initial != null) return !widget.initial!.isCredit;
       return widget.initialDirection == GlDirection.moneyOut;
@@ -190,8 +205,7 @@ class TransactionFormState extends State<TransactionForm> {
       _gstController.clear();
       _totalController.clear();
       _descriptionController.clear();
-      _isCash = false;
-      _paymentType = 'bankTransfer';
+      _selectedBankAccountId = _singleNonCashAccountId;
       _cashReceiptController.clear();
       _receiptOutController.clear();
       _anchor = _AmountAnchor.total;
@@ -211,15 +225,17 @@ class TransactionFormState extends State<TransactionForm> {
     widget.onSave(TransactionFormData(
       date: _date,
       existingContactId: _selectedContact?.id,
-      newContactName: _selectedContact == null && _contactTypedText.trim().isNotEmpty
-          ? _contactTypedText.trim()
-          : null,
+      newContactName:
+          _selectedContact == null && _contactTypedText.trim().isNotEmpty
+              ? _contactTypedText.trim()
+              : null,
       gl: _selectedGl!,
       amountCents: _dollarsToCents(amount),
       gstCents: _dollarsToCents(gst),
       receiptNumber: _buildReceiptNumber(),
       description: _descriptionController.text.trim(),
       isCash: _isCash,
+      bankAccountId: _selectedBankAccountId,
     ));
   }
 
@@ -230,8 +246,10 @@ class TransactionFormState extends State<TransactionForm> {
       return 'Please enter a contact';
     }
     if (_selectedGl == null) return 'Please select a general ledger account';
+    if (_selectedBankAccountId == null) return 'Please select an account';
     final amount = _parseAmount(_amountController.text);
-    if (amount == null || amount <= 0) return 'Amount must be greater than zero';
+    if (amount == null || amount <= 0)
+      return 'Amount must be greater than zero';
     final gst = _parseAmount(_gstController.text);
     if (gst == null || gst < 0) return 'GST amount must be zero or more';
     if (_isMoneyOut) {
@@ -240,7 +258,8 @@ class TransactionFormState extends State<TransactionForm> {
           return 'Receipt number is required for cash transactions';
         }
       } else {
-        if (_receiptOutController.text.trim().isEmpty) return 'Receipt number is required';
+        if (_receiptOutController.text.trim().isEmpty)
+          return 'Receipt number is required';
       }
     } else if (_isCash) {
       if (_cashReceiptController.text.trim().isEmpty) {
@@ -252,10 +271,12 @@ class TransactionFormState extends State<TransactionForm> {
 
   String _buildReceiptNumber() {
     if (_isMoneyOut) {
-      return _isCash ? _cashReceiptController.text.trim() : _receiptOutController.text.trim();
+      return _isCash
+          ? _cashReceiptController.text.trim()
+          : _receiptOutController.text.trim();
     }
     if (_isCash) return _cashReceiptController.text.trim();
-    return _paymentType == 'square' ? 'Square' : 'Bank Transfer';
+    return 'Bank Transfer';
   }
 
   double? _parseAmount(String text) {
@@ -331,11 +352,9 @@ class TransactionFormState extends State<TransactionForm> {
       _amountController.clear();
       _gstController.text = (gl?.gstApplicable ?? false) ? '' : '0.00';
       _totalController.clear();
-      _isCash = false;
-      _paymentType = 'bankTransfer';
-      _cashReceiptController.clear();
-      _receiptOutController.text =
-          gl?.direction == GlDirection.moneyOut ? widget.nextMoneyOutReceipt : '';
+      _receiptOutController.text = gl?.direction == GlDirection.moneyOut
+          ? widget.nextMoneyOutReceipt
+          : '';
       _anchor = _AmountAnchor.total;
     });
   }
@@ -348,9 +367,6 @@ class TransactionFormState extends State<TransactionForm> {
         _amountController.clear();
         _gstController.clear();
         _totalController.clear();
-        _isCash = false;
-        _paymentType = 'bankTransfer';
-        _cashReceiptController.clear();
         _receiptOutController.clear();
         _anchor = _AmountAnchor.total;
       }
@@ -370,9 +386,6 @@ class TransactionFormState extends State<TransactionForm> {
           _receiptOutController.text.isEmpty) {
         _receiptOutController.text = widget.nextMoneyOutReceipt;
       }
-      _isCash = false;
-      _paymentType = 'bankTransfer';
-      _cashReceiptController.clear();
     });
   }
 
@@ -438,14 +451,18 @@ class TransactionFormState extends State<TransactionForm> {
   }
 
   Widget _buildContactField({InputDecoration? decoration}) {
-    final fieldDecoration = (decoration ?? const InputDecoration(
-      labelText: 'Contact',
-      border: OutlineInputBorder(),
-      isDense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-    )).copyWith(
+    final fieldDecoration = (decoration ??
+            const InputDecoration(
+              labelText: 'Contact',
+              border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+            ))
+        .copyWith(
       suffixIcon: _selectedContact != null
-          ? const Icon(Icons.check_circle_outline, color: Colors.green, size: 18)
+          ? const Icon(Icons.check_circle_outline,
+              color: Colors.green, size: 18)
           : null,
     );
 
@@ -461,7 +478,8 @@ class TransactionFormState extends State<TransactionForm> {
           optionsBuilder: (textEditingValue) {
             if (textEditingValue.text.isEmpty) return widget.contacts;
             final q = textEditingValue.text.toLowerCase();
-            return widget.contacts.where((c) => c.name.toLowerCase().contains(q));
+            return widget.contacts
+                .where((c) => c.name.toLowerCase().contains(q));
           },
           onSelected: (contact) => setState(() {
             _selectedContact = contact;
@@ -577,7 +595,8 @@ class TransactionFormState extends State<TransactionForm> {
           child: GlAccountDropdown(
             allEntries: widget.glEntries,
             value: _selectedGl,
-            decoration: decoration.copyWith(labelText: 'General Ledger Account'),
+            decoration:
+                decoration.copyWith(labelText: 'General Ledger Account'),
             directionFilter: _selectedDirection,
             onChanged: widget.isSaving ? null : _onGlChangedFull,
           ),
@@ -672,20 +691,8 @@ class TransactionFormState extends State<TransactionForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        CheckboxListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          value: _isCash,
-          onChanged: widget.isSaving
-              ? null
-              : (v) => setState(() {
-                    _isCash = v ?? false;
-                    _cashReceiptController.clear();
-                  }),
-          title: const Text('Cash transaction', style: TextStyle(fontSize: 13)),
-          controlAffinity: ListTileControlAffinity.leading,
-        ),
-        const SizedBox(height: 4),
+        _buildAccountDropdown(width: 240),
+        const SizedBox(height: 8),
         SizedBox(
           width: 200,
           child: _isCash
@@ -721,21 +728,9 @@ class TransactionFormState extends State<TransactionForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        CheckboxListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          value: _isCash,
-          onChanged: widget.isSaving
-              ? null
-              : (v) => setState(() {
-                    _isCash = v ?? false;
-                    _cashReceiptController.clear();
-                  }),
-          title: const Text('Cash transaction', style: TextStyle(fontSize: 13)),
-          controlAffinity: ListTileControlAffinity.leading,
-        ),
-        const SizedBox(height: 4),
-        if (_isCash)
+        _buildAccountDropdown(width: 240),
+        if (_isCash) ...[
+          const SizedBox(height: 8),
           SizedBox(
             width: 200,
             child: TextFormField(
@@ -750,38 +745,51 @@ class TransactionFormState extends State<TransactionForm> {
                 floatingLabelBehavior: FloatingLabelBehavior.always,
               ),
             ),
-          )
-        else
-          SizedBox(
-            width: 240,
-            child: InputDecorator(
-              decoration: const InputDecoration(
-                labelText: 'Payment Method',
-                border: OutlineInputBorder(),
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              ),
-              child: DropdownButton<String>(
-                value: _paymentType,
-                isExpanded: true,
-                isDense: true,
-                underline: const SizedBox.shrink(),
-                items: const [
-                  DropdownMenuItem(
-                      value: 'bankTransfer',
-                      child: Text('Bank Transfer')),
-                  DropdownMenuItem(
-                      value: 'square', child: Text('Square Payment')),
-                ],
-                onChanged: widget.isSaving
-                    ? null
-                    : (v) =>
-                        setState(() => _paymentType = v ?? 'bankTransfer'),
-              ),
-            ),
           ),
+        ],
       ],
+    );
+  }
+
+  /// Dropdown of Cash + the entity's bank accounts. Selecting a non-cash
+  /// account never shows a receipt number field on Money-In transactions —
+  /// the receipt number is set invisibly to "Bank Transfer" on save.
+  Widget _buildAccountDropdown({required double width, bool compact = false}) {
+    final items = widget.bankAccounts;
+    final validValue = items.any((a) => a.id == _selectedBankAccountId)
+        ? _selectedBankAccountId
+        : null;
+    final fontSize = compact ? 12.0 : 13.0;
+    return SizedBox(
+      width: width,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Account',
+          floatingLabelBehavior: compact ? FloatingLabelBehavior.always : null,
+          border: const OutlineInputBorder(),
+          isDense: true,
+          contentPadding:
+              EdgeInsets.symmetric(horizontal: 10, vertical: compact ? 8 : 8),
+        ),
+        child: DropdownButton<String>(
+          value: validValue,
+          isExpanded: true,
+          isDense: true,
+          underline: const SizedBox.shrink(),
+          hint: Text('Select account', style: TextStyle(fontSize: fontSize)),
+          items: items
+              .map((a) => DropdownMenuItem(
+                    value: a.id,
+                    child: Text(a.accountName,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: fontSize)),
+                  ))
+              .toList(),
+          onChanged: widget.isSaving
+              ? null
+              : (id) => setState(() => _selectedBankAccountId = id),
+        ),
+      ),
     );
   }
 
@@ -806,9 +814,15 @@ class TransactionFormState extends State<TransactionForm> {
           Row(
             children: [
               if (isMoneyOut) const SizedBox(width: 40),
-              SizedBox(width: 140, child: _buildDateFieldCompact()),
+              // Fixed height: InputDecorator wrapping a plain Text (as the
+              // date field does) renders taller than one wrapping a real
+              // input widget, even with identical decoration — pin it to
+              // match every other compact field in this row/the one below.
+              SizedBox(width: 140, height: 40, child: _buildDateFieldCompact()),
               const SizedBox(width: 8),
-              Expanded(child: _buildContactField(decoration: dec.copyWith(labelText: 'Contact'))),
+              Expanded(
+                  child: _buildContactField(
+                      decoration: dec.copyWith(labelText: 'Contact'))),
               const SizedBox(width: 8),
               Expanded(
                 child: GlAccountDropdown(
@@ -824,162 +838,110 @@ class TransactionFormState extends State<TransactionForm> {
             ],
           ),
           const SizedBox(height: 8),
-          // Row 2: Receipt | Description | Total | Amt ex GST | GST
-          //        (Money-In: Cash checkbox | Payment/Receipt | Description | ...)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (isMoneyOut) ...[
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Checkbox(
-                    value: _isCash,
-                    onChanged: widget.isSaving
-                        ? null
-                        : (v) => setState(() {
-                              _isCash = v ?? false;
-                              _cashReceiptController.clear();
-                            }),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Text('Cash', style: TextStyle(fontSize: 12)),
+          // Row 2: Account | Receipt | Description | Total | Amt ex GST | GST
+          // IntrinsicHeight + stretch keeps the account dropdown the same
+          // height as the surrounding text fields (see Row 1 above).
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildAccountDropdown(width: 140, compact: true),
                 const SizedBox(width: 8),
-                SizedBox(
-                  width: 160,
-                  child: _isCash
-                      ? TextFormField(
-                          controller: _cashReceiptController,
-                          enabled: !widget.isSaving,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: dec.copyWith(labelText: 'Receipt No.'),
-                        )
-                      : TextFormField(
-                          controller: _receiptOutController,
-                          enabled: !widget.isSaving,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: dec.copyWith(labelText: 'Receipt'),
-                        ),
-                ),
-              ] else ...[
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Checkbox(
-                    value: _isCash,
-                    onChanged: widget.isSaving
-                        ? null
-                        : (v) => setState(() {
-                              _isCash = v ?? false;
-                              _cashReceiptController.clear();
-                            }),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Text('Cash', style: TextStyle(fontSize: 12)),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 160,
-                  child: _isCash
-                      ? TextFormField(
-                          controller: _cashReceiptController,
-                          enabled: !widget.isSaving,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: dec.copyWith(labelText: 'Receipt No.'),
-                        )
-                      : InputDecorator(
-                          decoration: dec.copyWith(labelText: 'Payment'),
-                          child: DropdownButton<String>(
-                            value: _paymentType,
-                            isExpanded: true,
-                            isDense: true,
-                            underline: const SizedBox.shrink(),
-                            items: const [
-                              DropdownMenuItem(
-                                  value: 'bankTransfer',
-                                  child: Text('Bank Transfer',
-                                      style: TextStyle(fontSize: 12))),
-                              DropdownMenuItem(
-                                  value: 'square',
-                                  child: Text('Square Payment',
-                                      style: TextStyle(fontSize: 12))),
-                            ],
-                            onChanged: widget.isSaving
-                                ? null
-                                : (v) => setState(
-                                    () => _paymentType = v ?? 'bankTransfer'),
+                if (isMoneyOut) ...[
+                  SizedBox(
+                    width: 160,
+                    child: _isCash
+                        ? TextFormField(
+                            controller: _cashReceiptController,
+                            enabled: !widget.isSaving,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: dec.copyWith(labelText: 'Receipt No.'),
+                          )
+                        : TextFormField(
+                            controller: _receiptOutController,
+                            enabled: !widget.isSaving,
+                            style: const TextStyle(fontSize: 13),
+                            decoration: dec.copyWith(labelText: 'Receipt'),
                           ),
-                        ),
+                  ),
+                  const SizedBox(width: 8),
+                ] else if (_isCash) ...[
+                  SizedBox(
+                    width: 160,
+                    child: TextFormField(
+                      controller: _cashReceiptController,
+                      enabled: !widget.isSaving,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: dec.copyWith(labelText: 'Receipt No.'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: TextFormField(
+                    controller: _descriptionController,
+                    enabled: !widget.isSaving,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: dec.copyWith(labelText: 'Description'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 110,
+                  child: TextFormField(
+                    controller: _totalController,
+                    enabled: !widget.isSaving,
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                    ],
+                    onChanged: _handleTotalChanged,
+                    decoration:
+                        dec.copyWith(labelText: 'Total', prefixText: '\$ '),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 110,
+                  child: TextFormField(
+                    controller: _amountController,
+                    enabled: !widget.isSaving,
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                    ],
+                    onChanged: _handleAmountChanged,
+                    decoration: dec.copyWith(
+                        labelText: 'Amt ex GST', prefixText: '\$ '),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 90,
+                  child: TextFormField(
+                    controller: _gstController,
+                    enabled: !widget.isSaving && _gstApplicable,
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                    ],
+                    onChanged: _handleGstChanged,
+                    decoration: dec.copyWith(
+                      labelText: 'GST',
+                      prefixText: '\$ ',
+                      fillColor: _gstApplicable ? null : Colors.grey.shade100,
+                      filled: !_gstApplicable,
+                    ),
+                  ),
                 ),
               ],
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextFormField(
-                  controller: _descriptionController,
-                  enabled: !widget.isSaving,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: dec.copyWith(labelText: 'Description'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 110,
-                child: TextFormField(
-                  controller: _totalController,
-                  enabled: !widget.isSaving,
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  onChanged: _handleTotalChanged,
-                  decoration:
-                      dec.copyWith(labelText: 'Total', prefixText: '\$ '),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 110,
-                child: TextFormField(
-                  controller: _amountController,
-                  enabled: !widget.isSaving,
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  onChanged: _handleAmountChanged,
-                  decoration: dec.copyWith(
-                      labelText: 'Amt ex GST', prefixText: '\$ '),
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 90,
-                child: TextFormField(
-                  controller: _gstController,
-                  enabled: !widget.isSaving && _gstApplicable,
-                  style: const TextStyle(fontSize: 13),
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  onChanged: _handleGstChanged,
-                  decoration: dec.copyWith(
-                    labelText: 'GST',
-                    prefixText: '\$ ',
-                    fillColor: _gstApplicable ? null : Colors.grey.shade100,
-                    filled: !_gstApplicable,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: 10),
           // Save / Cancel
@@ -1014,6 +976,7 @@ class TransactionFormState extends State<TransactionForm> {
       border: OutlineInputBorder(),
       isDense: true,
       contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      floatingLabelBehavior: FloatingLabelBehavior.always,
     );
     return InkWell(
       onTap: widget.isSaving
@@ -1036,5 +999,4 @@ class TransactionFormState extends State<TransactionForm> {
       ),
     );
   }
-
 }

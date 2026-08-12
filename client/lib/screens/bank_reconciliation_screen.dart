@@ -315,8 +315,14 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
   List<TransactionEntry> _monthTransactions() {
     final my = _statementMonthYear();
     if (my == null) return [];
+    // Transactions already bank-matched to a *different* account are excluded —
+    // they belong to another reconciliation. Unmatched transactions (bankAccountId
+    // still null) stay in scope since they haven't been attributed to an account yet.
     return _allTransactions
-        .where((t) => t.transactionDate.startsWith(my))
+        .where((t) =>
+            t.transactionDate.startsWith(my) &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId))
         .toList();
   }
 
@@ -378,7 +384,10 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       if (ids.isNotEmpty) {
         final res = await client.post(
           '/transactions/bank-match',
-          jsonEncode({'transactionIds': ids}),
+          jsonEncode({
+            'transactionIds': ids,
+            'bankAccountId': _selectedBankAccountId,
+          }),
         );
         if (res.statusCode != 204) {
           final msg =
@@ -394,8 +403,12 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         }
         final idSet = ids.toSet();
         _allTransactions = _allTransactions
-            .map((t) =>
-                idSet.contains(t.id) ? t.copyWith(bankMatched: true) : t)
+            .map((t) => idSet.contains(t.id)
+                ? t.copyWith(
+                    bankMatched: true,
+                    bankAccountId: _selectedBankAccountId,
+                  )
+                : t)
             .toList();
       }
 
@@ -615,6 +628,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       if (found.isEmpty) {
         final already = _allTransactions.any((t) =>
             t.bankMatched &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId) &&
             t.transactionType == 'debit' &&
             row.parsedReceipts.contains(t.receiptNumber));
         row.status = already
@@ -654,6 +669,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
       final alreadyByBatch = _allTransactions
           .where((t) =>
               t.bankMatched &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'debit' &&
               t.abaBatchName == batchName)
           .toList();
@@ -691,6 +708,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     } else {
       final already = _allTransactions.any((t) =>
               t.bankMatched &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'debit' &&
               t.transactionDate == row.processDate &&
               t.totalAmount == row.source.amountCents) ||
@@ -736,6 +755,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
 
       final alreadyByReceipt = _allTransactions.any((t) =>
           t.bankMatched &&
+          (t.bankAccountId == null ||
+              t.bankAccountId == _selectedBankAccountId) &&
           t.transactionType == 'credit' &&
           row.parsedReceipts.contains(t.receiptNumber));
       if (alreadyByReceipt) {
@@ -780,6 +801,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     } else {
       final already = _allTransactions.any((t) =>
               t.bankMatched &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'credit' &&
               t.transactionDate == row.processDate &&
               t.totalAmount == row.source.amountCents) ||

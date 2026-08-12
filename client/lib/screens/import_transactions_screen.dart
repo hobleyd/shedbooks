@@ -228,7 +228,7 @@ class _ImportTransactionsScreenState extends State<ImportTransactionsScreen> {
           out.addFile(file);
         }
       }
-      return ZipEncoder().encode(out)!;
+      return ZipEncoder().encode(out);
     } catch (_) {
       return bytes;
     }

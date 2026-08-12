@@ -28,6 +28,7 @@ class CreateTransactionRequest {
   final String description;
   final DateTime transactionDate;
   final bool isCash;
+  final String? bankAccountId;
 
   const CreateTransactionRequest({
     required this.contactId,
@@ -39,6 +40,7 @@ class CreateTransactionRequest {
     required this.description,
     required this.transactionDate,
     this.isCash = false,
+    this.bankAccountId,
   });
 
   factory CreateTransactionRequest.fromJson(Map<String, dynamic> json) {
@@ -88,6 +90,7 @@ class CreateTransactionRequest {
       description: description,
       transactionDate: transactionDate,
       isCash: isCash,
+      bankAccountId: json['bankAccountId'] as String?,
     );
   }
 }

@@ -23,12 +23,14 @@ class BankMatchTransactionsUseCase {
 
   const BankMatchTransactionsUseCase(this._repository);
 
-  /// Sets [bank_matched = true] for all [ids] within [entityId].
+  /// Sets [bank_matched = true] for all [ids] within [entityId], recording
+  /// [bankAccountId] as the account they were reconciled against (if known).
   Future<void> execute({
     required List<String> ids,
     required String entityId,
+    String? bankAccountId,
   }) async {
     if (ids.isEmpty) return;
-    await _repository.bankMatch(ids, entityId: entityId);
+    await _repository.bankMatch(ids, entityId: entityId, bankAccountId: bankAccountId);
   }
 }

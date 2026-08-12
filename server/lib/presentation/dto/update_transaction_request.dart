@@ -31,6 +31,9 @@ class UpdateTransactionRequest {
   /// When non-null, explicitly sets is_cash. Null means preserve the existing value.
   final bool? isCash;
 
+  /// When non-null, explicitly sets bank_account_id. Null means preserve the existing value.
+  final String? bankAccountId;
+
   const UpdateTransactionRequest({
     required this.contactId,
     required this.generalLedgerId,
@@ -41,6 +44,7 @@ class UpdateTransactionRequest {
     required this.description,
     required this.transactionDate,
     this.isCash,
+    this.bankAccountId,
   });
 
   factory UpdateTransactionRequest.fromJson(Map<String, dynamic> json) {
@@ -93,6 +97,7 @@ class UpdateTransactionRequest {
       description: description,
       transactionDate: transactionDate,
       isCash: isCashRaw as bool?,
+      bankAccountId: json['bankAccountId'] as String?,
     );
   }
 }

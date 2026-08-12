@@ -35,6 +35,7 @@ class TransactionResponse {
   final bool bankMatched;
   final bool isCash;
   final String? abaBatchName;
+  final String? bankAccountId;
 
   const TransactionResponse({
     required this.id,
@@ -52,6 +53,7 @@ class TransactionResponse {
     required this.bankMatched,
     required this.isCash,
     this.abaBatchName,
+    this.bankAccountId,
   });
 
   factory TransactionResponse.fromEntity(Transaction entity) {
@@ -71,6 +73,7 @@ class TransactionResponse {
       bankMatched: entity.bankMatched,
       isCash: entity.isCash,
       abaBatchName: entity.abaBatchName,
+      bankAccountId: entity.bankAccountId,
     );
   }
 
@@ -90,6 +93,7 @@ class TransactionResponse {
         'bankMatched': bankMatched,
         'isCash': isCash,
         if (abaBatchName != null) 'abaBatchName': abaBatchName,
+        if (bankAccountId != null) 'bankAccountId': bankAccountId,
       };
 
   String toJsonString() => jsonEncode(toJson());
