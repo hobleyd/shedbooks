@@ -33,6 +33,7 @@ import '../services/reference_data_cache.dart';
 import '../utils/cba_receipt_parser.dart';
 import '../utils/receipt_format.dart';
 import '../widgets/bank_match_widgets.dart';
+import '../widgets/gl_account_dropdown.dart';
 
 // ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -1205,16 +1206,6 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
     }
   }
 
-  // ── GL selection ─────────────────────────────────────────────────────────────
-
-  List<GeneralLedgerEntry> get _filteredGl {
-    final wantDirection =
-        widget.row.isBankDebit ? GlDirection.moneyOut : GlDirection.moneyIn;
-    return widget.glEntries
-        .where((g) => g.direction == wantDirection)
-        .toList();
-  }
-
   // ── Save ─────────────────────────────────────────────────────────────────────
 
   Future<void> _save() async {
@@ -1334,36 +1325,18 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
 
               // GL Account
               _label('GL Account *'),
-              DropdownButton<GeneralLedgerEntry>(
+              GlAccountDropdown(
+                allEntries: widget.glEntries,
                 value: _gl,
-                isExpanded: true,
-                hint: const Text('Select account'),
-                underline: const SizedBox.shrink(),
-                items: _filteredGl.map((g) {
-                  final isIn = g.direction == GlDirection.moneyIn;
-                  return DropdownMenuItem<GeneralLedgerEntry>(
-                    value: g,
-                    child: Row(children: [
-                      Icon(
-                        isIn
-                            ? Icons.arrow_circle_down_outlined
-                            : Icons.arrow_circle_up_outlined,
-                        size: 14,
-                        color: isIn
-                            ? Colors.green.shade700
-                            : Colors.red.shade700,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          buildGlPath(widget.glEntries, g.id),
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                    ]),
-                  );
-                }).toList(),
+                directionFilter: widget.row.isBankDebit
+                    ? GlDirection.moneyOut
+                    : GlDirection.moneyIn,
+                compact: true,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
                 onChanged: (v) => setState(() {
                   _gl = v;
                   _recalculate();
