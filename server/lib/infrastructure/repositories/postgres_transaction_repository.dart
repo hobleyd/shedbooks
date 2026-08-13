@@ -54,12 +54,12 @@ class PostgresTransactionRepository implements ITransactionRepository {
             is_cash, bank_matched, bank_account_id
           )
           VALUES (
-            @id::uuid, @entityId, @contactId::uuid, @generalLedgerId::uuid,
+            @id::uuid, @entityId::text, @contactId::uuid, @generalLedgerId::uuid,
             @amount, @gstAmount, @transactionType::transaction_type,
             @receiptNumber, @description, @transactionDate::date,
             @isCash, @isCash,
             (SELECT id FROM bank_accounts
-             WHERE id = @bankAccountId::uuid AND entity_id = @entityId AND deleted_at IS NULL)
+             WHERE id = @bankAccountId::uuid AND entity_id = @entityId::text AND deleted_at IS NULL)
           )
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
@@ -161,10 +161,10 @@ class PostgresTransactionRepository implements ITransactionRepository {
               is_cash           = @isCash,
               bank_matched      = @bankMatched,
               bank_account_id   = (SELECT id FROM bank_accounts
-                                    WHERE id = @bankAccountId::uuid AND entity_id = @entityId AND deleted_at IS NULL),
+                                    WHERE id = @bankAccountId::uuid AND entity_id = @entityId::text AND deleted_at IS NULL),
               updated_at        = NOW()
           WHERE id = @id::uuid
-            AND entity_id = @entityId
+            AND entity_id = @entityId::text
             AND deleted_at IS NULL
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
@@ -287,10 +287,10 @@ class PostgresTransactionRepository implements ITransactionRepository {
             UPDATE transactions
             SET bank_matched    = TRUE,
                 bank_account_id = (SELECT id FROM bank_accounts
-                                    WHERE id = @bankAccountId::uuid AND entity_id = @entityId AND deleted_at IS NULL),
+                                    WHERE id = @bankAccountId::uuid AND entity_id = @entityId::text AND deleted_at IS NULL),
                 updated_at      = NOW()
             WHERE id = @id::uuid
-              AND entity_id = @entityId
+              AND entity_id = @entityId::text
               AND deleted_at IS NULL
           '''),
           parameters: {

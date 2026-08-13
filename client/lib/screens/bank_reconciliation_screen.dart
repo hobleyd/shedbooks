@@ -621,6 +621,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           .where((t) =>
               !t.bankMatched &&
               !_reservedIds.contains(t.id) &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'debit' &&
               row.parsedReceipts.contains(t.receiptNumber))
           .toList();
@@ -654,6 +656,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           .where((t) =>
               !t.bankMatched &&
               !_reservedIds.contains(t.id) &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'debit' &&
               t.abaBatchName == batchName)
           .toList();
@@ -687,6 +691,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         .where((t) =>
             !t.bankMatched &&
             !_reservedIds.contains(t.id) &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId) &&
             t.transactionType == 'debit' &&
             t.transactionDate == row.processDate &&
             t.totalAmount == row.source.amountCents)
@@ -740,6 +746,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
           .where((t) =>
               !t.bankMatched &&
               !_reservedIds.contains(t.id) &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'credit' &&
               row.parsedReceipts.contains(t.receiptNumber))
           .toList();
@@ -780,6 +788,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         .where((t) =>
             !t.bankMatched &&
             !_reservedIds.contains(t.id) &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId) &&
             t.transactionType == 'credit' &&
             t.transactionDate == row.processDate &&
             t.totalAmount == row.source.amountCents)
@@ -870,6 +880,8 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     final candidates = _allTransactions
         .where((t) =>
             (!_reservedIds.contains(t.id) || _partialMatchIds.contains(t.id)) &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId) &&
             t.transactionType == type &&
             _yearMonth(t.transactionDate) == month)
         .toList()

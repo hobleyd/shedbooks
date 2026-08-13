@@ -21,6 +21,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/bank_account_summary.dart';
 import '../models/bank_import_entry.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
@@ -86,8 +87,22 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
   // retained on the Navigator stack while the user visits other screens.
   List<ContactEntry> get _contacts => context.read<ReferenceDataCache>().contacts;
   List<GeneralLedgerEntry> get _glEntries => context.read<ReferenceDataCache>().glEntries;
+  List<BankAccountSummary> get _bankAccounts =>
+      context.read<ReferenceDataCache>().bankAccountSummaries;
   Map<String, String> get _contactNames =>
       {for (final c in _contacts) c.id: c.name}; // contactId → display name
+
+  // Bank account the imported CSV rows belong to. The CBA statement CSV has
+  // no account identifier of its own, so the user must pick it up front.
+  String? _selectedBankAccountId;
+  String? get _selectedBankAccountName {
+    final id = _selectedBankAccountId;
+    if (id == null) return null;
+    for (final a in _bankAccounts) {
+      if (a.id == id) return a.accountName;
+    }
+    return null;
+  }
 
   ReceiptFormat _moneyInFormat = const ReceiptFormat('');
   ReceiptFormat _moneyOutFormat = const ReceiptFormat('');
@@ -136,6 +151,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       await Future.wait([
         cache.ensureContactsLoaded(),
         cache.ensureGlLoaded(),
+        cache.ensureBankAccountSummariesLoaded(),
       ]);
       if (!mounted) return;
       if (cache.contactsStatus == LoadStatus.error) {
@@ -143,6 +159,16 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       }
       if (cache.glStatus == LoadStatus.error) {
         throw Exception(cache.glError ?? 'Failed to load GL accounts');
+      }
+      if (cache.bankAccountSummariesStatus == LoadStatus.error) {
+        throw Exception(
+            cache.bankAccountSummariesError ?? 'Failed to load bank accounts');
+      }
+
+      // Pre-select if only one bank account exists.
+      if (cache.bankAccountSummaries.length == 1 &&
+          _selectedBankAccountId == null) {
+        _selectedBankAccountId = cache.bankAccountSummaries.first.id;
       }
 
       final entityRes = await client.get('/entity-details');
@@ -321,6 +347,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           .where((t) =>
               !t.bankMatched &&
               !_reservedIds.contains(t.id) &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'debit' &&
               row.parsedReceipts.contains(t.receiptNumber))
           .toList();
@@ -329,6 +357,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         final alreadyMatchedList = _allTransactions
             .where((t) =>
                 t.bankMatched &&
+                (t.bankAccountId == null ||
+                    t.bankAccountId == _selectedBankAccountId) &&
                 t.transactionType == 'debit' &&
                 row.parsedReceipts.contains(t.receiptNumber))
             .toList();
@@ -357,6 +387,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           .where((t) =>
               !t.bankMatched &&
               !_reservedIds.contains(t.id) &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'debit' &&
               t.abaBatchName == batchName)
           .toList();
@@ -375,6 +407,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         .where((t) =>
             !t.bankMatched &&
             !_reservedIds.contains(t.id) &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId) &&
             t.transactionType == 'debit' &&
             t.transactionDate == row.processDate &&
             t.totalAmount == row.amountCents)
@@ -396,6 +430,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     } else {
       final alreadyMatched = _allTransactions.any((t) =>
           t.bankMatched &&
+          (t.bankAccountId == null ||
+              t.bankAccountId == _selectedBankAccountId) &&
           t.transactionType == 'debit' &&
           t.transactionDate == row.processDate &&
           t.totalAmount == row.amountCents);
@@ -411,6 +447,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           .where((t) =>
               !t.bankMatched &&
               !_reservedIds.contains(t.id) &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'credit' &&
               row.parsedReceipts.contains(t.receiptNumber))
           .toList();
@@ -428,6 +466,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       final alreadyMatchedByReceipt = _allTransactions
           .where((t) =>
               t.bankMatched &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'credit' &&
               row.parsedReceipts.contains(t.receiptNumber))
           .toList();
@@ -445,6 +485,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         .where((t) =>
             !t.bankMatched &&
             !_reservedIds.contains(t.id) &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId) &&
             t.transactionType == 'credit' &&
             t.transactionDate == row.processDate &&
             t.totalAmount == row.amountCents)
@@ -466,6 +508,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     } else {
       final alreadyMatched = _allTransactions.any((t) =>
           t.bankMatched &&
+          (t.bankAccountId == null ||
+              t.bankAccountId == _selectedBankAccountId) &&
           t.transactionType == 'credit' &&
           t.transactionDate == row.processDate &&
           t.totalAmount == row.amountCents);
@@ -512,6 +556,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         .where((t) =>
             !t.bankMatched &&
             (!_reservedIds.contains(t.id) || _partialMatchIds.contains(t.id)) &&
+            (t.bankAccountId == null ||
+                t.bankAccountId == _selectedBankAccountId) &&
             t.transactionType == type &&
             _yearMonth(t.transactionDate) == month)
         .toList()
@@ -595,6 +641,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         glEntries: _glEntries,
         api: context.read<ApiClient>(),
         nextReceipt: nextReceipt,
+        bankAccountId: _selectedBankAccountId,
       ),
     );
 
@@ -658,7 +705,10 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       if (ids.isNotEmpty) {
         final matchRes = await client.post(
           '/transactions/bank-match',
-          jsonEncode({'transactionIds': ids}),
+          jsonEncode({
+            'transactionIds': ids,
+            'bankAccountId': _selectedBankAccountId,
+          }),
         );
         if (matchRes.statusCode != 204) {
           throw Exception('Server returned ${matchRes.statusCode}');
@@ -811,6 +861,7 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
   }
 
   Widget _buildPickerPrompt() {
+    final noBankAccounts = _bankAccounts.isEmpty;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -820,14 +871,44 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           const SizedBox(height: 16),
           const Text('Select a CBA bank statement CSV file to begin.',
               style: TextStyle(fontSize: 16)),
+          const SizedBox(height: 4),
+          Text(
+            'The CSV does not identify its own account, so choose the '
+            'bank account these transactions belong to.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.outline),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 320,
+            child: noBankAccounts
+                ? const Text('No bank accounts configured.',
+                    style: TextStyle(color: Colors.orange))
+                : _buildBankAccountDropdown(),
+          ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: _pickFile,
+            onPressed:
+                (noBankAccounts || _selectedBankAccountId == null) ? null : _pickFile,
             icon: const Icon(Icons.upload_file_outlined),
             label: const Text('Pick CSV File'),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBankAccountDropdown() {
+    return DropdownButton<String>(
+      value: _selectedBankAccountId,
+      isExpanded: true,
+      hint: const Text('Select account…'),
+      items: _bankAccounts
+          .map((a) => DropdownMenuItem(value: a.id, child: Text(a.accountName)))
+          .toList(),
+      onChanged: (id) => setState(() => _selectedBankAccountId = id),
     );
   }
 
@@ -890,6 +971,11 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
           Text(_fileName,
               style: theme.textTheme.bodySmall
                   ?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 16),
+          const Icon(Icons.account_balance_outlined, size: 16),
+          const SizedBox(width: 6),
+          Text(_selectedBankAccountName ?? 'No account selected',
+              style: theme.textTheme.bodySmall),
           const SizedBox(width: 24),
           SummaryIndicator(
             icon: Icons.check_circle_outline,
@@ -1027,6 +1113,7 @@ class _CreateTransactionDialog extends StatefulWidget {
   final List<GeneralLedgerEntry> glEntries;
   final ApiClient api;
   final String nextReceipt;
+  final String? bankAccountId;
 
   const _CreateTransactionDialog({
     required this.row,
@@ -1034,6 +1121,7 @@ class _CreateTransactionDialog extends StatefulWidget {
     required this.glEntries,
     required this.api,
     required this.nextReceipt,
+    required this.bankAccountId,
   });
 
   @override
@@ -1167,6 +1255,7 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
         'receiptNumber': receipt,
         'description': _descController.text.trim(),
         'transactionDate': widget.row.processDate,
+        'bankAccountId': widget.bankAccountId,
       });
       final res = await widget.api.post('/transactions', body);
       if (res.statusCode != 201) {
