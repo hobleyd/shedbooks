@@ -78,6 +78,26 @@ abstract interface class IMemberRepository {
     required String entityId,
     required List<MemberImportData> members,
   });
+
+  /// Returns up to [limit] active members that need to be pushed to O365:
+  /// never synced, or edited since their last successful sync.
+  Future<List<Member>> findPendingO365Sync({
+    required String entityId,
+    required int limit,
+  });
+
+  /// Counts active members that need to be pushed to O365.
+  Future<int> countPendingO365Sync({required String entityId});
+
+  /// Records a successful O365 push. Deliberately touches only the two
+  /// sync-tracking columns — it must NOT bump `updated_at` or `etag`, or
+  /// every sync run would re-dirty the row (making it "pending" again)
+  /// and every CardDAV client would see a spurious change.
+  Future<void> markO365Synced({
+    required String id,
+    required String entityId,
+    required String o365ContactId,
+  });
 }
 
 /// Data transfer object for bulk member import.

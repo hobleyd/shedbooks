@@ -71,6 +71,9 @@ bool _shouldAudit(String method, String path, int statusCode) {
   if (path.endsWith('/admin/users')) return false;
   // parse-import only parses a CSV in memory — no data is persisted.
   if (path.endsWith('/parse-import')) return false;
+  // Reading O365 settings (e.g. on every visit to the admin screen) is not
+  // a mutation; the PUT save below is still audited via the /admin/ rule.
+  if (path.endsWith('/admin/o365-settings') && method == 'GET') return false;
   // CardDAV reads are high-frequency and produce no data mutations.
   if (path.startsWith('/carddav/') && method == 'PROPFIND') return false;
   // Always audit admin operations (backup/restore are sensitive reads/writes).
@@ -175,7 +178,8 @@ String? _recordId(String path) {
   const nonIdSegments = {
     'merge', 'effective', 'backup', 'restore', 'audit-log', 'users', 'next',
     'confirm-import', 'gl-mappings', 'import', 'members',
-    'next-number', 'mark-paid', 'generate',
+    'next-number', 'mark-paid', 'generate', 'sync-o365',
+    'generate-certificate',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

@@ -1,0 +1,31 @@
+-- Copyright (C) 2026 David Hobley
+--
+-- This file is part of Shedbooks.
+--
+-- Shedbooks is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- Shedbooks is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
+
+-- Migration: 052_o365_service_principal_object_id
+-- Stores the Object ID of the app's Enterprise Application (service
+-- principal) — a different GUID from the App registration's own Object ID,
+-- needed for the tenant admin's one-off `New-ServicePrincipal -ObjectId`
+-- setup step (see the downloadable setup script on the O365 settings
+-- screen). Not sensitive (like tenant_id/client_id, not like the
+-- certificate), so it is plain text and round-trips to the client.
+--
+-- Parameters: none
+
+-- @param service_principal_object_id Enterprise Application (service principal) Object ID from
+--                                     Microsoft Entra ID -> Enterprise applications -> Overview.
+--                                     NULL until the admin looks it up and saves it.
+ALTER TABLE o365_sync_settings ADD COLUMN service_principal_object_id TEXT NULL;

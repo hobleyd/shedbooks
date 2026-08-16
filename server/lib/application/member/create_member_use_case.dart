@@ -15,15 +15,19 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:async';
+
 import '../../domain/entities/member.dart';
 import '../../domain/exceptions/member_exception.dart';
 import '../../domain/repositories/i_member_repository.dart';
+import '../o365/member_o365_auto_sync.dart';
 
 /// Creates a new club member.
 class CreateMemberUseCase {
   final IMemberRepository _repository;
+  final MemberO365AutoSync? _o365AutoSync;
 
-  const CreateMemberUseCase(this._repository);
+  const CreateMemberUseCase(this._repository, [this._o365AutoSync]);
 
   /// Validates [lastName] is non-empty, then persists and returns the new [Member].
   Future<Member> execute({
@@ -46,7 +50,7 @@ class CreateMemberUseCase {
     if (lastName.trim().isEmpty) {
       throw const MemberValidationException('Last name must not be empty');
     }
-    return _repository.create(
+    final member = await _repository.create(
       entityId: entityId,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -70,5 +74,9 @@ class CreateMemberUseCase {
       metalworkingInduction: metalworkingInduction,
       gymWaiver: gymWaiver,
     );
+    // Fire-and-forget: an Exchange Online session can take 10-20s and must
+    // never block the member-save response. See MemberO365AutoSync.
+    unawaited(_o365AutoSync?.maybeSync(entityId, member));
+    return member;
   }
 }

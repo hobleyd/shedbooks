@@ -31,7 +31,10 @@ import '../infrastructure/repositories/postgres_audit_repository.dart';
 import '../infrastructure/repositories/postgres_bank_import_repository.dart';
 import '../infrastructure/repositories/postgres_locked_month_repository.dart';
 import '../infrastructure/repositories/postgres_member_repository.dart';
+import '../infrastructure/repositories/postgres_o365_sync_settings_repository.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
+import '../infrastructure/services/exchange_online_mail_contact_sync_service.dart';
+import '../infrastructure/services/openssl_certificate_generator.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
 import '../infrastructure/repositories/postgres_dashboard_preference_repository.dart';
@@ -94,6 +97,11 @@ import '../application/member/get_member_use_case.dart';
 import '../application/member/import_members_use_case.dart';
 import '../application/member/list_members_use_case.dart';
 import '../application/member/update_member_use_case.dart';
+import '../application/o365/generate_o365_certificate_use_case.dart';
+import '../application/o365/get_o365_sync_settings_use_case.dart';
+import '../application/o365/member_o365_auto_sync.dart';
+import '../application/o365/save_o365_sync_settings_use_case.dart';
+import '../application/o365/sync_members_to_o365_use_case.dart';
 import '../infrastructure/repositories/postgres_budget_repository.dart';
 import '../infrastructure/repositories/postgres_user_presence_repository.dart';
 import '../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
@@ -125,6 +133,7 @@ import 'handlers/aba_sequence_handler.dart';
 import 'handlers/asset_handler.dart';
 import 'handlers/carddav_handler.dart';
 import 'handlers/member_handler.dart';
+import 'handlers/o365_settings_handler.dart';
 import 'handlers/abn_lookup_handler.dart';
 import 'handlers/bank_reconciliation_handler.dart';
 import 'handlers/bank_imports_handler.dart';
@@ -300,13 +309,39 @@ Handler buildRouter({
   );
 
   final memberRepository = PostgresMemberRepository(pool, fieldEncryptor);
+
+  final o365SettingsRepository =
+      PostgresO365SyncSettingsRepository(pool, fieldEncryptor);
+  final o365ContactSyncService = ExchangeOnlineMailContactSyncService();
+  final o365SettingsHandler = O365SettingsHandler(
+    get: GetO365SyncSettingsUseCase(o365SettingsRepository),
+    save: SaveO365SyncSettingsUseCase(o365SettingsRepository),
+    generateCertificate:
+        GenerateO365CertificateUseCase(OpenSslCertificateGenerator()),
+  );
+  // Auto-sync fires after every member create/update once the entity has
+  // completed its first manual "sync to O365" run — see MemberO365AutoSync.
+  final memberO365AutoSync = MemberO365AutoSync(
+    o365SettingsRepository,
+    memberRepository,
+    o365ContactSyncService,
+  );
+
   final memberHandler = MemberHandler(
-    create: CreateMemberUseCase(memberRepository),
+    create: CreateMemberUseCase(memberRepository, memberO365AutoSync),
     get: GetMemberUseCase(memberRepository),
     list: ListMembersUseCase(memberRepository),
-    update: UpdateMemberUseCase(memberRepository),
+    update: UpdateMemberUseCase(memberRepository, memberO365AutoSync),
     delete: DeleteMemberUseCase(memberRepository),
+    // Bulk import intentionally does not auto-sync — hundreds of inline
+    // Graph calls in one request would risk a proxy timeout. Imported rows
+    // stay pending for the "sync to O365" button.
     import: ImportMembersUseCase(memberRepository),
+    syncO365: SyncMembersToO365UseCase(
+      o365SettingsRepository,
+      memberRepository,
+      o365ContactSyncService,
+    ),
   );
   final assetRepository = PostgresAssetRepository(pool);
   final assetHandler = AssetHandler(
@@ -323,8 +358,8 @@ Handler buildRouter({
   final cardDavHandler = CardDavHandler(
     list: ListMembersUseCase(memberRepository),
     get: GetMemberUseCase(memberRepository),
-    create: CreateMemberUseCase(memberRepository),
-    update: UpdateMemberUseCase(memberRepository),
+    create: CreateMemberUseCase(memberRepository, memberO365AutoSync),
+    update: UpdateMemberUseCase(memberRepository, memberO365AutoSync),
     delete: DeleteMemberUseCase(memberRepository),
     pathPrefix: cardDavPathPrefix,
   );
@@ -404,7 +439,8 @@ Handler buildRouter({
     ..mount('/assets',
         _authed(_assetRouter(assetHandler)))
     ..mount('/admin',
-        _authed(_adminRouter(backupHandler, auditHandler, usersHandler)))
+        _authed(_adminRouter(
+            backupHandler, auditHandler, usersHandler, o365SettingsHandler)))
     ..mount('/api-key',
         _authed(_apiKeyRouter(apiKeyHandler)))
     // CardDAV addressbook — uses separate auth (Bearer OR Basic w/ JWT password or API key).
@@ -564,12 +600,19 @@ Router _bankReconciliationRouter(BankReconciliationHandler h) {
 }
 
 // Administrators only.
-Router _adminRouter(BackupHandler backup, AuditHandler audit, UsersHandler users) {
+Router _adminRouter(BackupHandler backup, AuditHandler audit,
+    UsersHandler users, O365SettingsHandler o365Settings) {
   return Router()
     ..get('/backup', _role(requireAdministrator(), backup.handleBackup))
     ..post('/restore', _role(requireAdministrator(), backup.handleRestore))
     ..get('/audit-log', _role(requireAdministrator(), audit.handleList))
-    ..get('/users', _role(requireAdministrator(), users.handleList));
+    ..get('/users', _role(requireAdministrator(), users.handleList))
+    ..get('/o365-settings',
+        _role(requireAdministrator(), o365Settings.handleGet))
+    ..put('/o365-settings',
+        _role(requireAdministrator(), o365Settings.handleSave))
+    ..post('/o365-settings/generate-certificate',
+        _role(requireAdministrator(), o365Settings.handleGenerateCertificate));
 }
 
 // All roles can read budgets; only admins can write or import.
@@ -593,12 +636,15 @@ Router _budgetRouter(BudgetHandler h) {
 }
 
 // Viewers can read; contributors and admins can write.
-// /import must be registered before /<id> to avoid being shadowed.
+// O365 sync settings are admin-owned, so triggering a sync run is
+// administrator-only. /import and /sync-o365 must be registered before
+// /<id> to avoid being shadowed.
 Router _memberRouter(MemberHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireContributor(), h.handleCreate))
     ..post('/import', _role(requireContributor(), h.handleImport))
+    ..post('/sync-o365', _role(requireAdministrator(), h.handleSyncO365))
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));

@@ -20,6 +20,7 @@ import 'dart:convert';
 import 'package:excel/excel.dart' hide Border;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
@@ -261,6 +262,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
   bool _loading = true;
   String? _error;
   bool _saving = false;
+  bool _syncingO365 = false;
   _MemberRow? _pendingNewRow;
   int? _sortColumn;
   bool _sortAscending = true;
@@ -635,6 +637,99 @@ class _MembershipScreenState extends State<MembershipScreen> {
     }
   }
 
+  /// Pushes members pending an O365 push. Each call to /members/sync-o365
+  /// processes one batch server-side, so this loops until the backlog is
+  /// drained or a run makes no further progress (e.g. rate-limited).
+  Future<void> _syncToO365() async {
+    setState(() => _syncingO365 = true);
+    var totalSynced = 0;
+    var totalFailed = 0;
+    var remaining = 0;
+    String? errorMsg;
+    try {
+      for (var i = 0; i < 20; i++) {
+        final res =
+            await context.read<ApiClient>().post('/members/sync-o365', '');
+        if (res.statusCode != 200) {
+          try {
+            errorMsg = (jsonDecode(res.body) as Map)['error'] as String?;
+          } catch (_) {}
+          errorMsg ??= 'Sync failed (${res.statusCode})';
+          break;
+        }
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        final synced = json['synced'] as int;
+        final failed = json['failed'] as int;
+        remaining = json['remaining'] as int;
+        totalSynced += synced;
+        totalFailed += failed;
+        // Stop once a pass makes no forward progress — a run that only
+        // fails (e.g. members with no email address, which can never sync)
+        // would otherwise keep opening fresh Exchange sessions for up to
+        // 20 passes without ever reaching remaining == 0.
+        if (remaining == 0 || synced == 0) break;
+      }
+    } catch (e) {
+      errorMsg = 'Sync failed: $e';
+    } finally {
+      if (mounted) setState(() => _syncingO365 = false);
+    }
+    if (!mounted) return;
+
+    if (errorMsg != null) {
+      // A SnackBar auto-dismisses, which is useless for an error the admin
+      // needs to actually read or copy (e.g. to paste into a support
+      // request) — show it in a dialog that stays until dismissed instead.
+      _showSyncErrorDialog(errorMsg);
+      return;
+    }
+
+    final message = [
+      'Synced $totalSynced member(s) to O365',
+      if (totalFailed > 0)
+        '$totalFailed failed (check for members missing an email address)',
+      if (remaining > 0) '$remaining still pending — click Sync again',
+    ].join(', ');
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showSyncErrorDialog(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('O365 sync failed'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            child: SelectableText(message),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: message));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Copied to clipboard'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _applySort() {
     if (_sortColumn == null) return;
     _rows.sort((a, b) {
@@ -696,6 +791,9 @@ class _MembershipScreenState extends State<MembershipScreen> {
           _Toolbar(
             onImport: canEdit ? _importFromXlsx : null,
             onRefresh: _loading ? null : _load,
+            showSyncO365: authState.isAdmin,
+            onSyncO365: _syncingO365 ? null : _syncToO365,
+            syncingO365: _syncingO365,
           ),
           const Divider(height: 1),
           if (_loading)
@@ -747,8 +845,17 @@ class _MembershipScreenState extends State<MembershipScreen> {
 class _Toolbar extends StatelessWidget {
   final VoidCallback? onImport;
   final VoidCallback? onRefresh;
+  final bool showSyncO365;
+  final VoidCallback? onSyncO365;
+  final bool syncingO365;
 
-  const _Toolbar({this.onImport, this.onRefresh});
+  const _Toolbar({
+    this.onImport,
+    this.onRefresh,
+    this.showSyncO365 = false,
+    this.onSyncO365,
+    this.syncingO365 = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -771,6 +878,20 @@ class _Toolbar extends StatelessWidget {
               icon: const Icon(Icons.upload_file_outlined),
               label: const Text('Import XLSX'),
               onPressed: onImport,
+            ),
+          ],
+          if (showSyncO365) ...[
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              icon: syncingO365
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.sync_outlined),
+              label: Text(syncingO365 ? 'Syncing…' : 'Sync to O365'),
+              onPressed: onSyncO365,
             ),
           ],
         ],

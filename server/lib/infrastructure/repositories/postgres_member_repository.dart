@@ -43,7 +43,7 @@ class PostgresMemberRepository implements IMemberRepository {
     street_address, po_box, email, phone, date_of_birth,
     emergency_contact_name, emergency_contact_phone,
     woodworking_induction, metalworking_induction, gym_waiver,
-    etag, created_at, updated_at, deleted_at
+    etag, o365_contact_id, o365_synced_at, created_at, updated_at, deleted_at
   ''';
 
   @override
@@ -200,6 +200,68 @@ class PostgresMemberRepository implements IMemberRepository {
   }
 
   @override
+  Future<List<Member>> findPendingO365Sync({
+    required String entityId,
+    required int limit,
+  }) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT $_columns
+        FROM members
+        WHERE entity_id = @entityId
+          AND deleted_at IS NULL
+          AND (o365_contact_id IS NULL
+               OR o365_synced_at IS NULL
+               OR updated_at > o365_synced_at)
+        ORDER BY created_at ASC
+        LIMIT @limit
+      '''),
+      parameters: {'entityId': entityId, 'limit': limit},
+    );
+    return result.map((row) => _mapRow(row.toColumnMap())).toList();
+  }
+
+  @override
+  Future<int> countPendingO365Sync({required String entityId}) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT COUNT(*) AS c
+        FROM members
+        WHERE entity_id = @entityId
+          AND deleted_at IS NULL
+          AND (o365_contact_id IS NULL
+               OR o365_synced_at IS NULL
+               OR updated_at > o365_synced_at)
+      '''),
+      parameters: {'entityId': entityId},
+    );
+    return result.first.toColumnMap()['c'] as int;
+  }
+
+  @override
+  Future<void> markO365Synced({
+    required String id,
+    required String entityId,
+    required String o365ContactId,
+  }) async {
+    // Deliberately does not touch updated_at or etag — see interface doc.
+    await _pool.execute(
+      Sql.named('''
+        UPDATE members
+        SET o365_contact_id = @o365ContactId,
+            o365_synced_at  = NOW()
+        WHERE id = @id::uuid
+          AND entity_id = @entityId
+      '''),
+      parameters: {
+        'id': id,
+        'entityId': entityId,
+        'o365ContactId': o365ContactId,
+      },
+    );
+  }
+
+  @override
   Future<void> delete(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -289,6 +351,8 @@ class PostgresMemberRepository implements IMemberRepository {
       metalworkingInduction: _date(row['metalworking_induction']),
       gymWaiver: _date(row['gym_waiver']),
       etag: row['etag'] as String,
+      o365ContactId: row['o365_contact_id'] as String?,
+      o365SyncedAt: row['o365_synced_at'] as DateTime?,
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,

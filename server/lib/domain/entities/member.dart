@@ -74,6 +74,15 @@ class Member {
   /// CardDAV ETag — changes on every update to drive sync.
   final String etag;
 
+  /// The GAL mail contact's Exchange `.Identity` once this member has been
+  /// pushed to O365 (not a Microsoft Graph contact id — Graph has no write
+  /// path for organization-wide contacts; see
+  /// ExchangeOnlineMailContactSyncService).
+  final String? o365ContactId;
+
+  /// Timestamp of the last successful push to O365.
+  final DateTime? o365SyncedAt;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -101,6 +110,8 @@ class Member {
     this.metalworkingInduction,
     this.gymWaiver,
     required this.etag,
+    this.o365ContactId,
+    this.o365SyncedAt,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,

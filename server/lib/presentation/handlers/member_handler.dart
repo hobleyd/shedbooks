@@ -26,12 +26,15 @@ import '../../application/member/get_member_use_case.dart';
 import '../../application/member/import_members_use_case.dart';
 import '../../application/member/list_members_use_case.dart';
 import '../../application/member/update_member_use_case.dart';
+import '../../application/o365/sync_members_to_o365_use_case.dart';
 import '../../domain/entities/member.dart';
 import '../../domain/exceptions/member_exception.dart';
+import '../../domain/exceptions/o365_sync_exception.dart';
 import '../audit_changes.dart';
 import '../dto/create_member_request.dart';
 import '../dto/import_member_request.dart';
 import '../dto/member_response.dart';
+import '../dto/o365_sync_result_response.dart';
 import 'handler_diff.dart';
 
 /// Shelf request handlers for the /members REST resource.
@@ -42,6 +45,7 @@ class MemberHandler {
   final UpdateMemberUseCase _update;
   final DeleteMemberUseCase _delete;
   final ImportMembersUseCase _import;
+  final SyncMembersToO365UseCase _syncO365;
 
   const MemberHandler({
     required CreateMemberUseCase create,
@@ -50,12 +54,14 @@ class MemberHandler {
     required UpdateMemberUseCase update,
     required DeleteMemberUseCase delete,
     required ImportMembersUseCase import,
+    required SyncMembersToO365UseCase syncO365,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
         _delete = delete,
-        _import = import;
+        _import = import,
+        _syncO365 = syncO365;
 
   /// GET /members
   Future<Response> handleList(Request request) async {
@@ -241,6 +247,34 @@ class MemberHandler {
     }
   }
 
+  /// POST /members/sync-o365 — pushes members pending an O365 push.
+  ///
+  /// Processes one batch per call; the client re-invokes this while
+  /// `remaining > 0` in the response to fully drain a large backlog.
+  Future<Response> handleSyncO365(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    try {
+      final result = await _syncO365.execute(entityId: entityId);
+      _auditChanges(request)?.set({
+        'synced': result.synced,
+        'failed': result.failed,
+        'remaining': result.remaining,
+      });
+      return Response.ok(
+        O365SyncResultResponse.fromResult(result).toJsonString(),
+        headers: _jsonHeaders,
+      );
+    } on O365SyncNotConfiguredException catch (e) {
+      return _badRequest(e.message);
+    } on O365ContactSyncException catch (e) {
+      // The Exchange Online session itself failed (bad certificate, module
+      // missing, network error) — no member in this run was attempted.
+      return _syncFailed(e.message);
+    }
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
   static String? _entityId(Request request) {
@@ -283,6 +317,12 @@ class MemberHandler {
 
   static Response _notFound(String message) => Response.notFound(
         jsonEncode({'error': message}),
+        headers: _jsonHeaders,
+      );
+
+  static Response _syncFailed(String message) => Response(
+        502,
+        body: jsonEncode({'error': message}),
         headers: _jsonHeaders,
       );
 

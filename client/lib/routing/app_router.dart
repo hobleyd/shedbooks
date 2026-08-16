@@ -41,6 +41,7 @@ import '../screens/membership_screen.dart';
 import '../screens/bank_reconciliation_screen.dart';
 import '../screens/locked_months_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/o365_settings_screen.dart';
 import '../screens/transactions_screen.dart';
 import '../screens/users_screen.dart';
 
@@ -56,6 +57,7 @@ const _contributorBlockedPaths = {
 /// Routes restricted to administrators only (viewers and contributors are redirected).
 const _administratorOnlyPaths = {
   '/admin/users',
+  '/admin/o365-sync',
   '/bank-reconciliation',
   '/reports/monthly',
 };
@@ -236,6 +238,12 @@ GoRouter createRouter(AuthState authState) {
             GoRoute(
               path: '/admin/users',
               builder: (context, state) => const UsersScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/admin/o365-sync',
+              builder: (context, state) => const O365SettingsScreen(),
             ),
           ]),
         ],

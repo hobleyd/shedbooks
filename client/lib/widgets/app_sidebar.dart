@@ -370,6 +370,7 @@ class _AdminNavGroup extends StatelessWidget {
 
   // Visible to administrators only; hidden from viewers and contributors.
   static const _adminOnlySubItems = [
+    (label: 'O365 Sync', icon: Icons.sync_outlined, path: '/admin/o365-sync'),
     (label: 'Users', icon: Icons.manage_accounts_outlined, path: '/admin/users'),
   ];
 
