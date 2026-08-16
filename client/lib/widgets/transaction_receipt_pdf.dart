@@ -27,7 +27,7 @@ import '../models/transaction_entry.dart';
 import 'pdf_report_components.dart';
 
 class TransactionReceiptPdf {
-  static Future<void> generateAndDownload({
+  static Future<void> generateAndPrint({
     required TransactionEntry transaction,
     required EntityDetails? entity,
     required ContactEntry? contact,
@@ -162,7 +162,11 @@ class TransactionReceiptPdf {
     );
 
     final filename = 'receipt_${transaction.receiptNumber}_${transaction.transactionDate}.pdf';
-    await Printing.sharePdf(bytes: await doc.save(), filename: filename);
+    await Printing.layoutPdf(
+      name: filename,
+      format: PdfPageFormat.a4,
+      onLayout: (_) async => doc.save(),
+    );
   }
 
   static pw.Widget _infoField(String label, String value) {

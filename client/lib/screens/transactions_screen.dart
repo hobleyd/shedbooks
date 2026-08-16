@@ -1561,7 +1561,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                                   gstApplicable: false,
                                   direction: GlDirection.moneyIn),
                             );
-                            TransactionReceiptPdf.generateAndDownload(
+                            TransactionReceiptPdf.generateAndPrint(
                               transaction: t,
                               entity: _entityDetails,
                               contact: contact,
@@ -1569,7 +1569,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                               formatCents: _formatCents,
                             );
                           },
-                          tooltip: 'Download PDF Receipt',
+                          tooltip: 'Print PDF Receipt',
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                         ),
