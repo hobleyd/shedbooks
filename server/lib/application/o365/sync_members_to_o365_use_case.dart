@@ -58,18 +58,24 @@ class O365SyncBatchResult {
 /// behind the reverse proxy; the caller re-invokes this use case while
 /// `remaining > 0` to fully drain a large backlog. Per-member failures are
 /// swallowed (fail-soft) so one bad record doesn't abort the whole batch —
-/// the member simply stays pending for the next run. Members without a
-/// syncable email address (`!Member.hasSyncableEmail` — missing, or not
-/// even the basic shape of one, e.g. placeholder text like `"N/A"`) are
-/// excluded from the batch query entirely rather than attempted and
-/// failed — Exchange always rejects a contact with no valid email, so
-/// leaving them eligible would let them permanently occupy batch slots
-/// (`findPendingO365Sync` orders by `createdAt`, so the oldest ineligible
-/// members would otherwise block every member behind them from ever being
-/// attempted); see [O365SyncBatchResult.unsyncableEmail]. If the Exchange
-/// Online session itself can't be established, the whole batch fails and
-/// the exception propagates (there's nothing to salvage — no member was
-/// attempted).
+/// the member is marked failed ([IMemberRepository.markO365SyncFailed]) and
+/// stays pending for a later run, rather than aborting anyone else in the
+/// same batch. Members without a syncable email address
+/// (`!Member.hasSyncableEmail` — missing, or not even the basic shape of
+/// one, e.g. placeholder text like `"N/A"`) are excluded from the batch
+/// query entirely rather than attempted and failed — Exchange always
+/// rejects a contact with no valid email, so this can never resolve
+/// itself; see [O365SyncBatchResult.unsyncableEmail]. A member that fails
+/// for a reason that CAN resolve itself later (e.g. a duplicate GAL
+/// contact needing manual cleanup in Exchange) is instead deprioritized —
+/// not excluded — behind never-attempted and previously-succeeded members
+/// in the next batch (see [IMemberRepository.findPendingO365Sync]), so it
+/// doesn't permanently block everyone behind it just for being one of the
+/// oldest still-pending records, but is still retried automatically once
+/// nothing healthier remains pending. If the Exchange Online session
+/// itself can't be established, the whole batch fails and the exception
+/// propagates (there's nothing to salvage — no member was attempted, and
+/// none are marked failed).
 ///
 /// [_defaultBatchLimit] is sized against Exchange Online session overhead
 /// (module import + `Connect-ExchangeOnline`, several seconds) plus a few
@@ -130,6 +136,10 @@ class SyncMembersToO365UseCase {
         } else {
           _log.warning(
               'O365 sync failed for member ${result.memberId}: ${result.error}');
+          await _memberRepository.markO365SyncFailed(
+            id: result.memberId,
+            entityId: entityId,
+          );
           failed++;
         }
       }

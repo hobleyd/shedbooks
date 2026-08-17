@@ -83,6 +83,10 @@ void main() {
           entityId: any(named: 'entityId'),
           o365ContactId: any(named: 'o365ContactId'),
         )).thenAnswer((_) async {});
+    when(() => memberRepository.markO365SyncFailed(
+          id: any(named: 'id'),
+          entityId: any(named: 'entityId'),
+        )).thenAnswer((_) async {});
   });
 
   group('SyncMembersToO365UseCase', () {
@@ -235,6 +239,12 @@ void main() {
           id: '1',
           entityId: any(named: 'entityId'),
           o365ContactId: any(named: 'o365ContactId')));
+      // The batch-starvation fix: a failed member is marked so the next
+      // batch query deprioritizes it behind never-attempted members.
+      verify(() => memberRepository.markO365SyncFailed(
+          id: '1', entityId: tEntityId)).called(1);
+      verifyNever(() => memberRepository.markO365SyncFailed(
+          id: '2', entityId: any(named: 'entityId')));
     });
 
     test('propagates a whole-session failure instead of swallowing it',

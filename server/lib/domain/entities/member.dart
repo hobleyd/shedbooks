@@ -83,6 +83,14 @@ class Member {
   /// Timestamp of the last successful push to O365.
   final DateTime? o365SyncedAt;
 
+  /// Timestamp of the most recent failed push to O365, or null if the last
+  /// attempt (if any) succeeded. Used only to order the O365 sync batch
+  /// query — see [hasSyncableEmail] and `findPendingO365Sync` — so a
+  /// member stuck failing every attempt (e.g. an unresolved duplicate GAL
+  /// contact) sinks behind never-attempted members instead of permanently
+  /// occupying every batch ahead of them.
+  final DateTime? o365SyncFailedAt;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -112,6 +120,7 @@ class Member {
     required this.etag,
     this.o365ContactId,
     this.o365SyncedAt,
+    this.o365SyncFailedAt,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,

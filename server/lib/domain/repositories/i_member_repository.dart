@@ -86,9 +86,21 @@ abstract interface class IMemberRepository {
   /// ([Member.hasSyncableEmail] — missing, or not even the basic shape of
   /// one, e.g. placeholder text like `"N/A"`) — Exchange rejects a mail
   /// contact without a real address, so such a member can never succeed and
-  /// would otherwise occupy a batch slot on every single call forever
-  /// (ordered by [Member.createdAt], so the oldest ineligible members would
-  /// permanently block every member behind them from ever being attempted).
+  /// would otherwise occupy a batch slot on every single call forever.
+  ///
+  /// Ordered with never-attempted and previously-succeeded members first
+  /// (each group oldest-[Member.createdAt]-first), and previously-failed
+  /// members ([Member.o365SyncFailedAt] non-null) last. A member can fail
+  /// for a reason no retry fixes on its own — e.g. a duplicate GAL contact
+  /// left over from an earlier partial failure, needing manual cleanup in
+  /// Exchange — and without this ordering such a member would sink to the
+  /// front the moment it becomes one of the oldest still-pending records
+  /// and then occupy every single batch forever, permanently blocking
+  /// every healthy member behind it. Deprioritizing (not excluding) it
+  /// means it still gets attempted, and succeeds automatically, once
+  /// nothing healthier is left pending or once its underlying problem is
+  /// fixed — [markO365Synced] clears [Member.o365SyncFailedAt] on the next
+  /// success.
   Future<List<Member>> findPendingO365Sync({
     required String entityId,
     required int limit,
@@ -108,14 +120,26 @@ abstract interface class IMemberRepository {
   /// fewer members than the roster size.
   Future<int> countUnsyncableForO365Sync({required String entityId});
 
-  /// Records a successful O365 push. Deliberately touches only the two
-  /// sync-tracking columns — it must NOT bump `updated_at` or `etag`, or
-  /// every sync run would re-dirty the row (making it "pending" again)
-  /// and every CardDAV client would see a spurious change.
+  /// Records a successful O365 push and clears [Member.o365SyncFailedAt] (a
+  /// member that previously failed and has now succeeded should no longer
+  /// be deprioritized by [findPendingO365Sync] — see its doc comment).
+  /// Deliberately touches only sync-tracking columns — it must NOT bump
+  /// `updated_at` or `etag`, or every sync run would re-dirty the row
+  /// (making it "pending" again) and every CardDAV client would see a
+  /// spurious change.
   Future<void> markO365Synced({
     required String id,
     required String entityId,
     required String o365ContactId,
+  });
+
+  /// Records a failed O365 push attempt — see [findPendingO365Sync] for why
+  /// this matters (deprioritizes the member behind never-attempted ones in
+  /// future batches). Deliberately touches only [Member.o365SyncFailedAt],
+  /// for the same reason [markO365Synced] doesn't touch `updated_at`/`etag`.
+  Future<void> markO365SyncFailed({
+    required String id,
+    required String entityId,
   });
 }
 

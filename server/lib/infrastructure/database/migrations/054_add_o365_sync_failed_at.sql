@@ -1,0 +1,35 @@
+-- Copyright (C) 2026 David Hobley
+--
+-- This file is part of Shedbooks.
+--
+-- Shedbooks is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- Shedbooks is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
+
+-- Migration: 054_add_o365_sync_failed_at
+-- Fixes a real production incident: the O365 sync batch query always
+-- selects the oldest not-yet-synced members first. A handful of members
+-- that fail every attempt (e.g. an Exchange-side duplicate GAL contact
+-- needing manual cleanup) therefore occupy every single batch forever if
+-- they happen to be among the oldest records, permanently blocking every
+-- healthy member behind them from ever being attempted. This column lets
+-- the batch query put never-attempted/previously-succeeded members ahead
+-- of previously-failed ones, so a stuck member sinks to the back of the
+-- queue instead of blocking it.
+--
+-- Parameters: none
+
+-- @param o365_sync_failed_at Timestamp of the most recent failed O365 sync attempt for this member;
+--                              NULL if the last attempt (if any) succeeded. Cleared back to NULL by
+--                              markO365Synced on the next success, so a member doesn't stay
+--                              permanently deprioritized after its underlying problem is fixed.
+ALTER TABLE members ADD COLUMN o365_sync_failed_at TIMESTAMPTZ NULL;

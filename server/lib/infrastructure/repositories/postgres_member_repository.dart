@@ -43,7 +43,8 @@ class PostgresMemberRepository implements IMemberRepository {
     street_address, po_box, email, phone, date_of_birth,
     emergency_contact_name, emergency_contact_phone,
     woodworking_induction, metalworking_induction, gym_waiver,
-    etag, o365_contact_id, o365_synced_at, created_at, updated_at, deleted_at
+    etag, o365_contact_id, o365_synced_at, o365_sync_failed_at,
+    created_at, updated_at, deleted_at
   ''';
 
   @override
@@ -221,9 +222,16 @@ class PostgresMemberRepository implements IMemberRepository {
   }
 
   /// Fetches every active, not-yet-synced member for [entityId], decrypted
-  /// and ordered oldest-first — shared by all three O365-sync-batch methods
-  /// above so they agree on exactly one eligibility definition
-  /// ([Member.hasSyncableEmail]).
+  /// and ordered never-attempted/previously-succeeded first (oldest-first
+  /// within that group), then previously-failed members last (also
+  /// oldest-first within that group) — shared by all three O365-sync-batch
+  /// methods above so they agree on exactly one eligibility definition
+  /// ([Member.hasSyncableEmail]) and one ordering.
+  ///
+  /// The failed-last ordering (`o365_sync_failed_at IS NULL DESC` sorts
+  /// true/NULL-is-not-failed before false/has-failed) is what stops a
+  /// member stuck failing every attempt from permanently blocking every
+  /// healthy member behind it — see [IMemberRepository.findPendingO365Sync].
   ///
   /// Email-format eligibility can't be pushed into the SQL `WHERE` clause:
   /// `email` is stored AES-256-GCM-encrypted for any member created or
@@ -242,7 +250,7 @@ class PostgresMemberRepository implements IMemberRepository {
           AND (o365_contact_id IS NULL
                OR o365_synced_at IS NULL
                OR updated_at > o365_synced_at)
-        ORDER BY created_at ASC
+        ORDER BY o365_sync_failed_at IS NULL DESC, created_at ASC
       '''),
       parameters: {'entityId': entityId},
     );
@@ -256,11 +264,15 @@ class PostgresMemberRepository implements IMemberRepository {
     required String o365ContactId,
   }) async {
     // Deliberately does not touch updated_at or etag — see interface doc.
+    // Clears o365_sync_failed_at: a member that previously failed and has
+    // now succeeded should no longer be deprioritized by the ORDER BY in
+    // _fetchO365SyncCandidates.
     await _pool.execute(
       Sql.named('''
         UPDATE members
-        SET o365_contact_id = @o365ContactId,
-            o365_synced_at  = NOW()
+        SET o365_contact_id    = @o365ContactId,
+            o365_synced_at     = NOW(),
+            o365_sync_failed_at = NULL
         WHERE id = @id::uuid
           AND entity_id = @entityId
       '''),
@@ -269,6 +281,23 @@ class PostgresMemberRepository implements IMemberRepository {
         'entityId': entityId,
         'o365ContactId': o365ContactId,
       },
+    );
+  }
+
+  @override
+  Future<void> markO365SyncFailed({
+    required String id,
+    required String entityId,
+  }) async {
+    // Deliberately does not touch updated_at or etag — see interface doc.
+    await _pool.execute(
+      Sql.named('''
+        UPDATE members
+        SET o365_sync_failed_at = NOW()
+        WHERE id = @id::uuid
+          AND entity_id = @entityId
+      '''),
+      parameters: {'id': id, 'entityId': entityId},
     );
   }
 
@@ -364,6 +393,7 @@ class PostgresMemberRepository implements IMemberRepository {
       etag: row['etag'] as String,
       o365ContactId: row['o365_contact_id'] as String?,
       o365SyncedAt: row['o365_synced_at'] as DateTime?,
+      o365SyncFailedAt: row['o365_sync_failed_at'] as DateTime?,
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,
