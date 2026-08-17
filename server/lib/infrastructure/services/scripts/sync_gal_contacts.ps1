@@ -12,30 +12,48 @@
   contact per member, and writes a JSON results file.
 
   Existing contacts are matched by the id Shedbooks already recorded for
-  that member (member.existingContactId — the created contact's `.Identity`
-  from a previous sync; NOT `ExternalDirectoryObjectId`, which is populated
-  asynchronously by directory sync and may not be available immediately
-  after New-MailContact returns). Its existence is probed with
+  that member (member.existingContactId — an email address or a `.Identity`
+  string from a previous sync; NOT `ExternalDirectoryObjectId`, which is
+  populated asynchronously by directory sync and may not be available
+  immediately after New-MailContact returns). Its existence is probed with
   Get-MailContact before use; if it no longer resolves (the contact was
   deleted directly in the GAL), the script falls back to an orphan lookup
   (below) rather than assuming none exists.
 
   When there is no existingContactId (first sync, or a stale one), the
   script does NOT immediately create a new contact — it first looks up
-  Get-MailContact by the exact Name it's about to use (deterministic per
-  member: displayName + a short id suffix) to check for a contact left
-  behind by an earlier run that created it in Exchange but failed on a
-  later step before Shedbooks could record the id — historically a routine
-  occurrence, since every first-time sync used to fail on the very next
-  line (see the Set-Contact/Set-MailContact note below), so almost every
-  member older than this fix already has exactly one such orphan. Matched
-  by Name, which New-MailContact sets at creation time regardless of what
-  fails afterward. Skipping this check would create a fresh duplicate on
-  every retry, and Exchange would then reject every same-named duplicate
-  with an ambiguous "multiple recipients matching identity" error. If more
-  than one orphan is found (a member retried several times before this
-  check existed), it's reported as a per-member error asking for manual
-  cleanup in Exchange rather than guessing which duplicate to keep.
+  Get-MailContact by EMAIL address (`Get-MailContact -Filter
+  "EmailAddresses -eq 'smtp:<address>'"`, confirmed against the live
+  tenant) to check for a contact already using it, from an earlier run
+  (this environment's or another Shedbooks environment's — see below) that
+  created it in Exchange but never recorded the id. Matched by email, NOT
+  by Name: Name embeds the id of whichever Shedbooks member record most
+  recently synced this person (`$internalName` below, `displayName (SB-
+  <shortId>)`), and that id is different for the same real person in every
+  separate Shedbooks deployment/database — each one generates its own
+  UUIDs on import. Confirmed as a real incident, not a hypothetical: a dev
+  and a production deployment both synced against this same live tenant,
+  and production's very first run collided on email with contacts dev had
+  already created for the identical real people under dev's own ids,
+  because Name-based matching never recognized them as the same person.
+  Email is the one thing Exchange itself already enforces as globally
+  unique, so matching on it is robust no matter how many separate
+  Shedbooks environments sync against the same tenant — the actual "many
+  tenants, must be robust" requirement this fix was written for. The
+  member's email (not the freshly-created object's Name-derived
+  `.Identity`) is then used directly as `-Identity` for the immediately-
+  following Set-MailContact/Set-Contact calls too — confirmed against the
+  live tenant that an email address is a valid identity value (same as
+  Name/Alias/DN/GUID) — since relying on a brand-new object's Name-based
+  identity was separately observed to fail with "couldn't be found" on an
+  object that had only just been created, apparently a directory-
+  replication-timing issue distinct from the matching problem above.
+  Skipping the orphan check entirely would create a fresh duplicate on
+  every retry, and Exchange would then reject every same-email duplicate
+  with an ambiguous "proxy address already in use" error. If more than one
+  orphan is found (rare — state left over from before this check existed),
+  it's reported as a per-member error asking for manual cleanup in
+  Exchange rather than guessing which duplicate to keep.
 
   Set-Contact and Set-MailContact are NOT interchangeable and this script
   deliberately uses both: Set-Contact only exposes base AD contact
@@ -208,35 +226,41 @@ try {
             if (-not $identity) {
                 # No known id (first sync, or a stale one) — before creating,
                 # check whether a contact for this exact member already
-                # exists from an earlier run that created it in Exchange but
-                # failed on a later step before Shedbooks could record the
-                # id (this was routine before the Set-Contact fix above: every
-                # single first-time sync created a contact via New-MailContact
-                # and then failed on the very next line). Without this check,
-                # every retry would create another duplicate with the
-                # identical Name, and Exchange would then reject all of them
-                # with an ambiguous "multiple recipients matching identity"
-                # error. Matched by Name (deterministic per member —
-                # displayName + shortId), which New-MailContact sets at
-                # creation time regardless of what fails afterward.
-                $orphaned = @(Get-MailContact -Filter "Name -eq '$internalName'" -ErrorAction SilentlyContinue)
+                # exists. Matched by EMAIL, not Name: Name embeds THIS
+                # environment's own member id (SB-<shortId>), which is
+                # different for the same real person in every separate
+                # Shedbooks deployment/database — each one generates its own
+                # UUIDs on import. Confirmed as a real incident: dev and
+                # prod both synced against this same live tenant, and prod's
+                # very first run collided on email with contacts dev had
+                # already created for the identical people under dev's own
+                # ids, since Name-based matching never recognized them as
+                # the same person. Email is the one thing Exchange itself
+                # already enforces as globally unique, so matching on it
+                # works no matter which Shedbooks environment (or how many)
+                # sync against the same tenant. `-Identity <email address>`
+                # is a Microsoft-documented valid identity form (same as
+                # Name/Alias/DN/GUID) — confirmed against the live tenant —
+                # so it's used directly for the two Set-* calls below
+                # instead of a freshly-created object's Name-based identity,
+                # which was the separate cause of a "couldn't be found"
+                # replication-lag error seen on a different member today.
+                $orphaned = @(Get-MailContact -Filter "EmailAddresses -eq 'smtp:$($member.email)'" -ErrorAction SilentlyContinue)
                 if ($orphaned.Count -gt 1) {
-                    throw "Multiple existing GAL contacts already have the name '$internalName' — manual cleanup required in Exchange (Get-MailContact -Filter `"Name -eq '$internalName'`") before this member can sync."
+                    throw "Multiple existing GAL contacts already use the email '$($member.email)' — manual cleanup required in Exchange (Get-MailContact -Filter `"EmailAddresses -eq 'smtp:$($member.email)'`") before this member can sync."
                 } elseif ($orphaned.Count -eq 1) {
-                    $orphanIdentity = $orphaned[0].Identity.ToString()
-                    Set-MailContact -Identity $orphanIdentity `
+                    Set-MailContact -Identity $member.email `
                         -Name $internalName -DisplayName $displayName `
                         -ExternalEmailAddress $member.email `
                         -CustomAttribute1 $member.memberId -ErrorAction Stop | Out-Null
-                    Set-Contact -Identity $orphanIdentity @setContactParams -ErrorAction Stop | Out-Null
-                    $identity = $orphanIdentity
+                    Set-Contact -Identity $member.email @setContactParams -ErrorAction Stop | Out-Null
+                    $identity = $member.email
                 } else {
-                    $created = New-MailContact -Name $internalName -DisplayName $displayName `
-                        -ExternalEmailAddress $member.email -ErrorAction Stop
-                    # .Identity (not ExternalDirectoryObjectId) — see file-level comment.
-                    $identity = $created.Identity.ToString()
-                    Set-MailContact -Identity $identity -CustomAttribute1 $member.memberId -ErrorAction Stop | Out-Null
-                    Set-Contact -Identity $identity @setContactParams -ErrorAction Stop | Out-Null
+                    New-MailContact -Name $internalName -DisplayName $displayName `
+                        -ExternalEmailAddress $member.email -ErrorAction Stop | Out-Null
+                    Set-MailContact -Identity $member.email -CustomAttribute1 $member.memberId -ErrorAction Stop | Out-Null
+                    Set-Contact -Identity $member.email @setContactParams -ErrorAction Stop | Out-Null
+                    $identity = $member.email
                 }
             }
 
