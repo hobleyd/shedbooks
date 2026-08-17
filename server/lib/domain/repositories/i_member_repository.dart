@@ -81,13 +81,32 @@ abstract interface class IMemberRepository {
 
   /// Returns up to [limit] active members that need to be pushed to O365:
   /// never synced, or edited since their last successful sync.
+  ///
+  /// Excludes members without a syncable email address
+  /// ([Member.hasSyncableEmail] — missing, or not even the basic shape of
+  /// one, e.g. placeholder text like `"N/A"`) — Exchange rejects a mail
+  /// contact without a real address, so such a member can never succeed and
+  /// would otherwise occupy a batch slot on every single call forever
+  /// (ordered by [Member.createdAt], so the oldest ineligible members would
+  /// permanently block every member behind them from ever being attempted).
   Future<List<Member>> findPendingO365Sync({
     required String entityId,
     required int limit,
   });
 
-  /// Counts active members that need to be pushed to O365.
+  /// Counts active, syncable ([Member.hasSyncableEmail]) members that need
+  /// to be pushed to O365 — same eligibility as [findPendingO365Sync], so
+  /// this reaches zero once every syncable member is done rather than
+  /// sitting permanently non-zero because of members that can never sync.
   Future<int> countPendingO365Sync({required String entityId});
+
+  /// Counts active, not-yet-synced members that lack a syncable email
+  /// address ([Member.hasSyncableEmail] is false — missing, or not even the
+  /// basic shape of one) and so can never be pushed to O365 — excluded
+  /// entirely from [findPendingO365Sync]/[countPendingO365Sync], but still
+  /// surfaced here so the admin isn't left wondering why a batch reports
+  /// fewer members than the roster size.
+  Future<int> countUnsyncableForO365Sync({required String entityId});
 
   /// Records a successful O365 push. Deliberately touches only the two
   /// sync-tracking columns — it must NOT bump `updated_at` or `etag`, or

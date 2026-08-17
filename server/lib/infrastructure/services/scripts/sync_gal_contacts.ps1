@@ -17,12 +17,46 @@
   asynchronously by directory sync and may not be available immediately
   after New-MailContact returns). Its existence is probed with
   Get-MailContact before use; if it no longer resolves (the contact was
-  deleted directly in the GAL), a new contact is created in its place
-  rather than failing the member.
+  deleted directly in the GAL), the script falls back to an orphan lookup
+  (below) rather than assuming none exists.
 
-  A member with no email address cannot have a mail contact created for it
-  (ExternalEmailAddress is required by Exchange) and is reported as a
-  per-member error rather than silently skipped.
+  When there is no existingContactId (first sync, or a stale one), the
+  script does NOT immediately create a new contact — it first looks up
+  Get-MailContact by the exact Name it's about to use (deterministic per
+  member: displayName + a short id suffix) to check for a contact left
+  behind by an earlier run that created it in Exchange but failed on a
+  later step before Shedbooks could record the id — historically a routine
+  occurrence, since every first-time sync used to fail on the very next
+  line (see the Set-Contact/Set-MailContact note below), so almost every
+  member older than this fix already has exactly one such orphan. Matched
+  by Name, which New-MailContact sets at creation time regardless of what
+  fails afterward. Skipping this check would create a fresh duplicate on
+  every retry, and Exchange would then reject every same-named duplicate
+  with an ambiguous "multiple recipients matching identity" error. If more
+  than one orphan is found (a member retried several times before this
+  check existed), it's reported as a per-member error asking for manual
+  cleanup in Exchange rather than guessing which duplicate to keep.
+
+  Set-Contact and Set-MailContact are NOT interchangeable and this script
+  deliberately uses both: Set-Contact only exposes base AD contact
+  properties (Notes, StreetAddress, Phone, ...) and has no
+  CustomAttribute1-15 parameters on any tenant, for any caller — confirmed
+  against the live tenant via `Get-Command Set-Contact -Syntax`.
+  CustomAttribute1 (which carries the Shedbooks member id, used by the
+  orphan lookup above) is a mail-enabled-recipient property and must go
+  through Set-MailContact instead. An earlier version of this script
+  splatted CustomAttribute1 into the Set-Contact call, which failed with
+  "A parameter cannot be found that matches parameter name
+  'CustomAttribute1'" for every single member, every time — the true
+  reason no member had ever actually finished syncing, only discovered
+  once the earlier setup-script issues (GUID-vs-domain, UnAuthorized) had
+  been cleared and members could finally reach this line.
+
+  A member with no syncable email address cannot have a mail contact
+  created for it (ExternalEmailAddress must be a real SMTP address) and is
+  reported as a per-member error rather than silently skipped — though in
+  practice Shedbooks' own eligibility query excludes such members before
+  they ever reach this script; the check here is a defensive backstop.
 
   Every field is re-applied on every sync — Shedbooks is treated as the
   source of truth, so a field cleared in Shedbooks is cleared in the GAL
@@ -106,6 +140,15 @@ try {
             if ([string]::IsNullOrWhiteSpace($member.email)) {
                 throw 'Member has no email address — a GAL mail contact requires one.'
             }
+            # Belt-and-braces: Shedbooks' own eligibility query (server-side
+            # Member.hasSyncableEmail) already excludes members without a
+            # valid-looking email before they ever reach this script, but
+            # check again here rather than letting Exchange reject a
+            # malformed address (e.g. "N/A" typed into the field) with a
+            # confusing SMTP-format error.
+            if ($member.email -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+                throw "Member's email address `"$($member.email)`" does not look like a valid email address."
+            }
 
             $displayName = ("$($member.firstName) $($member.lastName)").Trim()
             if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = $member.email }
@@ -124,15 +167,27 @@ try {
             $streetParts = @($member.streetAddress, $member.poBox) | Where-Object { $_ }
             $street = $streetParts -join ', '
 
-            # CustomAttribute1 carries the Shedbooks member id as a
-            # breadcrumb for admins inspecting the GAL entry directly — the
-            # actual lookup key Shedbooks uses is existingContactId, not this.
-            $contactParams = @{
-                Notes            = $notes
-                CustomAttribute1 = $member.memberId
-            }
-            if ($member.phone) { $contactParams['Phone'] = $member.phone }
-            if ($street) { $contactParams['StreetAddress'] = $street }
+            # Set-Contact and Set-MailContact split the recipient's fields
+            # between them and are NOT interchangeable: Set-Contact only
+            # knows the base AD contact properties (Notes, StreetAddress,
+            # Phone, ...) — it has no CustomAttribute1-15 parameters at
+            # all, on any tenant, for any caller (confirmed against the
+            # live tenant: `Get-Command Set-Contact -Syntax` lists none).
+            # CustomAttribute1 is a mail-enabled-recipient property, so it
+            # must go through Set-MailContact instead. Splatting it into
+            # Set-Contact's call — the original shape of this script — has
+            # always failed with "A parameter cannot be found that matches
+            # parameter name 'CustomAttribute1'", for every member, every
+            # single time. It went unnoticed at first because members were
+            # separately failing on other bugs before ever reaching this
+            # call (the GUID-vs-domain and UnAuthorized issues in the
+            # earlier setup-script saga); once those cleared, this was
+            # revealed as the reason no member had ever actually finished
+            # syncing (confirmed: `o365_contact_id` was NULL for all 73
+            # members even after several successful-looking connections).
+            $setContactParams = @{ Notes = $notes }
+            if ($member.phone) { $setContactParams['Phone'] = $member.phone }
+            if ($street) { $setContactParams['StreetAddress'] = $street }
 
             $identity = $null
             if ($member.existingContactId) {
@@ -142,25 +197,53 @@ try {
                 if ($existing) {
                     Set-MailContact -Identity $member.existingContactId `
                         -Name $internalName -DisplayName $displayName `
-                        -ExternalEmailAddress $member.email -ErrorAction Stop | Out-Null
-                    Set-Contact -Identity $member.existingContactId @contactParams -ErrorAction Stop | Out-Null
+                        -ExternalEmailAddress $member.email `
+                        -CustomAttribute1 $member.memberId -ErrorAction Stop | Out-Null
+                    Set-Contact -Identity $member.existingContactId @setContactParams -ErrorAction Stop | Out-Null
                     $identity = $member.existingContactId
                 }
                 # else: stale id — contact was deleted directly in the GAL. Fall through to recreate.
             }
 
             if (-not $identity) {
-                $created = New-MailContact -Name $internalName -DisplayName $displayName `
-                    -ExternalEmailAddress $member.email -ErrorAction Stop
-                Set-Contact -Identity $created.Identity @contactParams -ErrorAction Stop | Out-Null
-                # .Identity (not ExternalDirectoryObjectId) — see file-level comment.
-                $identity = $created.Identity.ToString()
+                # No known id (first sync, or a stale one) — before creating,
+                # check whether a contact for this exact member already
+                # exists from an earlier run that created it in Exchange but
+                # failed on a later step before Shedbooks could record the
+                # id (this was routine before the Set-Contact fix above: every
+                # single first-time sync created a contact via New-MailContact
+                # and then failed on the very next line). Without this check,
+                # every retry would create another duplicate with the
+                # identical Name, and Exchange would then reject all of them
+                # with an ambiguous "multiple recipients matching identity"
+                # error. Matched by Name (deterministic per member —
+                # displayName + shortId), which New-MailContact sets at
+                # creation time regardless of what fails afterward.
+                $orphaned = @(Get-MailContact -Filter "Name -eq '$internalName'" -ErrorAction SilentlyContinue)
+                if ($orphaned.Count -gt 1) {
+                    throw "Multiple existing GAL contacts already have the name '$internalName' — manual cleanup required in Exchange (Get-MailContact -Filter `"Name -eq '$internalName'`") before this member can sync."
+                } elseif ($orphaned.Count -eq 1) {
+                    $orphanIdentity = $orphaned[0].Identity.ToString()
+                    Set-MailContact -Identity $orphanIdentity `
+                        -Name $internalName -DisplayName $displayName `
+                        -ExternalEmailAddress $member.email `
+                        -CustomAttribute1 $member.memberId -ErrorAction Stop | Out-Null
+                    Set-Contact -Identity $orphanIdentity @setContactParams -ErrorAction Stop | Out-Null
+                    $identity = $orphanIdentity
+                } else {
+                    $created = New-MailContact -Name $internalName -DisplayName $displayName `
+                        -ExternalEmailAddress $member.email -ErrorAction Stop
+                    # .Identity (not ExternalDirectoryObjectId) — see file-level comment.
+                    $identity = $created.Identity.ToString()
+                    Set-MailContact -Identity $identity -CustomAttribute1 $member.memberId -ErrorAction Stop | Out-Null
+                    Set-Contact -Identity $identity @setContactParams -ErrorAction Stop | Out-Null
+                }
             }
 
             $result.contactId = $identity
         }
         catch {
-            $result.error = $_.Exception.Message
+            $result.error = "$($_.Exception.Message) [line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())]"
         }
         $results += [pscustomobject]$result
         Write-PartialResults -Results $results

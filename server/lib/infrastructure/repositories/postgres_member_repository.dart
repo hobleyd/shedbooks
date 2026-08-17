@@ -204,6 +204,35 @@ class PostgresMemberRepository implements IMemberRepository {
     required String entityId,
     required int limit,
   }) async {
+    final candidates = await _fetchO365SyncCandidates(entityId);
+    return candidates.where((m) => m.hasSyncableEmail).take(limit).toList();
+  }
+
+  @override
+  Future<int> countPendingO365Sync({required String entityId}) async {
+    final candidates = await _fetchO365SyncCandidates(entityId);
+    return candidates.where((m) => m.hasSyncableEmail).length;
+  }
+
+  @override
+  Future<int> countUnsyncableForO365Sync({required String entityId}) async {
+    final candidates = await _fetchO365SyncCandidates(entityId);
+    return candidates.where((m) => !m.hasSyncableEmail).length;
+  }
+
+  /// Fetches every active, not-yet-synced member for [entityId], decrypted
+  /// and ordered oldest-first — shared by all three O365-sync-batch methods
+  /// above so they agree on exactly one eligibility definition
+  /// ([Member.hasSyncableEmail]).
+  ///
+  /// Email-format eligibility can't be pushed into the SQL `WHERE` clause:
+  /// `email` is stored AES-256-GCM-encrypted for any member created or
+  /// edited since encryption was introduced, so a plaintext regex or
+  /// equality check against the raw column only works for the dwindling
+  /// set of legacy unencrypted rows. Decrypting via [_mapRow] and filtering
+  /// in Dart is the only correct option — acceptable at this table's scale
+  /// (a club roster, not a large multi-tenant table).
+  Future<List<Member>> _fetchO365SyncCandidates(String entityId) async {
     final result = await _pool.execute(
       Sql.named('''
         SELECT $_columns
@@ -214,28 +243,10 @@ class PostgresMemberRepository implements IMemberRepository {
                OR o365_synced_at IS NULL
                OR updated_at > o365_synced_at)
         ORDER BY created_at ASC
-        LIMIT @limit
-      '''),
-      parameters: {'entityId': entityId, 'limit': limit},
-    );
-    return result.map((row) => _mapRow(row.toColumnMap())).toList();
-  }
-
-  @override
-  Future<int> countPendingO365Sync({required String entityId}) async {
-    final result = await _pool.execute(
-      Sql.named('''
-        SELECT COUNT(*) AS c
-        FROM members
-        WHERE entity_id = @entityId
-          AND deleted_at IS NULL
-          AND (o365_contact_id IS NULL
-               OR o365_synced_at IS NULL
-               OR updated_at > o365_synced_at)
       '''),
       parameters: {'entityId': entityId},
     );
-    return result.first.toColumnMap()['c'] as int;
+    return result.map((row) => _mapRow(row.toColumnMap())).toList();
   }
 
   @override

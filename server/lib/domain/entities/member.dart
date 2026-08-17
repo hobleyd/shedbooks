@@ -135,4 +135,17 @@ class Member {
     final parsed = int.tryParse(membershipStatus ?? '');
     return parsed != null && parsed >= year;
   }
+
+  static final _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
+  /// Returns true when [email] is a plausible email address (basic
+  /// `x@y.z` shape) — rejects placeholder text like `"N/A"` or `"-"` that
+  /// data entry sometimes leaves in an email field instead of leaving it
+  /// blank. Not a full RFC 5322 validator; just enough to catch obvious junk.
+  static bool isValidEmailFormat(String email) => _emailPattern.hasMatch(email);
+
+  /// Returns true when [email] is non-null and looks like a real address
+  /// (see [isValidEmailFormat]) — i.e. this member can receive a synced
+  /// O365 GAL contact.
+  bool get hasSyncableEmail => email != null && isValidEmailFormat(email!);
 }

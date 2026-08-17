@@ -24,11 +24,13 @@ class O365SyncResultResponse {
   final int synced;
   final int failed;
   final int remaining;
+  final int unsyncableEmail;
 
   const O365SyncResultResponse({
     required this.synced,
     required this.failed,
     required this.remaining,
+    required this.unsyncableEmail,
   });
 
   factory O365SyncResultResponse.fromResult(O365SyncBatchResult r) =>
@@ -36,12 +38,14 @@ class O365SyncResultResponse {
         synced: r.synced,
         failed: r.failed,
         remaining: r.remaining,
+        unsyncableEmail: r.unsyncableEmail,
       );
 
   Map<String, dynamic> toJson() => {
         'synced': synced,
         'failed': failed,
         'remaining': remaining,
+        'unsyncableEmail': unsyncableEmail,
       };
 
   String toJsonString() => jsonEncode(toJson());

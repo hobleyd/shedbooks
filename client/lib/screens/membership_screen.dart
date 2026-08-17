@@ -645,6 +645,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
     var totalSynced = 0;
     var totalFailed = 0;
     var remaining = 0;
+    var unsyncableEmail = 0;
     String? errorMsg;
     try {
       for (var i = 0; i < 20; i++) {
@@ -661,12 +662,17 @@ class _MembershipScreenState extends State<MembershipScreen> {
         final synced = json['synced'] as int;
         final failed = json['failed'] as int;
         remaining = json['remaining'] as int;
+        // A snapshot count, not a per-pass delta — members with no
+        // syncable (valid-looking) email address are excluded from every
+        // batch (see server-side findPendingO365Sync), so this is always
+        // the current total, not something to accumulate across passes.
+        unsyncableEmail = json['unsyncableEmail'] as int? ?? 0;
         totalSynced += synced;
         totalFailed += failed;
-        // Stop once a pass makes no forward progress — a run that only
-        // fails (e.g. members with no email address, which can never sync)
-        // would otherwise keep opening fresh Exchange sessions for up to
-        // 20 passes without ever reaching remaining == 0.
+        // Stop once a pass makes no forward progress, so a run that hits a
+        // batch of genuine per-member failures doesn't keep opening fresh
+        // Exchange sessions for up to 20 passes without ever reaching
+        // remaining == 0.
         if (remaining == 0 || synced == 0) break;
       }
     } catch (e) {
@@ -686,9 +692,10 @@ class _MembershipScreenState extends State<MembershipScreen> {
 
     final message = [
       'Synced $totalSynced member(s) to O365',
-      if (totalFailed > 0)
-        '$totalFailed failed (check for members missing an email address)',
+      if (totalFailed > 0) '$totalFailed failed',
       if (remaining > 0) '$remaining still pending — click Sync again',
+      if (unsyncableEmail > 0)
+        '$unsyncableEmail can\'t sync — missing or invalid email address',
     ].join(', ');
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));

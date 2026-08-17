@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'package:logging/logging.dart';
+
 import '../../domain/exceptions/o365_sync_exception.dart';
 import '../../domain/repositories/i_member_repository.dart';
 import '../../domain/repositories/i_o365_sync_settings_repository.dart';
@@ -32,10 +34,19 @@ class O365SyncBatchResult {
   /// beyond the batch limit that were not attempted).
   final int remaining;
 
+  /// Members that can never be synced because they have no syncable email
+  /// address (missing, or not even the basic shape of one — see
+  /// [Member.hasSyncableEmail]) — excluded from [remaining] entirely (they
+  /// never occupy a batch slot), but surfaced separately so the admin knows
+  /// why the roster count and [remaining] don't match once every syncable
+  /// member is done.
+  final int unsyncableEmail;
+
   const O365SyncBatchResult({
     required this.synced,
     required this.failed,
     required this.remaining,
+    required this.unsyncableEmail,
   });
 }
 
@@ -47,9 +58,17 @@ class O365SyncBatchResult {
 /// behind the reverse proxy; the caller re-invokes this use case while
 /// `remaining > 0` to fully drain a large backlog. Per-member failures are
 /// swallowed (fail-soft) so one bad record doesn't abort the whole batch —
-/// the member simply stays pending for the next run. If the Exchange Online
-/// session itself can't be established, the whole batch fails and the
-/// exception propagates (there's nothing to salvage — no member was
+/// the member simply stays pending for the next run. Members without a
+/// syncable email address (`!Member.hasSyncableEmail` — missing, or not
+/// even the basic shape of one, e.g. placeholder text like `"N/A"`) are
+/// excluded from the batch query entirely rather than attempted and
+/// failed — Exchange always rejects a contact with no valid email, so
+/// leaving them eligible would let them permanently occupy batch slots
+/// (`findPendingO365Sync` orders by `createdAt`, so the oldest ineligible
+/// members would otherwise block every member behind them from ever being
+/// attempted); see [O365SyncBatchResult.unsyncableEmail]. If the Exchange
+/// Online session itself can't be established, the whole batch fails and
+/// the exception propagates (there's nothing to salvage — no member was
 /// attempted).
 ///
 /// [_defaultBatchLimit] is sized against Exchange Online session overhead
@@ -59,6 +78,7 @@ class O365SyncBatchResult {
 /// give this call headroom.
 class SyncMembersToO365UseCase {
   static const _defaultBatchLimit = 5;
+  static final _log = Logger('SyncMembersToO365UseCase');
 
   final IO365SyncSettingsRepository _settingsRepository;
   final IMemberRepository _memberRepository;
@@ -108,6 +128,8 @@ class SyncMembersToO365UseCase {
           );
           synced++;
         } else {
+          _log.warning(
+              'O365 sync failed for member ${result.memberId}: ${result.error}');
           failed++;
         }
       }
@@ -115,11 +137,14 @@ class SyncMembersToO365UseCase {
 
     final remaining =
         await _memberRepository.countPendingO365Sync(entityId: entityId);
+    final unsyncableEmail = await _memberRepository.countUnsyncableForO365Sync(
+        entityId: entityId);
 
     return O365SyncBatchResult(
       synced: synced,
       failed: failed,
       remaining: remaining,
+      unsyncableEmail: unsyncableEmail,
     );
   }
 }

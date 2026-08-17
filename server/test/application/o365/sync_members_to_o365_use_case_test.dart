@@ -111,6 +111,8 @@ void main() {
           (_) async => []);
       when(() => memberRepository.countPendingO365Sync(entityId: tEntityId))
           .thenAnswer((_) async => 0);
+      when(() => memberRepository.countUnsyncableForO365Sync(
+          entityId: tEntityId)).thenAnswer((_) async => 0);
 
       // Act
       await sut.execute(entityId: tEntityId);
@@ -130,6 +132,8 @@ void main() {
           limit: any(named: 'limit'))).thenAnswer((_) async => []);
       when(() => memberRepository.countPendingO365Sync(entityId: tEntityId))
           .thenAnswer((_) async => 0);
+      when(() => memberRepository.countUnsyncableForO365Sync(
+          entityId: tEntityId)).thenAnswer((_) async => 0);
 
       // Act
       final result = await sut.execute(entityId: tEntityId);
@@ -138,6 +142,31 @@ void main() {
       expect(result.synced, equals(0));
       verifyNever(() => syncService.upsertContacts(
           settings: any(named: 'settings'), members: any(named: 'members')));
+    });
+
+    test('surfaces the count of members that can never sync due to a missing or invalid email',
+        () async {
+      // Arrange — this is the batch-selection fix: members without a
+      // syncable email (missing, or not even the basic shape of one, e.g.
+      // "N/A") are excluded from findPendingO365Sync/countPendingO365Sync
+      // entirely (so they never permanently occupy a batch slot ahead of
+      // syncable members), but still counted separately so the admin can
+      // see why.
+      when(() => settingsRepository.find(tEntityId))
+          .thenAnswer((_) async => tSettings);
+      when(() => memberRepository.findPendingO365Sync(
+          entityId: tEntityId,
+          limit: any(named: 'limit'))).thenAnswer((_) async => []);
+      when(() => memberRepository.countPendingO365Sync(entityId: tEntityId))
+          .thenAnswer((_) async => 0);
+      when(() => memberRepository.countUnsyncableForO365Sync(
+          entityId: tEntityId)).thenAnswer((_) async => 5);
+
+      // Act
+      final result = await sut.execute(entityId: tEntityId);
+
+      // Assert
+      expect(result.unsyncableEmail, equals(5));
     });
 
     test('syncs the whole pending batch in one call and marks each synced',
@@ -157,6 +186,8 @@ void main() {
           ]);
       when(() => memberRepository.countPendingO365Sync(entityId: tEntityId))
           .thenAnswer((_) async => 0);
+      when(() => memberRepository.countUnsyncableForO365Sync(
+          entityId: tEntityId)).thenAnswer((_) async => 0);
 
       // Act
       final result = await sut.execute(entityId: tEntityId);
@@ -190,6 +221,8 @@ void main() {
           ]);
       when(() => memberRepository.countPendingO365Sync(entityId: tEntityId))
           .thenAnswer((_) async => 1);
+      when(() => memberRepository.countUnsyncableForO365Sync(
+          entityId: tEntityId)).thenAnswer((_) async => 0);
 
       // Act
       final result = await sut.execute(entityId: tEntityId);
