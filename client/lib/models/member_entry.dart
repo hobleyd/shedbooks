@@ -41,6 +41,16 @@ class MemberEntry {
   final String? metalworkingInduction;
   final String? gymWaiver;
 
+  /// Timestamp of the last successful O365 GAL sync, or null if this
+  /// member has never been synced.
+  final DateTime? o365SyncedAt;
+
+  /// Timestamp of the most recent failed O365 GAL sync attempt, or null
+  /// if the last attempt (if any) succeeded. Cleared server-side on the
+  /// next success, so a non-null value always means the most recent
+  /// attempt — not necessarily the only one — failed.
+  final DateTime? o365SyncFailedAt;
+
   /// CardDAV ETag — changes on every server-side update.
   final String etag;
 
@@ -60,6 +70,8 @@ class MemberEntry {
     this.woodworkingInduction,
     this.metalworkingInduction,
     this.gymWaiver,
+    this.o365SyncedAt,
+    this.o365SyncFailedAt,
     required this.etag,
   });
 
@@ -86,6 +98,12 @@ class MemberEntry {
       woodworkingInduction: json['woodworkingInduction'] as String?,
       metalworkingInduction: json['metalworkingInduction'] as String?,
       gymWaiver: json['gymWaiver'] as String?,
+      o365SyncedAt: json['o365SyncedAt'] != null
+          ? DateTime.parse(json['o365SyncedAt'] as String)
+          : null,
+      o365SyncFailedAt: json['o365SyncFailedAt'] != null
+          ? DateTime.parse(json['o365SyncFailedAt'] as String)
+          : null,
       etag: json['etag'] as String,
     );
   }

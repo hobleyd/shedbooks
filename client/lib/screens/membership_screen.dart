@@ -71,6 +71,11 @@ class _MemberRow {
   final FocusNode firstNameFocus;
   final FocusNode lastNameFocus;
 
+  // Read-only/derived — set by the server, not editable here, so plain
+  // fields rather than controllers (no dirty-check/toRequestJson/reset).
+  final DateTime? o365SyncedAt;
+  final DateTime? o365SyncFailedAt;
+
   // Originals for dirty-check
   final String _origLastName;
   final String _origFirstName;
@@ -105,6 +110,8 @@ class _MemberRow {
         gymWaiverCtrl = TextEditingController(),
         firstNameFocus = FocusNode(),
         lastNameFocus = FocusNode(),
+        o365SyncedAt = null,
+        o365SyncFailedAt = null,
         _origLastName = '',
         _origFirstName = '',
         _origDateJoined = '',
@@ -147,6 +154,8 @@ class _MemberRow {
             TextEditingController(text: _isoToDisplay(e.gymWaiver ?? '')),
         firstNameFocus = FocusNode(),
         lastNameFocus = FocusNode(),
+        o365SyncedAt = e.o365SyncedAt,
+        o365SyncFailedAt = e.o365SyncFailedAt,
         _origLastName = e.lastName,
         _origFirstName = e.firstName,
         _origDateJoined = _isoToDisplay(e.dateJoined ?? ''),
@@ -755,6 +764,11 @@ class _MembershipScreenState extends State<MembershipScreen> {
           10 => r.woodworkingCtrl.text,
           11 => r.metalworkingCtrl.text,
           12 => r.gymWaiverCtrl.text,
+          13 => r.o365SyncFailedAt != null
+              ? _isoDate(r.o365SyncFailedAt!.toLocal())
+              : r.o365SyncedAt != null
+                  ? _isoDate(r.o365SyncedAt!.toLocal())
+                  : '',
           _ => '',
         };
       }
@@ -919,6 +933,7 @@ const double _kPhoneW = 120;
 const double _kWoodworkingW = 130;
 const double _kMetalworkingW = 130;
 const double _kGymWaiverW = 100;
+const double _kO365W = 56;
 const double _kActionsW = 80;
 
 // Minimum width of the edit panel — equals the sum of all column widths so the
@@ -932,7 +947,8 @@ const double _kTableMinWidth = _kExpandW +
     _kWoodworkingW +
     _kMetalworkingW +
     _kGymWaiverW +
-    _kActionsW; // 1022
+    _kO365W +
+    _kActionsW; // 1078
 
 class _MemberTable extends StatefulWidget {
   final List<_MemberRow> rows;
@@ -1141,6 +1157,34 @@ class _MemberTableState extends State<_MemberTable> {
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodySmall,
         ),
+      ),
+    );
+  }
+
+  /// Blank if this member has never been synced to O365; a green check if
+  /// the most recent attempt succeeded; a red cross if it failed.
+  /// [_MemberRow.o365SyncFailedAt] is always cleared server-side on the
+  /// next success, so a non-null value here always reflects the *most
+  /// recent* attempt's outcome, not just "has ever failed".
+  Widget _o365StatusCell(BuildContext context, _MemberRow row, double width) {
+    Widget? icon;
+    String? tooltip;
+    if (row.o365SyncFailedAt != null) {
+      icon = Icon(Icons.cancel_outlined,
+          color: Theme.of(context).colorScheme.error, size: 18);
+      tooltip =
+          'O365 sync failed ${_isoToDisplay(_isoDate(row.o365SyncFailedAt!.toLocal()))}';
+    } else if (row.o365SyncedAt != null) {
+      icon = const Icon(Icons.check_circle_outline, color: Colors.green, size: 18);
+      tooltip =
+          'Synced to O365 ${_isoToDisplay(_isoDate(row.o365SyncedAt!.toLocal()))}';
+    }
+    return SizedBox(
+      width: width,
+      child: Center(
+        child: icon == null
+            ? const SizedBox.shrink()
+            : Tooltip(message: tooltip!, child: icon),
       ),
     );
   }
@@ -1363,6 +1407,7 @@ class _MemberTableState extends State<_MemberTable> {
           _headerCell(context, 'Woodworking', 10, _kWoodworkingW),
           _headerCell(context, 'Metalworking', 11, _kMetalworkingW),
           _headerCell(context, 'Gym Waiver', 12, _kGymWaiverW),
+          _headerCell(context, 'O365', 13, _kO365W),
           const SizedBox(width: _kActionsW),
         ],
       ),
@@ -1431,6 +1476,7 @@ class _MemberTableState extends State<_MemberTable> {
                 _readDateCell(context, row.woodworkingCtrl, _kWoodworkingW),
                 _readDateCell(context, row.metalworkingCtrl, _kMetalworkingW),
                 _readDateCell(context, row.gymWaiverCtrl, _kGymWaiverW),
+                _o365StatusCell(context, row, _kO365W),
                 SizedBox(
                   width: _kActionsW,
                   child: Row(

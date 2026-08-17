@@ -36,6 +36,8 @@ class MemberResponse {
   final String? woodworkingInduction;
   final String? metalworkingInduction;
   final String? gymWaiver;
+  final String? o365SyncedAt;
+  final String? o365SyncFailedAt;
   final String etag;
   final String createdAt;
   final String updatedAt;
@@ -56,6 +58,8 @@ class MemberResponse {
     this.woodworkingInduction,
     this.metalworkingInduction,
     this.gymWaiver,
+    this.o365SyncedAt,
+    this.o365SyncFailedAt,
     required this.etag,
     required this.createdAt,
     required this.updatedAt,
@@ -80,6 +84,8 @@ class MemberResponse {
       metalworkingInduction:
           entity.metalworkingInduction?.toIso8601String().substring(0, 10),
       gymWaiver: entity.gymWaiver?.toIso8601String().substring(0, 10),
+      o365SyncedAt: entity.o365SyncedAt?.toUtc().toIso8601String(),
+      o365SyncFailedAt: entity.o365SyncFailedAt?.toUtc().toIso8601String(),
       etag: entity.etag,
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
@@ -102,6 +108,8 @@ class MemberResponse {
         'woodworkingInduction': woodworkingInduction,
         'metalworkingInduction': metalworkingInduction,
         'gymWaiver': gymWaiver,
+        'o365SyncedAt': o365SyncedAt,
+        'o365SyncFailedAt': o365SyncFailedAt,
         'etag': etag,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
