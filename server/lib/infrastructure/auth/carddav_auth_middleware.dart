@@ -130,6 +130,10 @@ Future<Response> _verifyJwt({
   required Handler inner,
   required Request request,
 }) async {
+  // JWT validation is confined to this try/catch; inner(request) is called
+  // after it returns normally, so a downstream handler error propagates as
+  // itself rather than being caught here and misreported as an auth failure.
+  final Map<String, dynamic>? claims;
   try {
     final headerPart = token.split('.').first;
     final headerJson = utf8.decode(
@@ -159,9 +163,7 @@ Future<Response> _verifyJwt({
       return _unauthorizedMessage('Invalid token: invalid audience');
     }
 
-    return inner(
-      request.change(context: {'auth.claims': jwt.payload}),
-    );
+    claims = jwt.payload;
   } on JWTExpiredException {
     return _unauthorizedMessage('Token has expired');
   } on JWTException catch (e) {
@@ -169,6 +171,8 @@ Future<Response> _verifyJwt({
   } catch (_) {
     return _unauthorizedMessage('Authentication failed');
   }
+
+  return inner(request.change(context: {'auth.claims': claims}));
 }
 
 Future<Response> _verifyApiKey({
@@ -178,6 +182,10 @@ Future<Response> _verifyApiKey({
   required Handler inner,
   required Request request,
 }) async {
+  // API key lookup is confined to this try/catch; inner(request) is called
+  // after it returns normally, so a downstream handler error propagates as
+  // itself rather than being caught here and misreported as an auth failure.
+  final Map<String, dynamic> claims;
   try {
     final hash = sha256Hex(rawKey);
     final key = await repository.findByApiKeyHash(hash);
@@ -189,18 +197,16 @@ Future<Response> _verifyApiKey({
       return _unauthorizedMessage('Username does not match API key');
     }
 
-    return inner(
-      request.change(context: {
-        'auth.claims': {
-          'https://shedbooks.com/entity_id': key.entityId,
-          'sub': key.userId,
-          'email': key.userEmail,
-        },
-      }),
-    );
+    claims = {
+      'https://shedbooks.com/entity_id': key.entityId,
+      'sub': key.userId,
+      'email': key.userEmail,
+    };
   } catch (_) {
     return _unauthorizedMessage('Authentication failed');
   }
+
+  return inner(request.change(context: {'auth.claims': claims}));
 }
 
 Response _unauthorized() => Response.unauthorized(

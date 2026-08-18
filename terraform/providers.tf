@@ -19,33 +19,41 @@ terraform {
   required_version = ">= 1.6"
 
   required_providers {
-    oci = {
-      source  = "oracle/oci"
-      version = "~> 6.0"
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
     }
   }
 
-  # HTTP backend using an OCI Pre-Authenticated Request (PAR).
-  # OCI's S3-compatible API does not support AWS chunked transfer encoding,
-  # so the S3 backend cannot be used. The HTTP backend with a PAR URL avoids
-  # all AWS SDK compatibility issues.
+  # Native Azure Storage backend — the resource group, storage account, and
+  # container it points at are created once, out of band, by
+  # scripts/bootstrap-azure.sh (chicken-and-egg: the state store can't be
+  # provisioned by the same Terraform run that needs it to exist first).
   #
-  # The PAR URL (address) is the only credential needed — it grants read/write
-  # access to the single state object. It is supplied at `terraform init` time
-  # via -backend-config=backend.hcl so it never appears in committed code.
-  # See scripts/bootstrap-state.sh (local) and .github/workflows/terraform.yml (CI).
+  # use_azuread_auth = true authenticates with an Azure AD token rather than
+  # a storage account key — the CI service principal (via OIDC — see
+  # ARM_USE_OIDC in terraform.yml) and a locally `az login`-ed developer both
+  # already have one, so no storage credential needs to be issued or rotated.
+  # The identity used either way needs the "Storage Blob Data Owner" (or
+  # Contributor) role on the state storage account.
+  #
+  # The account/container names are supplied at `tofu init` time via
+  # -backend-config=backend.hcl so they never appear in committed code.
+  # See scripts/bootstrap-azure.sh (local) and .github/workflows/terraform.yml (CI).
   #
   # To init without remote state during bootstrapping:
-  #   terraform init -backend=false
-  backend "http" {
-    update_method = "PUT"
+  #   tofu init -backend=false
+  backend "azurerm" {
+    use_azuread_auth = true
   }
 }
 
-provider "oci" {
-  tenancy_ocid     = var.tenancy_ocid
-  user_ocid        = var.user_ocid
-  fingerprint      = var.fingerprint
-  private_key_path = var.private_key_path
-  region           = var.region
+provider "azurerm" {
+  features {}
+
+  # No explicit auth method configured here on purpose: the azurerm provider
+  # auto-detects it from the environment — a local `az login` session, or in
+  # CI the ARM_CLIENT_ID / ARM_TENANT_ID / ARM_SUBSCRIPTION_ID / ARM_USE_OIDC
+  # variables set by azure/login (see terraform.yml). Hardcoding use_oidc =
+  # true here would break plain local `az login` usage.
 }

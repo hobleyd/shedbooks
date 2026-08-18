@@ -1,22 +1,16 @@
 server {
+    # TLS is terminated by the Azure Container Apps ingress (managed
+    # certificate on the external FQDN / custom domain) — there is no
+    # certificate bind mount available to a container app, and the
+    # 80->443 redirect is likewise handled by the ingress, not here.
     listen 80;
-    server_name _;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
 
-    ssl_certificate     /etc/nginx/certs/sharpblue_org.crt;
-    ssl_certificate_key /etc/nginx/certs/sharpblue_org.key;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    # Resolve the real client IP when the TCP connection arrives from a
-    # private/Docker range (Docker port-mapping, host-level proxy, etc.).
+    # Resolve the real client IP as seen by the Container Apps ingress
+    # (a private-range hop in front of this container, same shape as the
+    # old Docker port-mapping case this was originally written for).
     # nginx's real_ip module strips those addresses from X-Forwarded-For
     # and resets $remote_addr to the first public IP in the chain.
     set_real_ip_from  127.0.0.0/8;
@@ -39,7 +33,15 @@ server {
     }
 
     location /api/ {
-        proxy_pass         http://server:8080/;
+        # SERVER_INTERNAL_FQDN is the server container app's internal
+        # ingress FQDN (<app-name>.internal.<environment-domain>) — not
+        # known until the Container Apps Environment is provisioned, so
+        # it's substituted from the container's environment at startup
+        # (see /etc/nginx/templates/ in the Dockerfile) rather than
+        # hardcoded here. The server app's ingress has
+        # allow_insecure_connections enabled so plain http is fine for
+        # this internal, VNet-scoped hop.
+        proxy_pass         http://${SERVER_INTERNAL_FQDN}/;
         proxy_http_version 1.1;
         proxy_set_header   Host $host;
         proxy_set_header   X-Real-IP $remote_addr;

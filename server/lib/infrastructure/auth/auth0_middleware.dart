@@ -41,6 +41,11 @@ Middleware auth0Middleware({
 
       final token = authHeader.substring(7);
 
+      // JWT validation is confined to this try/catch; inner(request) is
+      // called after it returns normally, so a downstream handler error
+      // propagates as itself rather than being caught here and misreported
+      // as an authentication failure.
+      final Map<String, dynamic>? claims;
       try {
         final headerPart = token.split('.').first;
         final headerJson = utf8.decode(
@@ -75,10 +80,7 @@ Middleware auth0Middleware({
           return _unauthorised('Invalid token: invalid audience');
         }
 
-        final updatedRequest = request.change(
-          context: {'auth.claims': jwt.payload},
-        );
-        return inner(updatedRequest);
+        claims = jwt.payload;
       } on JWTExpiredException {
         return _unauthorised('Token has expired');
       } on JWTException catch (e) {
@@ -86,6 +88,9 @@ Middleware auth0Middleware({
       } catch (e) {
         return _unauthorised('Authentication failed');
       }
+
+      final updatedRequest = request.change(context: {'auth.claims': claims});
+      return inner(updatedRequest);
     };
   };
 }

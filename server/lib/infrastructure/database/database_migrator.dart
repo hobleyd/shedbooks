@@ -61,10 +61,32 @@ class DatabaseMigrator {
             Platform.environment['MIGRATIONS_DIR'] ??
             'lib/infrastructure/database/migrations';
 
+  /// A fixed, arbitrary key for a session-scoped Postgres advisory lock —
+  /// any bigint works as long as it's not reused elsewhere in the app.
+  static const _migrationLockKey = 727142;
+
   /// Discovers and applies all pending migrations, then returns.
+  ///
+  /// Holds a Postgres advisory lock for the duration so that two server
+  /// instances starting concurrently (e.g. overlapping Container Apps
+  /// revisions during a rolling deploy) don't both try to apply the same
+  /// migration at once — the second instance blocks here until the first
+  /// finishes, rather than racing on the same DDL. The lock is released
+  /// automatically if the holding connection drops.
   ///
   /// Throws if any migration fails — the caller should abort server startup.
   Future<void> migrate() async {
+    await _pool.withConnection((lockConnection) async {
+      await lockConnection.execute('SELECT pg_advisory_lock($_migrationLockKey)');
+      try {
+        await _migrateLocked();
+      } finally {
+        await lockConnection.execute('SELECT pg_advisory_unlock($_migrationLockKey)');
+      }
+    });
+  }
+
+  Future<void> _migrateLocked() async {
     _log.info('Running database migrations from $_migrationsDir');
 
     await _ensureTrackingTable();

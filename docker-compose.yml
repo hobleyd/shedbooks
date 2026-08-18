@@ -63,11 +63,13 @@ services:
         AUTH0_CLIENT_ID: ${AUTH0_CLIENT_ID}
         AUTH0_AUDIENCE: ${AUTH0_AUDIENCE}
         API_URL: ${API_URL:-/api}
+    environment:
+      # nginx.conf.template's proxy_pass target — TLS is terminated by
+      # Azure Container Apps ingress in prod (see terraform/container_apps.tf),
+      # so nginx itself only ever listens on plain http, both there and here.
+      SERVER_INTERNAL_FQDN: server:8080
     ports:
       - "80:80"
-      - "443:443"
-    volumes:
-      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - server
     networks:

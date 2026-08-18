@@ -16,108 +16,72 @@
 # along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 locals {
-  compartment_id = var.compartment_ocid
-  tags           = { project = "shedbooks", environment = var.environment }
+  tags = { project = "shedbooks", environment = var.environment }
 }
 
-resource "oci_core_vcn" "shedbooks" {
-  compartment_id = local.compartment_id
-  cidr_blocks    = ["10.0.0.0/16"]
-  display_name   = "shedbooks-vcn"
-  dns_label      = "shedbooks"
-  freeform_tags  = local.tags
+resource "azurerm_resource_group" "shedbooks" {
+  name     = var.resource_group_name
+  location = var.location
+  tags     = local.tags
 }
 
-resource "oci_core_internet_gateway" "igw" {
-  compartment_id = local.compartment_id
-  vcn_id         = oci_core_vcn.shedbooks.id
-  display_name   = "shedbooks-igw"
-  enabled        = true
-  freeform_tags  = local.tags
+resource "azurerm_virtual_network" "shedbooks" {
+  name                = "shedbooks-vnet"
+  resource_group_name = azurerm_resource_group.shedbooks.name
+  location            = azurerm_resource_group.shedbooks.location
+  address_space       = ["10.0.0.0/16"]
+  tags                = local.tags
 }
 
-resource "oci_core_route_table" "public" {
-  compartment_id = local.compartment_id
-  vcn_id         = oci_core_vcn.shedbooks.id
-  display_name   = "shedbooks-public-rt"
+# Container Apps Environment infrastructure subnets require /21 or larger.
+# Sized to exactly that floor since this VNet is dedicated to Shedbooks and
+# 10.0.0.0/16 leaves plenty of room either way.
+resource "azurerm_subnet" "container_apps" {
+  name                 = "shedbooks-aca-subnet"
+  resource_group_name  = azurerm_resource_group.shedbooks.name
+  virtual_network_name = azurerm_virtual_network.shedbooks.name
+  address_prefixes     = ["10.0.0.0/21"]
 
-  route_rules {
-    destination       = "0.0.0.0/0"
-    destination_type  = "CIDR_BLOCK"
-    network_entity_id = oci_core_internet_gateway.igw.id
-  }
-
-  freeform_tags = local.tags
-}
-
-resource "oci_core_security_list" "web" {
-  compartment_id = local.compartment_id
-  vcn_id         = oci_core_vcn.shedbooks.id
-  display_name   = "shedbooks-web-sl"
-
-  # Broad outbound egress is intentional: the instance needs to reach OCIR, Auth0,
-  # apt mirrors, and the ABR API on dynamic addresses. Restrict further with NSGs
-  # once destination CIDRs are known and stable.
-  egress_security_rules {
-    destination = "0.0.0.0/0"
-    protocol    = "all"
-    stateless   = false
-  }
-
-  ingress_security_rules {
-    source    = "0.0.0.0/0"
-    protocol  = "6"
-    stateless = false
-    tcp_options {
-      min = 443
-      max = 443
+  delegation {
+    name = "aca-delegation"
+    service_delegation {
+      name    = "Microsoft.App/environments"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
     }
   }
-
-  ingress_security_rules {
-    source    = "0.0.0.0/0"
-    protocol  = "6"
-    stateless = false
-    tcp_options {
-      min = 80
-      max = 80
-    }
-  }
-
-  dynamic "ingress_security_rules" {
-    for_each = var.ssh_allowed_cidrs
-    content {
-      source    = ingress_security_rules.value
-      protocol  = "6"
-      stateless = false
-      tcp_options {
-        min = 22
-        max = 22
-      }
-    }
-  }
-
-  # ICMP type 3 code 4 — "Fragmentation Needed", required for path MTU discovery
-  ingress_security_rules {
-    source    = "0.0.0.0/0"
-    protocol  = "1"
-    stateless = false
-    icmp_options {
-      type = 3
-      code = 4
-    }
-  }
-
-  freeform_tags = local.tags
 }
 
-resource "oci_core_subnet" "public" {
-  compartment_id    = local.compartment_id
-  vcn_id            = oci_core_vcn.shedbooks.id
-  cidr_block        = "10.0.1.0/24"
-  display_name      = "shedbooks-public-subnet"
-  dns_label         = "public"
-  route_table_id    = oci_core_route_table.public.id
-  security_list_ids = [oci_core_security_list.web.id]
-  freeform_tags     = local.tags
+# Postgres Flexible Server only requires a /28, sized up to /24 for headroom.
+resource "azurerm_subnet" "postgres" {
+  name                 = "shedbooks-postgres-subnet"
+  resource_group_name  = azurerm_resource_group.shedbooks.name
+  virtual_network_name = azurerm_virtual_network.shedbooks.name
+  address_prefixes     = ["10.0.8.0/24"]
+
+  delegation {
+    name = "postgres-delegation"
+    service_delegation {
+      name    = "Microsoft.DBforPostgreSQL/flexibleServers"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
+}
+
+# "privatelink.postgres.database.azure.com" is the convention for Private
+# Endpoint/Private Link access — a different connectivity model. This server
+# uses VNet integration (delegated_subnet_id in database.tf) instead, whose
+# required zone name is any label ending in ".postgres.database.azure.com"
+# (Microsoft's own Terraform tutorial uses e.g. "<name>-pdz.postgres.database.azure.com").
+resource "azurerm_private_dns_zone" "postgres" {
+  name                = "shedbooks.postgres.database.azure.com"
+  resource_group_name = azurerm_resource_group.shedbooks.name
+  tags                = local.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
+  name                  = "shedbooks-postgres-link"
+  resource_group_name   = azurerm_resource_group.shedbooks.name
+  private_dns_zone_name = azurerm_private_dns_zone.postgres.name
+  virtual_network_id    = azurerm_virtual_network.shedbooks.id
+  tags                  = local.tags
 }

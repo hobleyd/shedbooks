@@ -15,96 +15,172 @@
 # You should have received a copy of the GNU General Public License
 # along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
-# ── OCI Authentication ────────────────────────────────────────────────────────
+# ── Azure Authentication ────────────────────────────────────────────────────
+# Not declared as variables: the azurerm provider auto-detects its
+# credentials from the environment (providers.tf) — a local `az login`
+# session, or in CI the ARM_CLIENT_ID / ARM_SUBSCRIPTION_ID / ARM_TENANT_ID /
+# ARM_USE_OIDC environment variables set by azure/login (see terraform.yml).
+# The azurerm backend uses the same identity via use_azuread_auth.
 
-variable "tenancy_ocid" {
-  description = "OCID of the OCI tenancy"
+# ── General ───────────────────────────────────────────────────────────────────
+
+variable "location" {
+  description = "Azure region. Kept in Australia to keep financial/member data in-country (GST/ABR integration, .au.auth0.com tenant)."
+  type        = string
+  default     = "australiaeast"
+}
+
+variable "environment" {
+  description = "Environment label applied as a tag"
+  type        = string
+  default     = "prod"
+}
+
+variable "resource_group_name" {
+  description = "Name of the resource group Terraform manages (separate from the bootstrap resource group holding remote state + ACR — see scripts/bootstrap-azure.sh)."
+  type        = string
+  default     = "rg-shedbooks-prod"
+}
+
+# ── Container Registry (created by scripts/bootstrap-azure.sh, referenced here) ─
+
+variable "acr_resource_group_name" {
+  description = "Resource group containing the pre-existing Azure Container Registry created by scripts/bootstrap-azure.sh."
+  type        = string
+  default     = "rg-shedbooks-bootstrap"
+}
+
+variable "acr_name" {
+  description = "Name of the pre-existing Azure Container Registry (globally unique, alphanumeric only)."
   type        = string
 }
-
-variable "user_ocid" {
-  description = "OCID of the OCI user running Terraform"
-  type        = string
-}
-
-variable "fingerprint" {
-  description = "API key fingerprint for OCI authentication"
-  type        = string
-}
-
-variable "private_key_path" {
-  description = "Path to the OCI API private key PEM file"
-  type        = string
-  default     = "~/.oci/oci_api_key.pem"
-}
-
-variable "region" {
-  description = "OCI region identifier (e.g. ap-sydney-1, us-ashburn-1)"
-  type        = string
-}
-
-# ── Compartment ───────────────────────────────────────────────────────────────
-
-variable "compartment_ocid" {
-  # Required: deploy into a dedicated compartment, not the root tenancy.
-  # Create one in OCI Console → Identity → Compartments before running terraform apply.
-  description = "OCID of the compartment to deploy into. Must be a dedicated compartment, not the root tenancy."
-  type        = string
-}
-
-# ── Compute ───────────────────────────────────────────────────────────────────
-
-variable "ssh_public_key" {
-  description = "SSH public key content for instance access"
-  type        = string
-}
-
-variable "instance_ocpus" {
-  description = "OCPUs for the compute instance. Always Free A1 allows up to 4 total."
-  type        = number
-  default     = 2
-}
-
-variable "instance_memory_gb" {
-  description = "Memory in GB for the compute instance. Always Free A1 allows up to 24 GB total."
-  type        = number
-  default     = 12
-}
-
-variable "boot_volume_size_gb" {
-  description = "Boot volume size in GB. Always Free allows 200 GB total block storage."
-  type        = number
-  default     = 50
-}
-
-variable "availability_domain_index" {
-  description = "Index of the availability domain to deploy the compute instance into (0-based). Increment to 1 or 2 if OCI reports out-of-capacity for the current AD."
-  type        = number
-  default     = 0
-}
-
-variable "ssh_allowed_cidrs" {
-  description = "CIDR ranges allowed to SSH into the instance. Set to your public IP (e.g. [\"203.0.113.1/32\"]). Do not leave as 0.0.0.0/0 in production."
-  type        = list(string)
-
-  validation {
-    condition     = length(var.ssh_allowed_cidrs) > 0
-    error_message = "ssh_allowed_cidrs must contain at least one CIDR block."
-  }
-}
-
-# ── Images ────────────────────────────────────────────────────────────────────
 
 variable "image_tag" {
-  description = "Docker image tag for all Shedbooks images. Use a version tag (e.g. v1.2.0) rather than 'latest' for reproducible production deployments."
+  description = "Docker image tag for the client/server images (e.g. a git SHA). Use a specific tag rather than 'latest' — changing it is what triggers a new Container Apps revision."
   type        = string
   default     = "latest"
 }
 
-# ── General ───────────────────────────────────────────────────────────────────
+# ── PostgreSQL ───────────────────────────────────────────────────────────────
 
-variable "environment" {
-  description = "Environment label applied as a freeform tag"
+variable "postgres_version" {
+  description = "PostgreSQL major version. Must match db/Dockerfile's postgres:16-alpine base."
   type        = string
-  default     = "prod"
+  default     = "16"
+}
+
+variable "postgres_admin_username" {
+  description = "Administrator username for the Flexible Server"
+  type        = string
+  default     = "shedbooks"
+}
+
+variable "postgres_admin_password" {
+  description = "Administrator password for the Flexible Server. Also used as the app's DB_PASSWORD."
+  type        = string
+  sensitive   = true
+}
+
+variable "postgres_sku_name" {
+  description = "Flexible Server compute SKU. B_Standard_B1ms (1 vCore/2GiB, Burstable) comfortably covers this app's traffic; scale up if needed."
+  type        = string
+  default     = "B_Standard_B1ms"
+}
+
+variable "postgres_storage_mb" {
+  description = "Allocated storage in MB. 32768 = 32GB, the smallest tier that supports 16 tuned autogrow."
+  type        = number
+  default     = 32768
+}
+
+variable "postgres_backup_retention_days" {
+  description = "Point-in-time-restore backup retention, in days (7-35)."
+  type        = number
+  default     = 7
+}
+
+# ── Container Apps ───────────────────────────────────────────────────────────
+
+variable "server_min_replicas" {
+  description = "Minimum replicas for the server app. Pinned to 1 (not 0): avoids stacking a cold start on top of the already-slow O365/Exchange Online sync path, and keeps nginx's cached internal-FQDN resolution valid. See database_migrator.dart's advisory lock for why brief multi-replica overlap during a deploy is still safe."
+  type        = number
+  default     = 1
+}
+
+variable "server_max_replicas" {
+  description = "Maximum replicas for the server app. Kept at 1 — this app has no per-request state that requires horizontal scaling at current traffic levels; raise if that changes."
+  type        = number
+  default     = 1
+}
+
+variable "server_cpu" {
+  description = "vCPU allocated to the server container"
+  type        = number
+  default     = 0.5
+}
+
+variable "server_memory" {
+  description = "Memory allocated to the server container, e.g. '1Gi'"
+  type        = string
+  default     = "1Gi"
+}
+
+variable "client_min_replicas" {
+  description = "Minimum replicas for the client (nginx + Flutter web) app. Safe to scale to zero — it's stateless and cold-starts fast."
+  type        = number
+  default     = 0
+}
+
+variable "client_max_replicas" {
+  description = "Maximum replicas for the client app."
+  type        = number
+  default     = 3
+}
+
+variable "client_cpu" {
+  description = "vCPU allocated to the client container"
+  type        = number
+  default     = 0.25
+}
+
+variable "client_memory" {
+  description = "Memory allocated to the client container, e.g. '0.5Gi'"
+  type        = string
+  default     = "0.5Gi"
+}
+
+# ── Application secrets / config ─────────────────────────────────────────────
+# These become Container Apps secrets/env vars on the server app — the same
+# values that used to populate /opt/shedbooks/.env via cloud-init.
+
+variable "auth0_domain" {
+  description = "Auth0 tenant domain, e.g. sharpblue.au.auth0.com"
+  type        = string
+}
+
+variable "auth0_client_id" {
+  description = "Auth0 application client ID (baked into the Flutter web build)"
+  type        = string
+}
+
+variable "auth0_audience" {
+  description = "Auth0 API audience identifier"
+  type        = string
+}
+
+variable "cors_origin" {
+  description = "Allowed CORS origin for the server API — the client app's public origin (default ACA FQDN, or the custom domain once bound)."
+  type        = string
+}
+
+variable "abr_guid" {
+  description = "Australian Business Register web service GUID (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "encryption_key" {
+  description = "Application-level encryption key (32+ random chars) used to encrypt sensitive stored fields (e.g. O365SyncSettings PFX)."
+  type        = string
+  sensitive   = true
 }
