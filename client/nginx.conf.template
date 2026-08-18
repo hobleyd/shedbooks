@@ -43,7 +43,13 @@ server {
         # this internal, VNet-scoped hop.
         proxy_pass         http://${SERVER_INTERNAL_FQDN}/;
         proxy_http_version 1.1;
-        proxy_set_header   Host $host;
+        # Azure's internal Container Apps ingress routes by Host header —
+        # forwarding the original public Host (shedbooks.<domain>, as the
+        # old Docker Compose config did with $host) doesn't match any app
+        # it knows about, so it falls back to its generic "Container App is
+        # stopped or does not exist" page instead of reaching the server.
+        # Must be the target app's own internal FQDN, not the client's.
+        proxy_set_header   Host ${SERVER_INTERNAL_FQDN};
         proxy_set_header   X-Real-IP $remote_addr;
         proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
