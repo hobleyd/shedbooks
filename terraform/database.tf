@@ -27,6 +27,12 @@ resource "azurerm_postgresql_flexible_server" "shedbooks" {
 
   version = var.postgres_version
 
+  # Not set on the original apply, so Azure auto-assigned one (zone "1")
+  # and every subsequent apply then tried to "change" it back to unset,
+  # which the API rejects outright without an HA-zone swap. Pinned to what
+  # was actually provisioned to remove the drift.
+  zone = "1"
+
   delegated_subnet_id = azurerm_subnet.postgres.id
   private_dns_zone_id = azurerm_private_dns_zone.postgres.id
   # Azure's API rejects VNet integration unless this is explicitly false —
