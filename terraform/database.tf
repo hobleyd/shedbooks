@@ -29,6 +29,10 @@ resource "azurerm_postgresql_flexible_server" "shedbooks" {
 
   delegated_subnet_id = azurerm_subnet.postgres.id
   private_dns_zone_id = azurerm_private_dns_zone.postgres.id
+  # Azure's API rejects VNet integration unless this is explicitly false —
+  # it does not infer "no public access" just from delegated_subnet_id being
+  # set (confirmed by a real apply: ConflictingPublicNetworkAccessAndVirtualNetworkConfiguration).
+  public_network_access_enabled = false
 
   administrator_login    = var.postgres_admin_username
   administrator_password = var.postgres_admin_password
