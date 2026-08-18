@@ -174,7 +174,13 @@ resource "azurerm_container_app" "server" {
 
   tags = local.tags
 
-  depends_on = [azurerm_role_assignment.acr_pull]
+  # Also waits on the extension allow-list (database.tf) — the server runs
+  # DatabaseMigrator.migrate() on startup, which needs uuid-ossp allow-listed
+  # before its first CREATE EXTENSION statement, or the container crash-loops.
+  depends_on = [
+    azurerm_role_assignment.acr_pull,
+    azurerm_postgresql_flexible_server_configuration.extensions,
+  ]
 }
 
 # ── Client (nginx + Flutter web) ─────────────────────────────────────────────

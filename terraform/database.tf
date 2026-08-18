@@ -56,3 +56,16 @@ resource "azurerm_postgresql_flexible_server_database" "shedbooks" {
   charset   = "UTF8"
   collation = "en_US.utf8"
 }
+
+# Flexible Server requires extensions to be explicitly allow-listed at the
+# server level before CREATE EXTENSION is permitted — confirmed by a real
+# deploy: migration 001_create_general_ledger.sql's `CREATE EXTENSION
+# IF NOT EXISTS "uuid-ossp"` failed with "extension \"uuid-ossp\" is not
+# allow-listed for users in Azure Database for PostgreSQL". Self-hosted
+# Postgres never had this restriction. Add further extensions here (comma-
+# separated) if a later migration needs one.
+resource "azurerm_postgresql_flexible_server_configuration" "extensions" {
+  name      = "azure.extensions"
+  server_id = azurerm_postgresql_flexible_server.shedbooks.id
+  value     = "UUID-OSSP"
+}
