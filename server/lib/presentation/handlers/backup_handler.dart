@@ -162,6 +162,31 @@ class BackupHandler {
         WHERE i.entity_id = @entityId
       ''', {'entityId': entityId});
 
+      final members = await _queryRows('''
+        SELECT id::text, entity_id, name, date_joined, membership_status,
+               street_address, po_box, email, phone, date_of_birth,
+               emergency_contact, etag, o365_contact_id, o365_synced_at,
+               o365_sync_failed_at, created_at, updated_at, deleted_at
+        FROM members WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      final assets = await _queryRows('''
+        SELECT id::text, entity_id, asset_no, asset_type, description,
+               brand, identification, serial_no, manufacture_year,
+               estimated_market_value_cents, created_at, updated_at, deleted_at
+        FROM assets WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      // certificate_pfx / certificate_password are already ciphertext
+      // (app-level AES-256-GCM via FieldEncryptor) — pass them through
+      // as opaque strings, do not decrypt/re-encrypt.
+      final o365SyncSettings = await _queryRows('''
+        SELECT entity_id, tenant_id, client_id, certificate_pfx,
+               certificate_password, certificate_expires_at,
+               initial_sync_completed_at, created_at, updated_at
+        FROM o365_sync_settings WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
       final now = DateTime.now();
       final stamp =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
@@ -187,6 +212,9 @@ class BackupHandler {
         'budget_gl_mappings': budgetGlMappings,
         'invoices': invoices,
         'invoice_line_items': invoiceLineItems,
+        'members': members,
+        'assets': assets,
+        'o365_sync_settings': o365SyncSettings,
       };
 
       final jsonBytes = Uint8List.fromList(utf8.encode(jsonEncode(backup)));
@@ -271,6 +299,9 @@ class BackupHandler {
         await _del(tx, 'locked_months', entityId);
         await _del(tx, 'bank_imports', entityId);
         await _del(tx, 'bank_accounts', entityId);
+        await _del(tx, 'members', entityId);
+        await _del(tx, 'assets', entityId);
+        await _del(tx, 'o365_sync_settings', entityId);
         await tx.execute(
           Sql.named('DELETE FROM dashboard_preferences WHERE entity_id = @e'),
           parameters: {'e': entityId},
@@ -703,6 +734,110 @@ class BackupHandler {
               'code': r['external_code'] as String,
               'name': (r['external_name'] as String?) ?? '',
               'glid': r['general_ledger_id'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'members')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO members
+                (id, entity_id, name, date_joined, membership_status,
+                 street_address, po_box, email, phone, date_of_birth,
+                 emergency_contact, etag, o365_contact_id, o365_synced_at,
+                 o365_sync_failed_at, created_at, updated_at, deleted_at)
+              VALUES (
+                @id::uuid, @e, @name, @dj::date, @status,
+                @addr, @po, @email, @phone, @dob::date,
+                @ec, @etag, @ocid, @osync::timestamptz,
+                @ofail::timestamptz,
+                @ca::timestamptz, @ua::timestamptz, @da::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'name': r['name'] as String,
+              'dj': r['date_joined'] == null
+                  ? null
+                  : _dateString(r['date_joined']),
+              'status': r['membership_status'],
+              'addr': r['street_address'],
+              'po': r['po_box'],
+              'email': r['email'],
+              'phone': r['phone'],
+              'dob': r['date_of_birth'] == null
+                  ? null
+                  : _dateString(r['date_of_birth']),
+              'ec': r['emergency_contact'],
+              'etag': r['etag'] as String,
+              'ocid': r['o365_contact_id'],
+              'osync': r['o365_synced_at'],
+              'ofail': r['o365_sync_failed_at'],
+              'ca': r['created_at'] as String,
+              'ua': r['updated_at'] as String,
+              'da': r['deleted_at'],
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'assets')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO assets
+                (id, entity_id, asset_no, asset_type, description, brand,
+                 identification, serial_no, manufacture_year,
+                 estimated_market_value_cents, created_at, updated_at, deleted_at)
+              VALUES (
+                @id::uuid, @e, @no, @type, @desc, @brand,
+                @ident, @serial, @myr,
+                @val, @ca::timestamptz, @ua::timestamptz, @da::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'no': r['asset_no'] as String,
+              'type': r['asset_type'] as String,
+              'desc': r['description'],
+              'brand': r['brand'],
+              'ident': r['identification'],
+              'serial': r['serial_no'],
+              'myr': r['manufacture_year'],
+              'val': r['estimated_market_value_cents'],
+              'ca': r['created_at'] as String,
+              'ua': r['updated_at'] as String,
+              'da': r['deleted_at'],
+            },
+          );
+        }
+
+        // certificate_pfx / certificate_password are round-tripped as the
+        // opaque ciphertext produced by FieldEncryptor at backup time — no
+        // decrypt/re-encrypt needed here.
+        for (final r in _rows(backup, 'o365_sync_settings')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO o365_sync_settings
+                (entity_id, tenant_id, client_id, certificate_pfx,
+                 certificate_password, certificate_expires_at,
+                 initial_sync_completed_at, created_at, updated_at)
+              VALUES (
+                @e, @tid, @cid, @pfx,
+                @pw, @cexp::timestamptz,
+                @isc::timestamptz, @ca::timestamptz, @ua::timestamptz
+              )
+            '''),
+            parameters: {
+              'e': entityId,
+              'tid': r['tenant_id'] as String,
+              'cid': r['client_id'] as String,
+              'pfx': r['certificate_pfx'] as String,
+              'pw': r['certificate_password'] as String,
+              'cexp': r['certificate_expires_at'],
+              'isc': r['initial_sync_completed_at'],
+              'ca': r['created_at'] as String,
+              'ua': r['updated_at'] as String,
             },
           );
         }
