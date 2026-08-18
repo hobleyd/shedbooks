@@ -1,25 +1,31 @@
-# OCI Authentication
-# Obtain from OCI Console → Profile → User Settings → API Keys
-tenancy_ocid     = "ocid1.tenancy.oc1..aaaa..."
-user_ocid        = "ocid1.user.oc1..aaaa..."
-fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
-private_key_path = "~/.oci/oci_api_key.pem"
-region           = "ap-sydney-1"
+# Copy to terraform.tfvars and fill in real values. terraform.tfvars is
+# gitignored — never commit real secrets in it.
+#
+# Azure credentials are NOT set here — see variables.tf's Azure
+# Authentication note (az login locally, azure/login + OIDC in CI).
 
-# Compartment — create a dedicated compartment for Shedbooks before running apply.
-# OCI Console → Identity → Compartments → Create Compartment
-compartment_ocid = "ocid1.compartment.oc1..aaaa..."
+location             = "australiaeast"
+resource_group_name  = "rg-shedbooks-prod"
 
-# Compute
-ssh_public_key     = "ssh-rsa AAAA... your-key-comment"
-instance_ocpus     = 2
-instance_memory_gb = 12
+# Must match the ACR created by scripts/bootstrap-azure.sh
+acr_resource_group_name = "rg-shedbooks-bootstrap"
+acr_name                 = "acrshedbooks"
 
-# SSH access — restrict to your public IP for security
-# Find your IP: curl ifconfig.me
-ssh_allowed_cidrs = ["YOUR_IP/32"]
-
-# Image tag — use a version tag for reproducible production deployments
-# This value is baked into the .env on the instance at cloud-init time.
-# After changing the tag, update .env on the instance or re-provision.
 image_tag = "latest"
+
+# PostgreSQL
+postgres_admin_username = "shedbooks"
+postgres_admin_password = "CHANGE_ME_USE_A_LONG_RANDOM_PASSWORD"
+
+# Auth0
+auth0_domain     = "CHANGE_ME.auth0.com"
+auth0_client_id   = "CHANGE_ME"
+auth0_audience    = "https://CHANGE_ME"
+
+# CORS_ORIGIN should match the client app's actual origin — after the first
+# apply, set this to the client_fqdn output (or your bound custom domain).
+cors_origin = "https://CHANGE_ME_YOUR_DOMAIN"
+
+abr_guid = ""
+
+encryption_key = "CHANGE_ME_USE_32_PLUS_RANDOM_CHARS"

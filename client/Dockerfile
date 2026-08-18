@@ -31,7 +31,14 @@ RUN flutter build web --release \
 FROM nginx:alpine
 
 COPY --from=build /app/build/web /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# nginx's stock entrypoint runs envsubst over every *.template file here on
+# container start, writing the result to /etc/nginx/conf.d/ — this is how
+# SERVER_INTERNAL_FQDN (only known once Azure provisions the Container Apps
+# Environment) gets into the config. Substitution is restricted to the
+# container's actual env var names, so nginx's own $host/$scheme/$uri/etc.
+# variables pass through untouched.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
 EXPOSE 80
 

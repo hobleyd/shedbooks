@@ -1,23 +1,47 @@
-# CI/CD pipeline: server tests run first; Terraform plan + apply runs only if they pass.
+# CI/CD pipeline: server tests run first; on push to main, images are built
+# and pushed to ACR, then Terraform plan + apply rolls them out to Azure
+# Container Apps. PRs get a plan comment only — nothing is built or deployed.
 #
 # Behaviour:
-#   push → main          test → plan + apply  (confirms infra state on every deploy)
-#   pull_request → main  test → plan only     (posts diff as a PR comment)
-#   workflow_dispatch    test → plan + apply
+#   push → main          test → build+push → plan + apply
+#   pull_request → main  test → plan only     (posts diff as a PR comment;
+#                                                plans against the currently
+#                                                deployed image_tag, since
+#                                                nothing is built for a PR)
+#   workflow_dispatch     test → build+push → plan + apply
+#
+# ── Azure OIDC setup (one-time) ───────────────────────────────────────────────
+# The AZURE_CLIENT_ID app registration needs TWO federated credentials (one
+# subject per trigger kind — a credential scoped to `ref:refs/heads/main`
+# alone will NOT authorize pull_request runs):
+#   Entity type: GitHub Actions deploying Azure resources
+#   Organisation/Repository: <owner>/<repo>
+#   Credential 1 — Entity: Branch,       value: main
+#   Credential 2 — Entity: Pull request, value: (n/a — covers all PRs)
+# See scripts/bootstrap-azure.sh for granting this principal its Azure roles.
 #
 # ── Required GitHub Secrets ──────────────────────────────────────────────────
-#   OCI_TENANCY_OCID     — OCID of the OCI tenancy
-#   OCI_USER_OCID        — OCID of the Terraform service user
-#   OCI_FINGERPRINT      — API key fingerprint for that user
-#   OCI_PRIVATE_KEY      — PEM content of the API private key (multiline secret)
-#   OCI_COMPARTMENT_OCID — OCID of the target compartment
-#   SSH_PUBLIC_KEY       — SSH public key for the compute instance
-#   SSH_ALLOWED_CIDRS    — JSON list, e.g. ["1.2.3.4/32"]
-#   TF_STATE_URL         — Full PAR URL for terraform.tfstate (from bootstrap-state.sh)
+#   AZURE_CLIENT_ID       — OIDC app registration client ID
+#   AZURE_TENANT_ID        — Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID  — target subscription ID
+#   DB_PASSWORD             — Postgres admin/app password
+#   ENCRYPTION_KEY          — app-level encryption key (32+ random chars)
+#   ABR_GUID                — Australian Business Register web service GUID (optional,
+#                             may be blank — it's an API credential tied to your ABR
+#                             registration's quota, not just config, so it's a secret
+#                             rather than a plain variable)
 #
 # ── Required GitHub Variables (Settings → Variables → Actions) ───────────────
-#   OCI_REGION           — OCI region, e.g. ap-sydney-1
-#   IMAGE_TAG            — Docker image tag to deploy, e.g. latest or v1.2.0
+#   ACR_NAME                 — Container registry name, e.g. acrshedbooks
+#   ACR_RESOURCE_GROUP        — Resource group holding the ACR (bootstrap RG)
+#   TF_STATE_RESOURCE_GROUP   — Resource group holding the tfstate storage account
+#   TF_STATE_STORAGE_ACCOUNT  — Storage account name for tfstate
+#   TF_STATE_CONTAINER        — Blob container name for tfstate (e.g. tfstate)
+#   RESOURCE_GROUP_NAME        — Resource group Terraform manages (e.g. rg-shedbooks-prod)
+#   AZURE_LOCATION            — Azure region, e.g. australiaeast
+#   AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_AUDIENCE — Auth0 config (baked into the client build + server env)
+#   CORS_ORIGIN               — Allowed CORS origin (the client app's public origin)
+#   IMAGE_TAG                 — Image tag to use on PR plans (e.g. latest); ignored on push/dispatch, which always use the commit SHA
 
 name: CI
 
@@ -36,6 +60,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write   # required to post plan as a PR comment
+  id-token: write          # required for Azure OIDC login
 
 jobs:
   # ── 1. Server tests ─────────────────────────────────────────────────────────
@@ -63,10 +88,38 @@ jobs:
       - name: Run tests
         run: dart test --reporter expanded
 
-  # ── 2. Terraform plan + apply ────────────────────────────────────────────────
+  # ── 2. Build + push images (skipped on PRs — nothing is deployed for those) ──
+  build:
+    name: Build + Push Images
+    needs: [test]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push server + client images
+        env:
+          ACR_NAME:        ${{ vars.ACR_NAME }}
+          TAG:              ${{ github.sha }}
+          AUTH0_DOMAIN:     ${{ vars.AUTH0_DOMAIN }}
+          AUTH0_CLIENT_ID:  ${{ vars.AUTH0_CLIENT_ID }}
+          AUTH0_AUDIENCE:   ${{ vars.AUTH0_AUDIENCE }}
+        run: ./scripts/build-and-push.sh
+
+  # ── 3. Terraform plan + apply ────────────────────────────────────────────────
   terraform:
     name: ${{ github.event_name == 'pull_request' && 'Terraform Plan' || 'Terraform Plan + Apply' }}
-    needs: [test]
+    needs: [test, build]
+    # build is skipped (not failed) on PRs — still let the plan job run then.
+    if: always() && needs.test.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
 
     defaults:
@@ -74,48 +127,57 @@ jobs:
         working-directory: terraform
 
     env:
-      # Scalar Terraform variables — supplied via environment so they are masked
-      # in logs and never written to committed files.
-      TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
-      TF_VAR_user_ocid:        ${{ secrets.OCI_USER_OCID }}
-      TF_VAR_fingerprint:      ${{ secrets.OCI_FINGERPRINT }}
-      TF_VAR_region:           ${{ vars.OCI_REGION }}
-      TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-      TF_VAR_ssh_public_key:   ${{ secrets.SSH_PUBLIC_KEY }}
-      TF_VAR_image_tag:        ${{ vars.IMAGE_TAG || 'latest' }}
-      TF_VAR_private_key_path: /home/runner/.oci/oci_api_key.pem
+      # Scalar Terraform variables — supplied via environment so they are
+      # masked in logs and never written to committed files.
+      TF_VAR_resource_group_name:     ${{ vars.RESOURCE_GROUP_NAME }}
+      TF_VAR_location:                 ${{ vars.AZURE_LOCATION }}
+      TF_VAR_acr_name:                 ${{ vars.ACR_NAME }}
+      TF_VAR_acr_resource_group_name:  ${{ vars.ACR_RESOURCE_GROUP }}
+      # PR plans compare against the currently deployed tag (nothing was
+      # built for the PR); push/dispatch always roll the just-built SHA —
+      # 'latest' wouldn't reliably trigger a new Container Apps revision.
+      TF_VAR_image_tag:                 ${{ github.event_name == 'pull_request' && (vars.IMAGE_TAG || 'latest') || github.sha }}
+      TF_VAR_postgres_admin_password:  ${{ secrets.DB_PASSWORD }}
+      TF_VAR_encryption_key:            ${{ secrets.ENCRYPTION_KEY }}
+      TF_VAR_auth0_domain:              ${{ vars.AUTH0_DOMAIN }}
+      TF_VAR_auth0_client_id:           ${{ vars.AUTH0_CLIENT_ID }}
+      TF_VAR_auth0_audience:            ${{ vars.AUTH0_AUDIENCE }}
+      TF_VAR_cors_origin:               ${{ vars.CORS_ORIGIN }}
+      TF_VAR_abr_guid:                   ${{ secrets.ABR_GUID }}
+      # Read directly by the azurerm provider/backend (see terraform/providers.tf).
+      ARM_CLIENT_ID:        ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:         ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID:  ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC:           "true"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Terraform
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
         with:
           opentofu_version: "~1.9"
 
-      # Write the OCI API private key to a temp file on the runner.
-      # Using printf avoids adding a trailing newline that can invalidate the PEM.
-      - name: Write OCI API private key
-        run: |
-          mkdir -p /home/runner/.oci
-          printf '%s' "$OCI_PRIVATE_KEY" > /home/runner/.oci/oci_api_key.pem
-          chmod 600 /home/runner/.oci/oci_api_key.pem
-        env:
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-
-      # ssh_allowed_cidrs is a list(string); writing it to a tfvars file avoids
-      # the shell quoting issues that come with setting list types via TF_VAR_*.
-      # The file is gitignored (terraform/ci.auto.tfvars).
-      - name: Write list variables
-        run: printf 'ssh_allowed_cidrs = %s\n' '${{ secrets.SSH_ALLOWED_CIDRS }}' > ci.auto.tfvars
-
-      # Write the PAR URL to backend.hcl (gitignored).
-      # The HTTP backend uses a Pre-Authenticated Request URL instead of IAM
-      # credentials — avoids the AWS chunked-encoding incompatibility with OCI.
+      # Write the backend config (resource names only, not secrets — the
+      # storage account is accessed via the OIDC identity above, see
+      # providers.tf's use_azuread_auth).
       - name: Write backend config
+        run: |
+          printf 'resource_group_name  = "%s"\n' "$TF_STATE_RESOURCE_GROUP" > backend.hcl
+          printf 'storage_account_name = "%s"\n' "$TF_STATE_STORAGE_ACCOUNT" >> backend.hcl
+          printf 'container_name        = "%s"\n' "$TF_STATE_CONTAINER" >> backend.hcl
+          printf 'key                    = "shedbooks.tfstate"\n' >> backend.hcl
         env:
-          TF_STATE_URL: ${{ secrets.TF_STATE_URL }}
-        run: printf 'address       = "%s"\nupdate_method = "PUT"\n' "$TF_STATE_URL" > backend.hcl
+          TF_STATE_RESOURCE_GROUP:  ${{ vars.TF_STATE_RESOURCE_GROUP }}
+          TF_STATE_STORAGE_ACCOUNT: ${{ vars.TF_STATE_STORAGE_ACCOUNT }}
+          TF_STATE_CONTAINER:        ${{ vars.TF_STATE_CONTAINER }}
 
       - name: Terraform Init
         run: tofu init -backend-config=backend.hcl
@@ -152,7 +214,8 @@ jobs:
             });
 
       # Apply runs on every push to main so infrastructure state is confirmed
-      # as part of every deployment cycle. No-op if the plan shows no changes.
+      # — and the just-built image_tag rolled out — as part of every deploy.
+      # No-op if the plan shows no changes.
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: tofu apply -auto-approve tfplan

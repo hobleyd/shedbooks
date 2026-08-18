@@ -1,8 +1,18 @@
-# Backend config for the OCI Object Storage HTTP backend.
-# Copy to backend.hcl and fill in the PAR URL. backend.hcl is gitignored.
-# Generated automatically by scripts/bootstrap-state.sh.
+# Backend config for the native azurerm Storage backend.
+# Copy to backend.hcl and fill in the values (backend.hcl is gitignored).
+# The resource group/storage account/container are created once by
+# scripts/bootstrap-azure.sh — this file just points at them.
 #
-# Usage: terraform init -backend-config=backend.hcl
+# Usage: tofu init -backend-config=backend.hcl
+#
+# Locally, authenticate with `az login` first, then export the same ARM_*
+# variables the azurerm provider uses (see variables.tf's Azure
+# Authentication note) — e.g.:
+#   export ARM_SUBSCRIPTION_ID=<subscription-id>
+#   export ARM_TENANT_ID=<tenant-id>
+#   az login
 
-address       = "https://objectstorage.ap-sydney-1.oraclecloud.com/p/<PAR-token>/n/<namespace>/b/shedbooks-tf-state/o/terraform.tfstate"
-update_method = "PUT"
+resource_group_name  = "rg-shedbooks-bootstrap"
+storage_account_name = "stshedbookstfstate"
+container_name        = "tfstate"
+key                    = "shedbooks.tfstate"

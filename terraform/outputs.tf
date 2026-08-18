@@ -15,75 +15,65 @@
 # You should have received a copy of the GNU General Public License
 # along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
-output "instance_public_ip" {
-  description = "Public IP of the Shedbooks application instance"
-  value       = oci_core_instance.shedbooks.public_ip
+output "client_fqdn" {
+  description = "Public FQDN of the client app (default *.azurecontainerapps.io domain)"
+  value       = azurerm_container_app.client.ingress[0].fqdn
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to the instance"
-  value       = "ssh ubuntu@${oci_core_instance.shedbooks.public_ip}"
+output "server_internal_fqdn" {
+  description = "Internal-only FQDN of the server app, reachable only from inside the Container Apps Environment"
+  value       = azurerm_container_app.server.ingress[0].fqdn
 }
 
-output "tenancy_namespace" {
-  description = "OCI tenancy namespace (used in OCIR paths and Object Storage)"
-  value       = data.oci_objectstorage_namespace.ns.namespace
+output "postgres_fqdn" {
+  description = "Private FQDN of the Postgres Flexible Server (reachable only from within the VNet)"
+  value       = azurerm_postgresql_flexible_server.shedbooks.fqdn
 }
 
-output "ocir_registry" {
-  description = "OCIR registry hostname"
-  value       = local.ocir_registry
+output "acr_login_server" {
+  description = "Login server hostname of the (pre-existing, bootstrap-created) Azure Container Registry"
+  value       = data.azurerm_container_registry.shedbooks.login_server
 }
 
-output "ocir_prefix" {
-  description = "Base path for all Shedbooks OCIR image tags"
-  value       = local.ocir_prefix
+output "acr_image_server" {
+  description = "Full image reference for the server image at the currently-deployed tag"
+  value       = "${data.azurerm_container_registry.shedbooks.login_server}/server:${var.image_tag}"
 }
 
-output "ocir_image_db" {
-  description = "Full OCIR image reference for the database image"
-  value       = "${local.ocir_prefix}/db:${var.image_tag}"
-}
-
-output "ocir_image_server" {
-  description = "Full OCIR image reference for the server image"
-  value       = "${local.ocir_prefix}/server:${var.image_tag}"
-}
-
-output "ocir_image_client" {
-  description = "Full OCIR image reference for the client image"
-  value       = "${local.ocir_prefix}/client:${var.image_tag}"
-}
-
-output "backups_bucket" {
-  description = "Object Storage bucket name for backups"
-  value       = oci_objectstorage_bucket.backups.name
-}
-
-output "data_bucket" {
-  description = "Object Storage bucket name for application file storage"
-  value       = oci_objectstorage_bucket.data.name
-}
-
-output "object_storage_namespace" {
-  description = "Object Storage namespace (same as tenancy namespace)"
-  value       = data.oci_objectstorage_namespace.ns.namespace
+output "acr_image_client" {
+  description = "Full image reference for the client image at the currently-deployed tag"
+  value       = "${data.azurerm_container_registry.shedbooks.login_server}/client:${var.image_tag}"
 }
 
 output "next_steps" {
-  description = "Deployment checklist after terraform apply"
+  description = "Checklist for things this apply does not automate"
   value       = <<-EOT
-    1. Add DNS A record → ${oci_core_instance.shedbooks.public_ip}
-    2. Copy TLS certificates to the instance:
-         scp your_domain.crt your_domain.key ubuntu@${oci_core_instance.shedbooks.public_ip}:/tmp/
-         ssh ubuntu@${oci_core_instance.shedbooks.public_ip} 'sudo mkdir -p /opt/shedbooks/certs/postgres && sudo mv /tmp/your_domain.* /opt/shedbooks/certs/'
-    3. Generate PostgreSQL SSL certs → /opt/shedbooks/certs/postgres/{server.crt,server.key}
-    4. Configure OCIR auth (token never touches Terraform state):
-         OCIR_AUTH_TOKEN=<token> OCIR_USERNAME=<email> ../scripts/setup-instance.sh
-    5. Edit /opt/shedbooks/.env on the instance and fill in all CHANGE_ME values
-    6. Build + push images (use a version tag, not latest):
-         TAG=v1.0.0 AUTH0_DOMAIN=x AUTH0_CLIENT_ID=y AUTH0_AUDIENCE=z ../scripts/build-and-push.sh
-    7. Deploy:   ../scripts/deploy.sh
-    8. Start:    ssh ubuntu@${oci_core_instance.shedbooks.public_ip} 'sudo systemctl start shedbooks'
+    1. Update Auth0 (Application → Settings) for the new origin:
+         Allowed Callback URLs / Logout URLs / Web Origins → https://${azurerm_container_app.client.ingress[0].fqdn}
+         (repeat once a custom domain is bound, step 2 below)
+
+    2. (Optional) Bind a custom domain — Terraform doesn't manage this;
+       Azure's managed-certificate binding flow is still evolving in the
+       azurerm provider (open upstream bugs), so it's a deliberate manual
+       step once DNS is ready:
+         a. Add a CNAME (or A record, per Azure's instructions) at your
+            registrar pointing your domain at:
+              ${azurerm_container_app.client.ingress[0].fqdn}
+         b. az containerapp hostname add \
+              --hostname <your-domain> \
+              --name shedbooks-client --resource-group ${var.resource_group_name}
+         c. az containerapp hostname bind \
+              --hostname <your-domain> \
+              --name shedbooks-client --resource-group ${var.resource_group_name} \
+              --environment shedbooks-env --validation-method CNAME
+         d. Update var.cors_origin to the new domain and re-apply so the
+            server's CORS_ORIGIN matches.
+
+    3. Migrations run automatically at server startup (DatabaseMigrator) —
+       no manual migration step, same as before.
+
+    4. Deploys happen via the GitHub Actions workflow: push to main builds
+       and pushes new images tagged with the commit SHA, then
+       `tofu apply -var image_tag=<sha>` rolls a new Container Apps revision.
   EOT
 }
