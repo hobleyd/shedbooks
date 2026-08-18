@@ -163,7 +163,7 @@ jobs:
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@v1
         with:
-          opentofu_version: "~1.9"
+          tofu_version: "1.12.5"
 
       # Write the backend config (resource names only, not secrets — the
       # storage account is accessed via the OIDC identity above, see
