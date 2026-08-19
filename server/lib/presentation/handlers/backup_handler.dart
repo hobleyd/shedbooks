@@ -166,11 +166,20 @@ class BackupHandler {
         WHERE i.entity_id = @entityId
       ''', {'entityId': entityId});
 
+      // street_address, email, phone, date_of_birth, emergency_contact_name,
+      // and emergency_contact_phone are already ciphertext (app-level
+      // AES-256-GCM via FieldEncryptor) — round-tripped as opaque strings,
+      // no decrypt/re-encrypt. date_of_birth is TEXT (not DATE) since
+      // migration 038. `name`/`emergency_contact` are deprecated, nullable
+      // legacy columns (migrations 039/040) kept only for history.
       final members = await _queryRows('''
-        SELECT id::text, entity_id, name, date_joined, membership_status,
-               street_address, po_box, email, phone, date_of_birth,
-               emergency_contact, etag, o365_contact_id, o365_synced_at,
-               o365_sync_failed_at, created_at, updated_at, deleted_at
+        SELECT id::text, entity_id, name, first_name, last_name, date_joined,
+               membership_status, street_address, po_box, email, phone,
+               date_of_birth, emergency_contact, emergency_contact_name,
+               emergency_contact_phone, woodworking_induction,
+               metalworking_induction, gym_waiver, etag, o365_contact_id,
+               o365_synced_at, o365_sync_failed_at, created_at, updated_at,
+               deleted_at
         FROM members WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -749,22 +758,29 @@ class BackupHandler {
           await tx.execute(
             Sql.named('''
               INSERT INTO members
-                (id, entity_id, name, date_joined, membership_status,
-                 street_address, po_box, email, phone, date_of_birth,
-                 emergency_contact, etag, o365_contact_id, o365_synced_at,
-                 o365_sync_failed_at, created_at, updated_at, deleted_at)
+                (id, entity_id, name, first_name, last_name, date_joined,
+                 membership_status, street_address, po_box, email, phone,
+                 date_of_birth, emergency_contact, emergency_contact_name,
+                 emergency_contact_phone, woodworking_induction,
+                 metalworking_induction, gym_waiver, etag, o365_contact_id,
+                 o365_synced_at, o365_sync_failed_at, created_at, updated_at,
+                 deleted_at)
               VALUES (
-                @id::uuid, @e, @name, @dj::date, @status,
-                @addr, @po, @email, @phone, @dob::date,
-                @ec, @etag, @ocid, @osync::timestamptz,
-                @ofail::timestamptz,
-                @ca::timestamptz, @ua::timestamptz, @da::timestamptz
+                @id::uuid, @e, @name, @fn, @ln, @dj::date,
+                @status, @addr, @po, @email, @phone,
+                @dob, @ec, @ecn,
+                @ecp, @wi::date,
+                @mi::date, @gw::date, @etag, @ocid,
+                @osync::timestamptz, @ofail::timestamptz, @ca::timestamptz,
+                @ua::timestamptz, @da::timestamptz
               )
             '''),
             parameters: {
               'id': r['id'] as String,
               'e': entityId,
-              'name': r['name'] as String,
+              'name': r['name'],
+              'fn': r['first_name'] as String,
+              'ln': r['last_name'] as String,
               'dj': r['date_joined'] == null
                   ? null
                   : _dateString(r['date_joined']),
@@ -773,10 +789,22 @@ class BackupHandler {
               'po': r['po_box'],
               'email': r['email'],
               'phone': r['phone'],
-              'dob': r['date_of_birth'] == null
-                  ? null
-                  : _dateString(r['date_of_birth']),
+              // date_of_birth is TEXT (encrypted ciphertext or legacy
+              // plaintext "YYYY-MM-DD") since migration 038 — round-tripped
+              // as an opaque string, not cast to ::date.
+              'dob': r['date_of_birth'],
               'ec': r['emergency_contact'],
+              'ecn': r['emergency_contact_name'],
+              'ecp': r['emergency_contact_phone'],
+              'wi': r['woodworking_induction'] == null
+                  ? null
+                  : _dateString(r['woodworking_induction']),
+              'mi': r['metalworking_induction'] == null
+                  ? null
+                  : _dateString(r['metalworking_induction']),
+              'gw': r['gym_waiver'] == null
+                  ? null
+                  : _dateString(r['gym_waiver']),
               'etag': r['etag'] as String,
               'ocid': r['o365_contact_id'],
               'osync': r['o365_synced_at'],
