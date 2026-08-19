@@ -19,10 +19,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 
 import '../../infrastructure/encryption/backup_crypto.dart';
+
+final _log = Logger('BackupHandler');
 
 /// Handles entity-scoped backup and restore via HTTP.
 ///
@@ -115,6 +118,7 @@ class BackupHandler {
       final entityDetails = await _queryRows(
         'SELECT entity_id, name, abn, incorporation_identifier, '
         'money_in_receipt_format, money_out_receipt_format, apca_id, '
+        'invoice_number_format, '
         'created_at, updated_at FROM entity_details WHERE entity_id = @entityId',
         {'entityId': entityId},
       );
@@ -227,7 +231,8 @@ class BackupHandler {
               'attachment; filename="shedbooks-backup-$stamp.bak"',
         },
       );
-    } catch (e) {
+    } catch (e, st) {
+      _log.severe('Backup failed for entity $entityId', e, st);
       return Response.internalServerError(
         body: jsonEncode({'error': 'Backup failed: $e'}),
         headers: _jsonHeaders,
@@ -319,10 +324,11 @@ class BackupHandler {
               INSERT INTO entity_details
                 (entity_id, name, abn, incorporation_identifier,
                  money_in_receipt_format, money_out_receipt_format, apca_id,
-                 created_at, updated_at)
+                 invoice_number_format, created_at, updated_at)
               VALUES (
                 @e, @name, @abn, @inc,
                 @mir, @mor, @apca,
+                @inf,
                 @ca::timestamptz, @ua::timestamptz
               )
             '''),
@@ -334,6 +340,7 @@ class BackupHandler {
               'mir': (r['money_in_receipt_format'] as String?) ?? '',
               'mor': (r['money_out_receipt_format'] as String?) ?? '',
               'apca': r['apca_id'],
+              'inf': (r['invoice_number_format'] as String?) ?? 'WMS-YY-###',
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
             },
@@ -847,7 +854,8 @@ class BackupHandler {
         jsonEncode({'message': 'Restore completed successfully'}),
         headers: _jsonHeaders,
       );
-    } catch (e) {
+    } catch (e, st) {
+      _log.severe('Restore failed for entity $entityId', e, st);
       return Response.internalServerError(
         body: jsonEncode({'error': 'Restore failed: $e'}),
         headers: _jsonHeaders,
