@@ -89,24 +89,28 @@
   connected" — see the Connect-ExchangeOnline catch block below, which is
   the only path that exits without ever calling Write-PartialResults.
 
-  After the batch, membership of the "Shed Members" distribution group
-  (previously named "All Company" — renamed on first run if found under
-  the old name) is replaced with exactly the set of GAL contacts this
-  script manages, identified by CustomAttribute1 being set (the Shedbooks
-  member id). This is a full membership replace each run, not an additive
-  one, so a member removed from Shedbooks (and thus no longer synced) also
-  drops off the distribution list. This step has its own try/catch and
-  never throws past it: a failure here must not mark already-written
-  per-member contact results as failed, and the script must still exit 0
-  so Dart reads the partial/complete results file rather than discarding
-  it (see ExchangeOnlineMailContactSyncService.upsertContacts, which
+  After the batch, membership of the "Shed Members" distribution group is
+  replaced with exactly the set of GAL contacts this script manages,
+  identified by CustomAttribute1 being set (the Shedbooks member id). If
+  the group doesn't exist yet, it's created fresh and seeded with the
+  current membership. This is a full membership replace each run, not an
+  additive one, so a member removed from Shedbooks (and thus no longer
+  synced) also drops off the distribution list. This step has its own
+  try/catch and never throws past it: a failure here must not mark
+  already-written per-member contact results as failed, and the script
+  must still exit 0 so Dart reads the partial/complete results file
+  rather than discarding it (see ExchangeOnlineMailContactSyncService.upsertContacts, which
   throws without reading OutputPath if the process exit code is nonzero).
   Requires the app registration/service principal to hold an Exchange RBAC
-  role with distribution-group management rights (e.g. "Distribution
-  Groups"), separate from whatever scope was granted for mail-contact
-  management — if that role is missing, Get-/Set-/Update-
+  role with distribution-group management rights ("Distribution Groups"),
+  separate from whatever scope was granted for mail-contact management
+  ("Mail Recipients") — if that role is missing, New-/Set-/Update-
   DistributionGroup* calls fail and this step logs a warning but does not
-  fail the sync.
+  fail the sync. Confirmed as a real, not hypothetical, gap on a live
+  tenant on 2026-08-22: "Mail Recipients" was assigned (mail-contact sync
+  worked) but "Distribution Groups" was not, so every distribution-list
+  call failed silently until diagnosed. Run setup_exchange_rbac.ps1 (in
+  this same directory) once per tenant to grant both roles up front.
 
 .PARAMETER ConfigPath
   Path to the JSON input file:
@@ -300,38 +304,49 @@ try {
     # .DESCRIPTION comment at the top of this file).
     try {
         $groupName = 'Shed Members'
-        $legacyGroupName = 'All Company'
+
+        # CustomAttribute1 carries the Shedbooks member id (set via
+        # Set-MailContact above) on every contact this script manages —
+        # filtering on it, rather than listing every mail-enabled recipient
+        # in the tenant, keeps this membership sync scoped to Shedbooks
+        # members only and leaves any other mailbox/contact in the tenant
+        # untouched. Fetched once, up front, since it's needed both to seed
+        # a brand-new group and to update an existing one's membership.
+        $syncedContacts = @(Get-MailContact -ResultSize Unlimited -Filter "CustomAttribute1 -ne `$null" -ErrorAction Stop)
+        $memberIdentities = @($syncedContacts | ForEach-Object { $_.Identity })
+
+        # Membership already set at creation time (via New-DistributionGroup
+        # -Members below), so a fresh group never needs a follow-up
+        # Update-DistributionGroupMember call in the same run.
+        $membershipAlreadyCurrent = $false
 
         $group = Get-DistributionGroup -Identity $groupName -ErrorAction SilentlyContinue
         if (-not $group) {
-            # Renaming on discovery rather than requiring a one-off manual
-            # step keeps this script the single source of truth for the
-            # group's identity going forward.
-            $legacyGroup = Get-DistributionGroup -Identity $legacyGroupName -ErrorAction SilentlyContinue
-            if ($legacyGroup) {
-                Set-DistributionGroup -Identity $legacyGroup.Identity -Name $groupName -DisplayName $groupName -ErrorAction Stop
-                # Deliberately reuse $legacyGroup rather than re-fetching by
-                # the new Name — a rename is a directory write, and a
-                # read-after-write against the new Name can hit replication
-                # lag and fail to resolve ("couldn't be found") even though
-                # the rename succeeded. Same class of issue documented for
-                # newly-created contacts in this file's .DESCRIPTION above.
-                # $legacyGroup.Identity/Guid are still valid for the
-                # Update-DistributionGroupMember call below regardless of
-                # what Name the object now has.
-                $group = $legacyGroup
+            if ((Get-Recipient -Identity $groupName -ErrorAction SilentlyContinue)) {
+                # Something occupies this name but isn't a classic
+                # distribution group (e.g. a Microsoft 365/unified group,
+                # a mailbox) — don't attempt to create a conflicting
+                # duplicate; that requires a human to resolve the naming
+                # collision in Exchange.
+                Write-Warning "A recipient named '$groupName' already exists but isn't a distribution group Get-DistributionGroup can see — skipping creation. Resolve the naming conflict manually in Exchange."
+            } elseif ($memberIdentities.Count -gt 0) {
+                # Confirmed against the live tenant on 2026-08-22 that
+                # "Shed Members" doesn't exist under any recipient type in
+                # this tenant — create it fresh rather than only ever
+                # warning, so a deleted/never-created group repairs itself
+                # on the next sync instead of staying silently broken.
+                $defaultDomain = (Get-AcceptedDomain -ErrorAction Stop | Where-Object { $_.Default }).DomainName
+                $primarySmtp = "ShedMembers@$defaultDomain"
+                $group = New-DistributionGroup -Name $groupName -Alias 'ShedMembers' `
+                    -PrimarySmtpAddress $primarySmtp -Type Distribution `
+                    -Members $memberIdentities -ErrorAction Stop
+                $membershipAlreadyCurrent = $true
+            } else {
+                Write-Warning "Distribution group '$groupName' does not exist and there are no synced GAL contacts yet to seed it with — skipping creation until at least one member has synced."
             }
         }
 
-        if ($group) {
-            # CustomAttribute1 carries the Shedbooks member id (set via
-            # Set-MailContact above) on every contact this script manages —
-            # filtering on it, rather than listing every mail-enabled
-            # recipient in the tenant, keeps this membership sync scoped to
-            # Shedbooks members only and leaves any other mailbox/contact in
-            # the tenant untouched.
-            $syncedContacts = @(Get-MailContact -ResultSize Unlimited -Filter "CustomAttribute1 -ne `$null" -ErrorAction Stop)
-            $memberIdentities = @($syncedContacts | ForEach-Object { $_.Identity })
+        if ($group -and -not $membershipAlreadyCurrent) {
             if ($memberIdentities.Count -eq 0) {
                 # Refuse to act on this: if the CustomAttribute1 filter ever
                 # returns empty when contacts do exist (OPATH quirk, throttling,
@@ -345,8 +360,6 @@ try {
                 # absent from this filter) are dropped automatically.
                 Update-DistributionGroupMember -Identity $group.Identity -Members $memberIdentities -Confirm:$false -ErrorAction Stop
             }
-        } else {
-            Write-Warning "Distribution group '$groupName' not found (and no '$legacyGroupName' to rename) — skipping distribution list membership sync."
         }
     }
     catch {
