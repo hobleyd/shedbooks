@@ -89,6 +89,25 @@
   connected" — see the Connect-ExchangeOnline catch block below, which is
   the only path that exits without ever calling Write-PartialResults.
 
+  After the batch, membership of the "Shed Members" distribution group
+  (previously named "All Company" — renamed on first run if found under
+  the old name) is replaced with exactly the set of GAL contacts this
+  script manages, identified by CustomAttribute1 being set (the Shedbooks
+  member id). This is a full membership replace each run, not an additive
+  one, so a member removed from Shedbooks (and thus no longer synced) also
+  drops off the distribution list. This step has its own try/catch and
+  never throws past it: a failure here must not mark already-written
+  per-member contact results as failed, and the script must still exit 0
+  so Dart reads the partial/complete results file rather than discarding
+  it (see ExchangeOnlineMailContactSyncService.upsertContacts, which
+  throws without reading OutputPath if the process exit code is nonzero).
+  Requires the app registration/service principal to hold an Exchange RBAC
+  role with distribution-group management rights (e.g. "Distribution
+  Groups"), separate from whatever scope was granted for mail-contact
+  management — if that role is missing, Get-/Set-/Update-
+  DistributionGroup* calls fail and this step logs a warning but does not
+  fail the sync.
+
 .PARAMETER ConfigPath
   Path to the JSON input file:
   { tenantId, appId, certificatePath, certificatePassword,
@@ -271,6 +290,67 @@ try {
         }
         $results += [pscustomobject]$result
         Write-PartialResults -Results $results
+    }
+
+    # Keep the "Shed Members" distribution list's membership in lockstep with
+    # the GAL contacts this script manages. Wrapped in its own try/catch: a
+    # failure here must never propagate out of the outer try, because that
+    # would make the script exit non-zero and cause the Dart caller to
+    # discard the per-member results already written above (see the
+    # .DESCRIPTION comment at the top of this file).
+    try {
+        $groupName = 'Shed Members'
+        $legacyGroupName = 'All Company'
+
+        $group = Get-DistributionGroup -Identity $groupName -ErrorAction SilentlyContinue
+        if (-not $group) {
+            # Renaming on discovery rather than requiring a one-off manual
+            # step keeps this script the single source of truth for the
+            # group's identity going forward.
+            $legacyGroup = Get-DistributionGroup -Identity $legacyGroupName -ErrorAction SilentlyContinue
+            if ($legacyGroup) {
+                Set-DistributionGroup -Identity $legacyGroup.Identity -Name $groupName -DisplayName $groupName -ErrorAction Stop
+                # Deliberately reuse $legacyGroup rather than re-fetching by
+                # the new Name — a rename is a directory write, and a
+                # read-after-write against the new Name can hit replication
+                # lag and fail to resolve ("couldn't be found") even though
+                # the rename succeeded. Same class of issue documented for
+                # newly-created contacts in this file's .DESCRIPTION above.
+                # $legacyGroup.Identity/Guid are still valid for the
+                # Update-DistributionGroupMember call below regardless of
+                # what Name the object now has.
+                $group = $legacyGroup
+            }
+        }
+
+        if ($group) {
+            # CustomAttribute1 carries the Shedbooks member id (set via
+            # Set-MailContact above) on every contact this script manages —
+            # filtering on it, rather than listing every mail-enabled
+            # recipient in the tenant, keeps this membership sync scoped to
+            # Shedbooks members only and leaves any other mailbox/contact in
+            # the tenant untouched.
+            $syncedContacts = @(Get-MailContact -ResultSize Unlimited -Filter "CustomAttribute1 -ne `$null" -ErrorAction Stop)
+            $memberIdentities = @($syncedContacts | ForEach-Object { $_.Identity })
+            if ($memberIdentities.Count -eq 0) {
+                # Refuse to act on this: if the CustomAttribute1 filter ever
+                # returns empty when contacts do exist (OPATH quirk, throttling,
+                # etc.), Update-DistributionGroupMember would happily replace a
+                # live tenant's distribution list with nobody. Silence here is
+                # safer than emptying it — surfaced only as a warning.
+                Write-Warning "No GAL contacts matched the CustomAttribute1 filter — leaving '$groupName' membership untouched rather than risk emptying it."
+            } else {
+                # Update-DistributionGroupMember replaces the full membership
+                # list in one call, so members removed from Shedbooks (and thus
+                # absent from this filter) are dropped automatically.
+                Update-DistributionGroupMember -Identity $group.Identity -Members $memberIdentities -Confirm:$false -ErrorAction Stop
+            }
+        } else {
+            Write-Warning "Distribution group '$groupName' not found (and no '$legacyGroupName' to rename) — skipping distribution list membership sync."
+        }
+    }
+    catch {
+        Write-Warning "Failed to sync '$groupName' distribution list membership: $($_.Exception.Message)"
     }
 }
 finally {
