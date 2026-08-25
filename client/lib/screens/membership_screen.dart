@@ -1130,7 +1130,7 @@ class _MemberTableState extends State<_MemberTable> {
     final picked = await showDatePicker(
       context: context,
       initialDate: initial ?? DateTime.now(),
-      firstDate: DateTime(2000),
+      firstDate: DateTime(1930),
       lastDate: DateTime(2060),
     );
     if (picked != null && mounted) {
