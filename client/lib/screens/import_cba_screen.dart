@@ -429,13 +429,20 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         row.matched = candidates;
       }
     } else {
-      final alreadyMatched = _allTransactions.any((t) =>
-          t.bankMatched &&
-          (t.bankAccountId == null ||
-              t.bankAccountId == _selectedBankAccountId) &&
-          t.transactionType == 'debit' &&
-          t.transactionDate == row.processDate &&
-          t.totalAmount == row.amountCents);
+      // A single already-matched transaction may not carry the full bank
+      // amount on its own — e.g. an invoice with several line items is
+      // split into one transaction per line item. Check whether some
+      // subset of already-matched transactions on this date sums to it.
+      final alreadyMatchedTxns = _allTransactions
+          .where((t) =>
+              t.bankMatched &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
+              t.transactionType == 'debit' &&
+              t.transactionDate == row.processDate)
+          .toList();
+      final alreadyMatched =
+          findMatchingSubset(alreadyMatchedTxns, row.amountCents) != null;
       row.status =
           alreadyMatched ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched;
       row.matched = [];
@@ -507,13 +514,20 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
         row.matched = candidates;
       }
     } else {
-      final alreadyMatched = _allTransactions.any((t) =>
-          t.bankMatched &&
-          (t.bankAccountId == null ||
-              t.bankAccountId == _selectedBankAccountId) &&
-          t.transactionType == 'credit' &&
-          t.transactionDate == row.processDate &&
-          t.totalAmount == row.amountCents);
+      // A single already-matched transaction may not carry the full bank
+      // amount on its own — e.g. an invoice with several line items is
+      // split into one transaction per line item. Check whether some
+      // subset of already-matched transactions on this date sums to it.
+      final alreadyMatchedTxns = _allTransactions
+          .where((t) =>
+              t.bankMatched &&
+              (t.bankAccountId == null ||
+                  t.bankAccountId == _selectedBankAccountId) &&
+              t.transactionType == 'credit' &&
+              t.transactionDate == row.processDate)
+          .toList();
+      final alreadyMatched =
+          findMatchingSubset(alreadyMatchedTxns, row.amountCents) != null;
       row.status =
           alreadyMatched ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched;
       row.matched = [];

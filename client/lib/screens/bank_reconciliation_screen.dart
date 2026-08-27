@@ -712,13 +712,21 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         row.matched = candidates;
       }
     } else {
-      final already = _allTransactions.any((t) =>
+      // A single already-matched transaction may not carry the full bank
+      // amount on its own — e.g. an invoice with several line items is
+      // split into one transaction per line item. Check whether some
+      // subset of already-matched transactions on this date sums to it.
+      final alreadyMatchedTxns = _allTransactions
+          .where((t) =>
               t.bankMatched &&
               (t.bankAccountId == null ||
                   t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'debit' &&
-              t.transactionDate == row.processDate &&
-              t.totalAmount == row.source.amountCents) ||
+              t.transactionDate == row.processDate)
+          .toList();
+      final already = findMatchingSubset(
+              alreadyMatchedTxns, row.source.amountCents) !=
+          null ||
           _importedRowKeys.contains(_bankImportKey(
               row.processDate, true, row.source.amountCents));
       row.status = already
@@ -809,13 +817,21 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         row.matched = candidates;
       }
     } else {
-      final already = _allTransactions.any((t) =>
+      // A single already-matched transaction may not carry the full bank
+      // amount on its own — e.g. an invoice with several line items is
+      // split into one transaction per line item. Check whether some
+      // subset of already-matched transactions on this date sums to it.
+      final alreadyMatchedTxns = _allTransactions
+          .where((t) =>
               t.bankMatched &&
               (t.bankAccountId == null ||
                   t.bankAccountId == _selectedBankAccountId) &&
               t.transactionType == 'credit' &&
-              t.transactionDate == row.processDate &&
-              t.totalAmount == row.source.amountCents) ||
+              t.transactionDate == row.processDate)
+          .toList();
+      final already = findMatchingSubset(
+              alreadyMatchedTxns, row.source.amountCents) !=
+          null ||
           _importedRowKeys.contains(_bankImportKey(
               row.processDate, false, row.source.amountCents));
       row.status = already
