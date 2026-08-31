@@ -98,6 +98,7 @@ class EntityDetailsHandler {
         moneyInReceiptFormat: dto.moneyInReceiptFormat,
         moneyOutReceiptFormat: dto.moneyOutReceiptFormat,
         invoiceNumberFormat: dto.invoiceNumberFormat,
+        assetNoFormat: dto.assetNoFormat,
       );
       if (before == null) {
         _auditChanges(request)?.set(_detailsSnapshot(details, redact: true));
@@ -137,6 +138,7 @@ class EntityDetailsHandler {
         moneyInReceiptFormat: d.moneyInReceiptFormat,
         moneyOutReceiptFormat: d.moneyOutReceiptFormat,
         invoiceNumberFormat: d.invoiceNumberFormat,
+        assetNoFormat: d.assetNoFormat,
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
       );
@@ -154,6 +156,7 @@ class EntityDetailsHandler {
         'moneyInReceiptFormat': d.moneyInReceiptFormat,
         'moneyOutReceiptFormat': d.moneyOutReceiptFormat,
         'invoiceNumberFormat': d.invoiceNumberFormat,
+        'assetNoFormat': d.assetNoFormat,
       };
 
   static Response _orgRequired() => Response.unauthorized(

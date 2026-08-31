@@ -23,7 +23,9 @@ import 'package:shelf/shelf.dart';
 import '../../application/asset/create_asset_use_case.dart';
 import '../../application/asset/delete_asset_use_case.dart';
 import '../../application/asset/get_asset_use_case.dart';
+import '../../application/asset/get_next_asset_no_use_case.dart';
 import '../../application/asset/import_assets_use_case.dart';
+import '../../application/asset/list_asset_sections_use_case.dart';
 import '../../application/asset/list_assets_use_case.dart';
 import '../../application/asset/update_asset_use_case.dart';
 import '../../domain/entities/asset.dart';
@@ -42,6 +44,8 @@ class AssetHandler {
   final UpdateAssetUseCase _update;
   final DeleteAssetUseCase _delete;
   final ImportAssetsUseCase _import;
+  final GetNextAssetNoUseCase _nextNumber;
+  final ListAssetSectionsUseCase _listSections;
 
   const AssetHandler({
     required CreateAssetUseCase create,
@@ -50,12 +54,45 @@ class AssetHandler {
     required UpdateAssetUseCase update,
     required DeleteAssetUseCase delete,
     required ImportAssetsUseCase import,
+    required GetNextAssetNoUseCase nextNumber,
+    required ListAssetSectionsUseCase listSections,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
         _delete = delete,
-        _import = import;
+        _import = import,
+        _nextNumber = nextNumber,
+        _listSections = listSections;
+
+  /// GET /assets/next-number?section=<section> — returns the next asset number.
+  Future<Response> handleNextNumber(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final section = request.url.queryParameters['section'] ?? '';
+    try {
+      final result = await _nextNumber.execute(entityId, section: section);
+      return Response.ok(
+        jsonEncode({'assetNo': result.assetNo, 'format': result.format}),
+        headers: _jsonHeaders,
+      );
+    } on AssetValidationException catch (e) {
+      return _badRequest(e.message);
+    }
+  }
+
+  /// GET /assets/sections — returns the distinct Section values in use.
+  Future<Response> handleListSections(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final sections = await _listSections.execute(entityId: entityId);
+    return Response.ok(
+      jsonEncode({'sections': sections}),
+      headers: _jsonHeaders,
+    );
+  }
 
   /// GET /assets
   Future<Response> handleList(Request request) async {

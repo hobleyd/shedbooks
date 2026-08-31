@@ -84,10 +84,13 @@ Stored in `entity_details.money_in_receipt_format` / `money_out_receipt_format`.
 | `#` | any digit |
 | `@` | any letter |
 | `*` | any alphanumeric |
+| `{S}` | dynamically-resolved letter (used by Asset No format's Section letter; literal elsewhere) |
 | `x?` | literal character x is optional |
 | other | required literal |
 
 Example: `P-?YY###` matches `P-26062` or `P26062` (dash optional); `example()` returns `P-26000`.
+
+Asset numbers use a separate but token-compatible format: `entity_details.asset_no_format` (default `YYYY-{S}-####`), where `{S}` resolves to the first letter (upper-cased) of the asset's selected Section. Generated server-side by `GetNextAssetNoUseCase` (mirrors `GetNextInvoiceNumberUseCase`'s stateless max-scan approach, scoped by the resolved prefix via `IAssetRepository.findAssetNosLike`).
 
 ## PostgreSQL / Dart Package Notes
 - Use `Sql.named()` for parameterised queries. Cast JSONB parameters explicitly: `@param::jsonb`.

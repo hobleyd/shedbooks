@@ -40,6 +40,12 @@ class EntityDetails {
   /// Defaults to 'WMS-YY-###' producing numbers like WMS-26-001.
   final String invoiceNumberFormat;
 
+  /// Format pattern for generating sequential asset numbers.
+  /// Tokens: YYYY (4-digit year), YY (2-digit year), {S} (first letter of the
+  /// selected Section), # (sequential digit), other chars are literals.
+  /// Defaults to 'YYYY-{S}-####' producing numbers like 2026-N-0001.
+  final String assetNoFormat;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -52,6 +58,7 @@ class EntityDetails {
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
     required this.invoiceNumberFormat,
+    required this.assetNoFormat,
     required this.createdAt,
     required this.updatedAt,
   });

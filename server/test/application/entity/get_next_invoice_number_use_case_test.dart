@@ -45,6 +45,7 @@ void main() {
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
           invoiceNumberFormat: format,
+          assetNoFormat: 'YYYY-{S}-####',
           createdAt: DateTime.utc(2026, 1, 1),
           updatedAt: DateTime.utc(2026, 1, 1),
         );

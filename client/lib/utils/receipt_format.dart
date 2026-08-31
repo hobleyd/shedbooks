@@ -23,6 +23,8 @@
 ///   `#`     — any digit
 ///   `@`     — any letter
 ///   `*`     — any alphanumeric character
+///   `{S}`   — a dynamically-resolved letter (e.g. Asset No's Section letter);
+///             only meaningful in [example] via [sectionLetter], otherwise literal
 ///   `x?`    — literal character x is optional (e.g. `-?` makes dash optional)
 ///   other   — literal character (required)
 ///
@@ -35,8 +37,9 @@ class ReceiptFormat {
   bool get isEmpty => pattern.trim().isEmpty;
 
   /// Returns a sample string that matches this format using [at] as the
-  /// reference date (defaults to today).
-  String example({DateTime? at}) {
+  /// reference date (defaults to today), substituting [sectionLetter] for
+  /// any `{S}` token.
+  String example({DateTime? at, String sectionLetter = 'X'}) {
     final now = at ?? DateTime.now();
     final sb = StringBuffer();
     for (final t in _tokenize()) {
@@ -51,6 +54,8 @@ class ReceiptFormat {
           sb.write('A');
         case '*':
           sb.write('0');
+        case '{S}':
+          sb.write(sectionLetter);
         default:
           sb.write(t.token);
       }
@@ -215,6 +220,9 @@ class ReceiptFormat {
       if (i + 4 <= pattern.length && pattern.substring(i, i + 4) == 'YYYY') {
         tokens.add(_Token('YYYY', optional: false));
         i += 4;
+      } else if (i + 3 <= pattern.length && pattern.substring(i, i + 3) == '{S}') {
+        tokens.add(_Token('{S}', optional: false));
+        i += 3;
       } else if (i + 2 <= pattern.length && pattern.substring(i, i + 2) == 'YY') {
         tokens.add(_Token('YY', optional: false));
         i += 2;

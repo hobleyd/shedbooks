@@ -120,7 +120,9 @@ import '../application/transaction/update_transaction_use_case.dart';
 import '../application/asset/create_asset_use_case.dart';
 import '../application/asset/delete_asset_use_case.dart';
 import '../application/asset/get_asset_use_case.dart';
+import '../application/asset/get_next_asset_no_use_case.dart';
 import '../application/asset/import_assets_use_case.dart';
+import '../application/asset/list_asset_sections_use_case.dart';
 import '../application/asset/list_assets_use_case.dart';
 import '../application/asset/update_asset_use_case.dart';
 import '../infrastructure/repositories/postgres_asset_repository.dart';
@@ -351,6 +353,8 @@ Handler buildRouter({
     update: UpdateAssetUseCase(assetRepository),
     delete: DeleteAssetUseCase(assetRepository),
     import: ImportAssetsUseCase(assetRepository),
+    nextNumber: GetNextAssetNoUseCase(entityDetailsRepository, assetRepository),
+    listSections: ListAssetSectionsUseCase(assetRepository),
   );
 
   final cardDavPathPrefix =
@@ -651,12 +655,15 @@ Router _memberRouter(MemberHandler h) {
 }
 
 // Viewers can read; contributors and admins can write.
-// /import must be registered before /<id> to avoid being shadowed.
+// Fixed paths (import, next-number, sections) must be registered before
+// /<id> to avoid being shadowed.
 Router _assetRouter(AssetHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireContributor(), h.handleCreate))
     ..post('/import', _role(requireContributor(), h.handleImport))
+    ..get('/next-number', h.handleNextNumber)
+    ..get('/sections', h.handleListSections)
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));

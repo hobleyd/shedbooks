@@ -81,6 +81,18 @@ void main() {
       expect(ReceiptFormat('').example(at: date2026), equals(''));
     });
 
+    test('{S} defaults to X when no sectionLetter is given', () {
+      expect(ReceiptFormat('{S}').example(at: date2026), equals('X'));
+    });
+
+    test('{S} is substituted with the given sectionLetter', () {
+      expect(
+        ReceiptFormat('YYYY-{S}-####')
+            .example(at: date2026, sectionLetter: 'N'),
+        equals('2026-N-0000'),
+      );
+    });
+
     test('year changes with reference date', () {
       expect(ReceiptFormat('YY').example(at: DateTime(2030, 1, 1)), equals('30'));
       expect(ReceiptFormat('YYYY').example(at: DateTime(2030, 1, 1)), equals('2030'));

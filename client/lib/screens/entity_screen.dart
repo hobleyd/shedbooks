@@ -50,6 +50,7 @@ class _EntityScreenState extends State<EntityScreen> {
   final _moneyInReceiptFormatController = TextEditingController();
   final _moneyOutReceiptFormatController = TextEditingController();
   final _invoiceNumberFormatController = TextEditingController();
+  final _assetNoFormatController = TextEditingController();
 
   bool get _isCreating => _saved == null;
 
@@ -63,6 +64,7 @@ class _EntityScreenState extends State<EntityScreen> {
     _moneyInReceiptFormatController.addListener(_onFieldChanged);
     _moneyOutReceiptFormatController.addListener(_onFieldChanged);
     _invoiceNumberFormatController.addListener(_onFieldChanged);
+    _assetNoFormatController.addListener(_onFieldChanged);
     _load();
   }
 
@@ -77,6 +79,7 @@ class _EntityScreenState extends State<EntityScreen> {
     _moneyInReceiptFormatController.dispose();
     _moneyOutReceiptFormatController.dispose();
     _invoiceNumberFormatController.dispose();
+    _assetNoFormatController.dispose();
     super.dispose();
   }
 
@@ -118,6 +121,7 @@ class _EntityScreenState extends State<EntityScreen> {
         _moneyInReceiptFormatController.text = details.moneyInReceiptFormat;
         _moneyOutReceiptFormatController.text = details.moneyOutReceiptFormat;
         _invoiceNumberFormatController.text = details.invoiceNumberFormat;
+        _assetNoFormatController.text = details.assetNoFormat;
         _loading = false;
       });
     } catch (e) {
@@ -165,6 +169,7 @@ class _EntityScreenState extends State<EntityScreen> {
         'moneyInReceiptFormat': _moneyInReceiptFormatController.text.trim(),
         'moneyOutReceiptFormat': _moneyOutReceiptFormatController.text.trim(),
         'invoiceNumberFormat': _invoiceNumberFormatController.text.trim(),
+        'assetNoFormat': _assetNoFormatController.text.trim(),
       });
 
       final res =
@@ -223,6 +228,7 @@ class _EntityScreenState extends State<EntityScreen> {
       _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
       _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
       _invoiceNumberFormatController.text = _saved!.invoiceNumberFormat;
+      _assetNoFormatController.text = _saved!.assetNoFormat;
       _editing = true;
     });
   }
@@ -236,6 +242,7 @@ class _EntityScreenState extends State<EntityScreen> {
       _moneyInReceiptFormatController.text = _saved!.moneyInReceiptFormat;
       _moneyOutReceiptFormatController.text = _saved!.moneyOutReceiptFormat;
       _invoiceNumberFormatController.text = _saved!.invoiceNumberFormat;
+      _assetNoFormatController.text = _saved!.assetNoFormat;
       _editing = false;
     });
   }
@@ -397,6 +404,27 @@ class _EntityScreenState extends State<EntityScreen> {
           ),
           _buildFormatExample(_invoiceNumberFormatController.text),
           const SizedBox(height: 24),
+          Text('Asset No Format',
+              style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(
+            'Tokens: # digit  {S} Section letter  YY 2-digit year  YYYY 4-digit year. '
+            'All other characters are required literals.',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          _buildField(
+            label: 'Asset No Format',
+            controller: _assetNoFormatController,
+            enabled: _editing,
+            helperText: 'e.g. YYYY-{S}-####',
+          ),
+          _buildFormatExample(_assetNoFormatController.text,
+              sectionLetter: 'N'),
+          const SizedBox(height: 24),
           Text('Receipt Number Formats',
               style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
@@ -431,13 +459,13 @@ class _EntityScreenState extends State<EntityScreen> {
     );
   }
 
-  Widget _buildFormatExample(String pattern) {
+  Widget _buildFormatExample(String pattern, {String sectionLetter = 'X'}) {
     final fmt = ReceiptFormat(pattern);
     if (fmt.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 4, left: 2),
       child: Text(
-        'Example: ${fmt.example()}',
+        'Example: ${fmt.example(sectionLetter: sectionLetter)}',
         style: Theme.of(context)
             .textTheme
             .bodySmall

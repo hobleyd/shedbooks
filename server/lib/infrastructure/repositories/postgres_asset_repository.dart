@@ -211,6 +211,36 @@ class PostgresAssetRepository implements IAssetRepository {
     return results;
   }
 
+  @override
+  Future<List<String>> findAssetNosLike(String pattern,
+      {required String entityId}) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT DISTINCT asset_no
+        FROM assets
+        WHERE entity_id = @entityId
+          AND deleted_at IS NULL
+          AND asset_no LIKE @pattern
+      '''),
+      parameters: {'entityId': entityId, 'pattern': pattern},
+    );
+    return result.map((r) => r[0] as String).toList();
+  }
+
+  @override
+  Future<List<String>> findDistinctSections({required String entityId}) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT DISTINCT asset_type
+        FROM assets
+        WHERE entity_id = @entityId AND deleted_at IS NULL
+        ORDER BY asset_type ASC
+      '''),
+      parameters: {'entityId': entityId},
+    );
+    return result.map((r) => r[0] as String).toList();
+  }
+
   static Asset _mapRow(Map<String, dynamic> row) => Asset(
         id: row['id'].toString(),
         entityId: row['entity_id'] as String,

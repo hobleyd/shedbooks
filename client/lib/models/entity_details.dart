@@ -39,6 +39,11 @@ class EntityDetails {
   /// Defaults to 'WMS-YY-###'.
   final String invoiceNumberFormat;
 
+  /// Format pattern for generating sequential asset numbers.
+  /// Tokens: YYYY (4-digit year), YY (2-digit year), {S} (Section letter),
+  /// # (sequential digit). Defaults to 'YYYY-{S}-####'.
+  final String assetNoFormat;
+
   const EntityDetails({
     required this.name,
     required this.abn,
@@ -47,6 +52,7 @@ class EntityDetails {
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
     required this.invoiceNumberFormat,
+    required this.assetNoFormat,
   });
 
   factory EntityDetails.fromJson(Map<String, dynamic> json) => EntityDetails(
@@ -58,5 +64,6 @@ class EntityDetails {
         moneyOutReceiptFormat: (json['moneyOutReceiptFormat'] as String?) ?? '',
         invoiceNumberFormat:
             (json['invoiceNumberFormat'] as String?) ?? 'WMS-YY-###',
+        assetNoFormat: (json['assetNoFormat'] as String?) ?? 'YYYY-{S}-####',
       );
 }

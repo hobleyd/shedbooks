@@ -40,6 +40,7 @@ class SaveEntityDetailsUseCase {
     required String moneyInReceiptFormat,
     required String moneyOutReceiptFormat,
     required String invoiceNumberFormat,
+    required String assetNoFormat,
   }) async {
     final trimmedName = name.trim();
     final trimmedAbn = abn.trim();
@@ -73,6 +74,7 @@ class SaveEntityDetailsUseCase {
       moneyInReceiptFormat: moneyInReceiptFormat.trim(),
       moneyOutReceiptFormat: moneyOutReceiptFormat.trim(),
       invoiceNumberFormat: invoiceNumberFormat.trim(),
+      assetNoFormat: assetNoFormat.trim(),
       createdAt: DateTime.now().toUtc(),
       updatedAt: DateTime.now().toUtc(),
     ));

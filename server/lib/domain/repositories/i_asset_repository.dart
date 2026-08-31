@@ -68,6 +68,16 @@ abstract interface class IAssetRepository {
     required String entityId,
     required List<AssetImportData> assets,
   });
+
+  /// Returns the distinct asset numbers for [entityId] whose value matches
+  /// [pattern] (a SQL `LIKE` pattern, e.g. `'2026-N-%'`).
+  ///
+  /// Used to derive the next sequential asset number for a given format/section.
+  Future<List<String>> findAssetNosLike(String pattern,
+      {required String entityId});
+
+  /// Returns the distinct, sorted Section (asset_type) values in use for [entityId].
+  Future<List<String>> findDistinctSections({required String entityId});
 }
 
 /// Data transfer object for bulk asset import.

@@ -28,6 +28,7 @@ class EntityDetailsResponse {
   final String moneyInReceiptFormat;
   final String moneyOutReceiptFormat;
   final String invoiceNumberFormat;
+  final String assetNoFormat;
 
   const EntityDetailsResponse({
     required this.name,
@@ -37,6 +38,7 @@ class EntityDetailsResponse {
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
     required this.invoiceNumberFormat,
+    required this.assetNoFormat,
   });
 
   factory EntityDetailsResponse.fromEntity(EntityDetails e) =>
@@ -48,6 +50,7 @@ class EntityDetailsResponse {
         moneyInReceiptFormat: e.moneyInReceiptFormat,
         moneyOutReceiptFormat: e.moneyOutReceiptFormat,
         invoiceNumberFormat: e.invoiceNumberFormat,
+        assetNoFormat: e.assetNoFormat,
       );
 
   Map<String, dynamic> toJson() => {
@@ -58,6 +61,7 @@ class EntityDetailsResponse {
         'moneyInReceiptFormat': moneyInReceiptFormat,
         'moneyOutReceiptFormat': moneyOutReceiptFormat,
         'invoiceNumberFormat': invoiceNumberFormat,
+        'assetNoFormat': assetNoFormat,
       };
 
   String toJsonString() => jsonEncode(toJson());

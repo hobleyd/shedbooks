@@ -24,6 +24,7 @@ class SaveEntityDetailsRequest {
   final String moneyInReceiptFormat;
   final String moneyOutReceiptFormat;
   final String invoiceNumberFormat;
+  final String assetNoFormat;
 
   const SaveEntityDetailsRequest({
     required this.name,
@@ -33,6 +34,7 @@ class SaveEntityDetailsRequest {
     required this.moneyInReceiptFormat,
     required this.moneyOutReceiptFormat,
     required this.invoiceNumberFormat,
+    required this.assetNoFormat,
   });
 
   factory SaveEntityDetailsRequest.fromJson(Map<String, dynamic> json) {
@@ -43,6 +45,7 @@ class SaveEntityDetailsRequest {
     final moneyIn = json['moneyInReceiptFormat'] ?? '';
     final moneyOut = json['moneyOutReceiptFormat'] ?? '';
     final invoiceFmt = json['invoiceNumberFormat'] ?? 'WMS-YY-###';
+    final assetNoFmt = json['assetNoFormat'] ?? 'YYYY-{S}-####';
 
     if (name is! String) throw const FormatException('name must be a string');
     if (abn is! String) throw const FormatException('abn must be a string');
@@ -61,6 +64,9 @@ class SaveEntityDetailsRequest {
     if (invoiceFmt is! String) {
       throw const FormatException('invoiceNumberFormat must be a string');
     }
+    if (assetNoFmt is! String) {
+      throw const FormatException('assetNoFormat must be a string');
+    }
 
     return SaveEntityDetailsRequest(
       name: name,
@@ -70,6 +76,7 @@ class SaveEntityDetailsRequest {
       moneyInReceiptFormat: moneyIn,
       moneyOutReceiptFormat: moneyOut,
       invoiceNumberFormat: invoiceFmt,
+      assetNoFormat: assetNoFmt,
     );
   }
 }

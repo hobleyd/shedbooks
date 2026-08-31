@@ -39,6 +39,7 @@ void main() {
     moneyInReceiptFormat: '',
     moneyOutReceiptFormat: 'P-#####',
     invoiceNumberFormat: 'WMS-YY-###',
+    assetNoFormat: 'YYYY-{S}-####',
     createdAt: DateTime.utc(2026, 1, 1),
     updatedAt: DateTime.utc(2026, 1, 1),
   );
@@ -63,6 +64,7 @@ void main() {
         moneyInReceiptFormat: '',
         moneyOutReceiptFormat: 'P-#####',
         invoiceNumberFormat: 'WMS-YY-###',
+        assetNoFormat: 'YYYY-{S}-####',
       );
 
       // Assert
@@ -84,6 +86,7 @@ void main() {
         moneyInReceiptFormat: '  ####  ',
         moneyOutReceiptFormat: '  P-#####  ',
         invoiceNumberFormat: '  WMS-YY-###  ',
+        assetNoFormat: '  YYYY-{S}-####  ',
       );
 
       // Assert
@@ -96,6 +99,7 @@ void main() {
       expect(captured.moneyInReceiptFormat, equals('####'));
       expect(captured.moneyOutReceiptFormat, equals('P-#####'));
       expect(captured.invoiceNumberFormat, equals('WMS-YY-###'));
+      expect(captured.assetNoFormat, equals('YYYY-{S}-####'));
     });
 
     test('throws EntityDetailsValidationException when name is blank', () {
@@ -109,6 +113,7 @@ void main() {
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
           invoiceNumberFormat: '',
+          assetNoFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -125,6 +130,7 @@ void main() {
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
           invoiceNumberFormat: '',
+          assetNoFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -141,6 +147,7 @@ void main() {
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
           invoiceNumberFormat: '',
+          assetNoFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -157,6 +164,7 @@ void main() {
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
           invoiceNumberFormat: '',
+          assetNoFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );
@@ -173,6 +181,7 @@ void main() {
           moneyInReceiptFormat: '',
           moneyOutReceiptFormat: '',
           invoiceNumberFormat: '',
+          assetNoFormat: '',
         ),
         throwsA(isA<EntityDetailsValidationException>()),
       );

@@ -15,11 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
@@ -171,6 +173,7 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
   int? _sortColumn;
   bool _sortAscending = true;
   Set<String>? _sectionFilter;
+  List<String> _sections = [];
 
   @override
   void initState() {
@@ -194,18 +197,29 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
     });
     try {
       final client = context.read<ApiClient>();
-      final res = await client.get('/assets');
+      final results = await Future.wait([
+        client.get('/assets'),
+        client.get('/assets/sections'),
+      ]);
+      final res = results[0];
+      final sectionsRes = results[1];
       if (res.statusCode == 200) {
         final List<dynamic> data = jsonDecode(res.body);
         final entries =
             data.map((e) => AssetEntry.fromJson(e as Map<String, dynamic>)).toList();
         final newRows = entries.map(_AssetRow.fromEntry).toList();
+        final sections = sectionsRes.statusCode == 200
+            ? ((jsonDecode(sectionsRes.body) as Map<String, dynamic>)['sections']
+                    as List<dynamic>)
+                .cast<String>()
+            : _sections;
         if (mounted) {
           setState(() {
             for (final r in _rows) {
               r.dispose();
             }
             _rows = newRows;
+            _sections = sections;
             _applySort();
             _loading = false;
           });
@@ -228,24 +242,29 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
     }
   }
 
-  String? _nextAssetNoForSection(String section) {
-    final sectionRows = _rows.where((r) => r.assetTypeCtrl.text == section);
-    final pattern = RegExp(r'^(.*?)(\d+)$');
-    String? bestPrefix;
-    int bestNum = -1;
-    int bestPadLen = 1;
-    for (final r in sectionRows) {
-      final m = pattern.firstMatch(r.assetNoCtrl.text.trim());
-      if (m == null) continue;
-      final num = int.parse(m.group(2)!);
-      if (num > bestNum) {
-        bestNum = num;
-        bestPrefix = m.group(1)!;
-        bestPadLen = m.group(2)!.length;
+  /// Fetches the next asset number for [section] from the server (based on
+  /// the entity's configured Asset No format) and applies it to [row] if the
+  /// row hasn't been superseded (e.g. cancelled or saved) while awaiting.
+  Future<void> _fetchNextAssetNo(_AssetRow row, String section) async {
+    try {
+      final client = context.read<ApiClient>();
+      final res = await client
+          .get('/assets/next-number?section=${Uri.encodeQueryComponent(section)}');
+      if (!mounted) return;
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final assetNo = data['assetNo'] as String?;
+        if (assetNo == null) return;
+        if (row != _pendingNewRow && !_rows.contains(row)) return;
+        setState(() {
+          row.assetNoCtrl.text = assetNo;
+          row.assetNoAutoSet = true;
+        });
+        _updateDirty();
       }
+    } catch (_) {
+      // Leave the field blank for manual entry if the lookup fails.
     }
-    if (bestPrefix == null) return null;
-    return '$bestPrefix${(bestNum + 1).toString().padLeft(bestPadLen, '0')}';
   }
 
   void _addRow() {
@@ -253,11 +272,7 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
     if (_sectionFilter?.length == 1) {
       final section = _sectionFilter!.first;
       row.assetTypeCtrl.text = section;
-      final autoNo = _nextAssetNoForSection(section);
-      if (autoNo != null) {
-        row.assetNoCtrl.text = autoNo;
-        row.assetNoAutoSet = true;
-      }
+      unawaited(_fetchNextAssetNo(row, section));
     }
     setState(() => _pendingNewRow = row);
     _updateDirty();
@@ -547,6 +562,16 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
     return types;
   }
 
+  List<String> get _allBrands {
+    final brands = _rows
+        .map((r) => r.brandCtrl.text.trim())
+        .where((b) => b.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    return brands;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = context.watch<AuthState>();
@@ -600,7 +625,9 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
                       onSaveNew: _saveNewAsset,
                       onCancelNew: _cancelNew,
                       sectionFilter: _sectionFilter,
-                      onNextAssetNo: _nextAssetNoForSection,
+                      sections: _sections,
+                      allBrands: _allBrands,
+                      onSectionSelected: _fetchNextAssetNo,
                     ),
             ),
         ],
@@ -875,7 +902,9 @@ class _AssetTable extends StatefulWidget {
   final Future<void> Function(_AssetRow)? onSaveNew;
   final VoidCallback? onCancelNew;
   final Set<String>? sectionFilter;
-  final String? Function(String section)? onNextAssetNo;
+  final List<String> sections;
+  final List<String> allBrands;
+  final void Function(_AssetRow row, String section)? onSectionSelected;
 
   const _AssetTable({
     required this.rows,
@@ -891,7 +920,9 @@ class _AssetTable extends StatefulWidget {
     this.onSaveNew,
     this.onCancelNew,
     required this.sectionFilter,
-    this.onNextAssetNo,
+    required this.sections,
+    required this.allBrands,
+    this.onSectionSelected,
   });
 
   @override
@@ -927,17 +958,10 @@ class _AssetTableState extends State<_AssetTable> {
     }
   }
 
-  void _onSectionChangedForPending(_AssetRow row) {
-    final section = row.assetTypeCtrl.text.trim();
+  void _onSectionChanged(_AssetRow row, String section) {
     if (section.isEmpty) return;
     if (row.assetNoCtrl.text.isNotEmpty && !row.assetNoAutoSet) return;
-    final autoNo = widget.onNextAssetNo?.call(section);
-    if (autoNo != null) {
-      row.assetNoCtrl.text = autoNo;
-      row.assetNoAutoSet = true;
-      setState(() {});
-      widget.onChanged();
-    }
+    widget.onSectionSelected?.call(row, section);
   }
 
   void _startEdit(String key) => setState(() => _editing.add(key));
@@ -1030,6 +1054,108 @@ class _AssetTableState extends State<_AssetTable> {
           },
         );
 
+    Widget dropdownField<T extends Object>({
+      required String label,
+      required T? value,
+      required List<T?> items,
+      required ValueChanged<T?> onChanged,
+      required String Function(T?) display,
+      Widget? hint,
+    }) {
+      final safeItems = List<T?>.from(items);
+      if (value != null && !safeItems.contains(value)) safeItems.add(value);
+      return InputDecorator(
+        decoration: baseDec.copyWith(labelText: label),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            value: value,
+            isDense: true,
+            isExpanded: true,
+            hint: hint,
+            items: safeItems
+                .map((e) => DropdownMenuItem<T>(
+                    value: e,
+                    child:
+                        Text(display(e), overflow: TextOverflow.ellipsis)))
+                .toList(),
+            onChanged: onChanged,
+          ),
+        ),
+      );
+    }
+
+    Widget sectionField() {
+      final currentValue = row.assetTypeCtrl.text.trim();
+      if (widget.sections.isEmpty && currentValue.isEmpty) {
+        // No sections exist for this entity yet — fall back to free text so
+        // the very first asset can still be created.
+        return tf('Section', row.assetTypeCtrl,
+            extraOnChanged: () =>
+                _onSectionChanged(row, row.assetTypeCtrl.text.trim()));
+      }
+      return dropdownField<String>(
+        label: 'Section',
+        value: currentValue.isEmpty ? null : currentValue,
+        items: widget.sections,
+        display: (s) => s ?? '',
+        hint: const Text('Select…', overflow: TextOverflow.ellipsis),
+        onChanged: (v) {
+          if (v == null) return;
+          row.assetTypeCtrl.text = v;
+          widget.onChanged();
+          _onSectionChanged(row, v);
+        },
+      );
+    }
+
+    Widget yearField() {
+      final currentYear = DateTime.now().year;
+      final years = [for (int y = currentYear; y >= 1950; y--) y];
+      final currentValue = int.tryParse(row.manufactureYearCtrl.text.trim());
+      return dropdownField<int>(
+        label: 'Year',
+        value: currentValue,
+        items: [null, ...years],
+        display: (y) => y?.toString() ?? '—',
+        hint: const Text('—'),
+        onChanged: (v) {
+          row.manufactureYearCtrl.text = v?.toString() ?? '';
+          widget.onChanged();
+        },
+      );
+    }
+
+    Widget brandField() {
+      return TypeAheadField<String>(
+        controller: row.brandCtrl,
+        builder: (context, textController, focusNode) => TextField(
+          controller: textController,
+          focusNode: focusNode,
+          decoration: baseDec.copyWith(labelText: 'Brand'),
+          onChanged: (_) => widget.onChanged(),
+        ),
+        suggestionsCallback: (pattern) async {
+          final p = pattern.trim().toLowerCase();
+          if (p.isEmpty) return widget.allBrands;
+          return widget.allBrands
+              .where((b) => b.toLowerCase().contains(p))
+              .toList();
+        },
+        itemBuilder: (context, brand) => ListTile(
+          dense: true,
+          title: Text(brand),
+        ),
+        emptyBuilder: (context) => const ListTile(
+          dense: true,
+          title: Text('No matching brand — keep typing to add a new one'),
+        ),
+        onSelected: (brand) {
+          row.brandCtrl.text = brand;
+          widget.onChanged();
+        },
+      );
+    }
+
     return Container(
       constraints: const BoxConstraints(minWidth: _kTableMinWidth),
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
@@ -1051,10 +1177,7 @@ class _AssetTableState extends State<_AssetTable> {
             const SizedBox(width: 8),
             SizedBox(
               width: _kTypeW + 8,
-              child: tf('Section', row.assetTypeCtrl,
-                  extraOnChanged: isPending
-                      ? () => _onSectionChangedForPending(row)
-                      : null),
+              child: sectionField(),
             ),
             const SizedBox(width: 8),
             SizedBox(
@@ -1065,8 +1188,8 @@ class _AssetTableState extends State<_AssetTable> {
           const SizedBox(height: 8),
           Row(children: [
             SizedBox(
-              width: _kBrandW + 8,
-              child: tf('Brand', row.brandCtrl),
+              width: _kBrandW + 40,
+              child: brandField(),
             ),
             const SizedBox(width: 8),
             SizedBox(
@@ -1080,10 +1203,8 @@ class _AssetTableState extends State<_AssetTable> {
             ),
             const SizedBox(width: 8),
             SizedBox(
-              width: _kYearW + 8,
-              child: tf('Year', row.manufactureYearCtrl,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  keyboardType: TextInputType.number),
+              width: _kYearW + 30,
+              child: yearField(),
             ),
             const SizedBox(width: 8),
             SizedBox(
