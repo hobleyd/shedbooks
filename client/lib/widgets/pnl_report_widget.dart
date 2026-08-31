@@ -262,14 +262,14 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
             ),
           ),
           const Divider(height: 1, thickness: 0.3, indent: 84),
-          ...sorted.map((TransactionEntry t) => _buildTransactionRow(context, t, isExpense, line.gl.gstApplicable)),
+          ...sorted.map((TransactionEntry t) => _buildTransactionRow(context, t, isExpense)),
           const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  Widget _buildTransactionRow(BuildContext context, TransactionEntry t, bool isExpense, bool gstApplicable) {
+  Widget _buildTransactionRow(BuildContext context, TransactionEntry t, bool isExpense) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(84, 5, 8, 5),
       child: Row(
@@ -301,7 +301,7 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
             width: 120,
             child: Text(
               isExpense
-                  ? '(${_formatCents(gstApplicable ? t.amount : t.totalAmount)})'
+                  ? '(${_formatCents(t.totalAmount)})'
                   : _formatCents(t.totalAmount),
               style: TextStyle(
                 fontSize: 12,
