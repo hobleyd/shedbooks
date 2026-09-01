@@ -605,35 +605,45 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     final client = context.read<ApiClient>();
 
     try {
-      // 1. Bank-match transaction-matched rows.
-      final ids = _rows
-          .where((r) =>
-              r.status == BankMatchStatus.autoMatched ||
-              r.status == BankMatchStatus.manuallyMatched)
-          .expand((r) => r.matched)
-          .map((t) => t.id)
-          .toSet()
-          .toList();
+      // 1. Bank-match transaction-matched rows. Manually matched rows are
+      // grouped by the bank row's clearing date and sent with that date, so
+      // the transaction's date gets stamped to it — otherwise a manual match
+      // against a mismatched reference keeps its original date and is
+      // invisible to date-based re-detection on the next import/
+      // reconciliation. Auto-matched rows (matched by receipt, which already
+      // carries no date requirement) are sent without a date so their
+      // existing, correct date is left untouched.
+      final manualIdsByDate = <String, List<String>>{};
+      final autoIds = <String>[];
+      for (final row in _rows.where((r) =>
+          r.status == BankMatchStatus.autoMatched ||
+          r.status == BankMatchStatus.manuallyMatched)) {
+        for (final t in row.matched) {
+          if (row.status == BankMatchStatus.manuallyMatched) {
+            manualIdsByDate.putIfAbsent(row.processDate, () => []).add(t.id);
+          } else {
+            autoIds.add(t.id);
+          }
+        }
+      }
 
-      if (ids.isNotEmpty) {
-        final res = await client.post(
-          '/transactions/bank-match',
-          jsonEncode({
-            'transactionIds': ids,
-            'bankAccountId': _selectedBankAccountId,
-          }),
-        );
+      Future<bool> postMatch(List<String> ids, {String? transactionDate}) async {
+        if (ids.isEmpty) return true;
+        final body = <String, dynamic>{
+          'transactionIds': ids,
+          'bankAccountId': _selectedBankAccountId,
+        };
+        if (transactionDate != null) body['transactionDate'] = transactionDate;
+        final res = await client.post('/transactions/bank-match', jsonEncode(body));
         if (res.statusCode != 204) {
-          final msg =
-              (jsonDecode(res.body) as Map?)?['error']?.toString() ??
-                  'Save failed (${res.statusCode})';
+          final msg = (jsonDecode(res.body) as Map?)?['error']?.toString() ??
+              'Save failed (${res.statusCode})';
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(msg), behavior: SnackBarBehavior.floating),
+              SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
             );
           }
-          return;
+          return false;
         }
         final idSet = ids.toSet();
         _allTransactions = _allTransactions
@@ -641,9 +651,16 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
                 ? t.copyWith(
                     bankMatched: true,
                     bankAccountId: _selectedBankAccountId,
+                    transactionDate: transactionDate,
                   )
                 : t)
             .toList();
+        return true;
+      }
+
+      if (!await postMatch(autoIds)) return;
+      for (final entry in manualIdsByDate.entries) {
+        if (!await postMatch(entry.value, transactionDate: entry.key)) return;
       }
 
       // 2. Mark invoice-matched rows as paid.

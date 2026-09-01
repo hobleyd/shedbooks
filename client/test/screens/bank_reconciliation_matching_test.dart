@@ -323,5 +323,52 @@ void main() {
       );
       expect(result.status, BankMatchStatus.alreadyImported);
     });
+
+    test('a manually matched transaction with a mismatched reference is still '
+        'recognised as alreadyImported once its date has been stamped to the '
+        "bank row's clearing date", () {
+      // Regression for: a manual match with a wrong/mismatched invoice
+      // reference left the transaction invisible to every re-detection path
+      // (receipt lookup fails by construction, and the date+amount fallback
+      // also failed because manual matching never used to update the
+      // transaction's date). Bank-match now stamps the row's processDate
+      // onto the transaction, which lets this fallback recognise it.
+      final txn = _tx(
+        id: '1',
+        receipt: 'WRONG-REF',
+        type: 'credit',
+        total: 5000,
+        date: '2026-04-01',
+        bankMatched: true,
+      );
+      final result = _credit(
+        allTransactions: [txn],
+        parsedReceipts: const ['P-26001'],
+        description: 'EFT WRONG-REF',
+        amountCents: 5000,
+        processDate: '2026-04-01',
+      );
+      expect(result.status, BankMatchStatus.alreadyImported);
+    });
+
+    test('a manually matched transaction with a mismatched reference stays '
+        'unmatched if its date was never stamped to the bank row (pre-fix behaviour)', () {
+      final txn = _tx(
+        id: '1',
+        receipt: 'WRONG-REF',
+        type: 'credit',
+        total: 5000,
+        date: '2026-03-15', // stale — never updated to the statement's clearing date
+        bankMatched: true,
+      );
+      final result = _credit(
+        allTransactions: [txn],
+        parsedReceipts: const ['P-26001'],
+        description: 'EFT WRONG-REF',
+        amountCents: 5000,
+        processDate: '2026-04-01',
+      );
+      expect(result.status, BankMatchStatus.unmatched);
+    });
   });
 }

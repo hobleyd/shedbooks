@@ -213,7 +213,7 @@ Handler buildRouter({
     list: ListTransactionsUseCase(transactionRepository),
     update: UpdateTransactionUseCase(transactionRepository, lockedMonthRepository),
     delete: DeleteTransactionUseCase(transactionRepository, lockedMonthRepository),
-    bankMatch: BankMatchTransactionsUseCase(transactionRepository),
+    bankMatch: BankMatchTransactionsUseCase(transactionRepository, lockedMonthRepository),
     stampAbaBatch: StampAbaBatchUseCase(transactionRepository),
     getContact: GetContactUseCase(contactRepository),
     getGeneralLedger: GetGeneralLedgerUseCase(generalLedgerRepository),

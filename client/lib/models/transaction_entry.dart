@@ -71,7 +71,11 @@ class TransactionEntry {
 
   bool get isCredit => transactionType == 'credit';
 
-  TransactionEntry copyWith({bool? bankMatched, String? bankAccountId}) =>
+  TransactionEntry copyWith({
+    bool? bankMatched,
+    String? bankAccountId,
+    String? transactionDate,
+  }) =>
       TransactionEntry(
         id: id,
         contactId: contactId,
@@ -83,7 +87,7 @@ class TransactionEntry {
         amount: amount,
         gstAmount: gstAmount,
         totalAmount: totalAmount,
-        transactionDate: transactionDate,
+        transactionDate: transactionDate ?? this.transactionDate,
         bankMatched: bankMatched ?? this.bankMatched,
         isCash: isCash,
         abaBatchName: abaBatchName,

@@ -283,8 +283,11 @@ class PostgresTransactionRepository implements ITransactionRepository {
     List<String> ids, {
     required String entityId,
     String? bankAccountId,
+    DateTime? transactionDate,
   }) async {
     if (ids.isEmpty) return;
+    final transactionDateParam =
+        transactionDate?.toIso8601String().substring(0, 10);
     await _pool.runTx((tx) async {
       for (final id in ids) {
         await tx.execute(
@@ -293,6 +296,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
             SET bank_matched    = TRUE,
                 bank_account_id = (SELECT id FROM bank_accounts
                                     WHERE id = @bankAccountId::uuid AND entity_id = @entityId::text AND deleted_at IS NULL),
+                transaction_date = COALESCE(@transactionDate::date, transaction_date),
                 updated_at      = NOW()
             WHERE id = @id::uuid
               AND entity_id = @entityId::text
@@ -302,6 +306,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
             'id': id,
             'entityId': entityId,
             'bankAccountId': bankAccountId,
+            'transactionDate': transactionDateParam,
           },
         );
       }

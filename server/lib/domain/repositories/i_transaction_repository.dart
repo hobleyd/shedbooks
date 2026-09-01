@@ -79,11 +79,16 @@ abstract interface class ITransactionRepository {
 
   /// Marks all transactions in [ids] as bank-matched within [entityId], recording
   /// [bankAccountId] as the account they were reconciled against (if known).
+  /// When [transactionDate] is given, it replaces each transaction's existing
+  /// date with the bank statement row's clearing date — otherwise a manually
+  /// matched transaction keeps whatever date it was created with, which can
+  /// cause it to fail date-based re-detection on a later import/reconciliation.
   /// Silently ignores IDs that do not exist or are already matched.
   Future<void> bankMatch(
     List<String> ids, {
     required String entityId,
     String? bankAccountId,
+    DateTime? transactionDate,
   });
 
   /// Stamps [batchName] on all transactions in [ids] within [entityId].

@@ -739,15 +739,28 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
   // ── Confirm ───────────────────────────────────────────────────────────────────
 
   Future<void> _confirm() async {
-    final ids = _rows
-        .where((r) => r.isResolved)
-        .expand((r) => r.matched.map((t) => t.id))
-        .toSet()
-        .toList();
+    // Manually matched rows are grouped by the bank row's clearing date and
+    // sent with that date, so the transaction's date gets stamped to it —
+    // otherwise a manual match against a mismatched reference keeps its
+    // original date and is invisible to date-based re-detection on the next
+    // import. Everything else (auto-matched by receipt, new transactions
+    // already created with the right date) is sent without a date so its
+    // existing, correct date is left untouched.
+    final manualIdsByDate = <String, List<String>>{};
+    final otherIds = <String>[];
+    for (final row in _rows.where((r) => r.isResolved)) {
+      for (final t in row.matched) {
+        if (row.status == BankMatchStatus.manuallyMatched) {
+          manualIdsByDate.putIfAbsent(row.processDate, () => []).add(t.id);
+        } else {
+          otherIds.add(t.id);
+        }
+      }
+    }
 
     final hasInvoiceRows = _rows.any((r) => r.invoiceMatch != null);
 
-    if (ids.isEmpty && !hasInvoiceRows) {
+    if (manualIdsByDate.isEmpty && otherIds.isEmpty && !hasInvoiceRows) {
       Navigator.of(context).pop(false);
       return;
     }
@@ -757,12 +770,26 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     try {
       final client = context.read<ApiClient>();
 
-      if (ids.isNotEmpty) {
+      if (otherIds.isNotEmpty) {
         final matchRes = await client.post(
           '/transactions/bank-match',
           jsonEncode({
-            'transactionIds': ids,
+            'transactionIds': otherIds,
             'bankAccountId': _selectedBankAccountId,
+          }),
+        );
+        if (matchRes.statusCode != 204) {
+          throw Exception('Server returned ${matchRes.statusCode}');
+        }
+      }
+
+      for (final entry in manualIdsByDate.entries) {
+        final matchRes = await client.post(
+          '/transactions/bank-match',
+          jsonEncode({
+            'transactionIds': entry.value,
+            'bankAccountId': _selectedBankAccountId,
+            'transactionDate': entry.key,
           }),
         );
         if (matchRes.statusCode != 204) {

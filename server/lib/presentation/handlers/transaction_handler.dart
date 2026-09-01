@@ -261,7 +261,10 @@ class TransactionHandler {
         ids: dto.transactionIds,
         entityId: entityId,
         bankAccountId: dto.bankAccountId,
+        transactionDate: dto.transactionDate,
       );
+    } on MonthIsLockedException catch (e) {
+      return _locked(e.message);
     } catch (e) {
       return _serverError('Failed to save bank matches: $e');
     }

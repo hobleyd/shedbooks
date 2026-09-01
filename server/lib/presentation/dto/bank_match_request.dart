@@ -22,16 +22,40 @@ class BankMatchRequest {
   /// The bank account these transactions were reconciled against, if known.
   final String? bankAccountId;
 
-  const BankMatchRequest({required this.transactionIds, this.bankAccountId});
+  /// The bank statement row's clearing date, if known. When present, it
+  /// replaces each matched transaction's existing date so a later re-import
+  /// can still recognise it by date + amount.
+  final DateTime? transactionDate;
+
+  const BankMatchRequest({
+    required this.transactionIds,
+    this.bankAccountId,
+    this.transactionDate,
+  });
 
   factory BankMatchRequest.fromJson(Map<String, dynamic> json) {
     final ids = json['transactionIds'];
     if (ids is! List) {
       throw const FormatException('transactionIds must be an array');
     }
+
+    final transactionDateRaw = json['transactionDate'];
+    if (transactionDateRaw != null && transactionDateRaw is! String) {
+      throw const FormatException('transactionDate must be a string');
+    }
+    DateTime? transactionDate;
+    if (transactionDateRaw is String) {
+      try {
+        transactionDate = DateTime.parse(transactionDateRaw);
+      } on FormatException {
+        throw const FormatException('transactionDate must be a valid ISO 8601 date');
+      }
+    }
+
     return BankMatchRequest(
       transactionIds: ids.cast<String>(),
       bankAccountId: json['bankAccountId'] as String?,
+      transactionDate: transactionDate,
     );
   }
 }
