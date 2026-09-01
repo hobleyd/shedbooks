@@ -28,6 +28,7 @@ class TransactionResponse {
   final int totalAmount;
   final String transactionType;
   final String receiptNumber;
+  final String? paymentReference;
   final String description;
   final String transactionDate;
   final String createdAt;
@@ -46,6 +47,7 @@ class TransactionResponse {
     required this.totalAmount,
     required this.transactionType,
     required this.receiptNumber,
+    this.paymentReference,
     required this.description,
     required this.transactionDate,
     required this.createdAt,
@@ -66,6 +68,7 @@ class TransactionResponse {
       totalAmount: entity.totalAmount,
       transactionType: entity.transactionType.name,
       receiptNumber: entity.receiptNumber,
+      paymentReference: entity.paymentReference,
       description: entity.description,
       transactionDate: entity.transactionDate.toIso8601String().substring(0, 10),
       createdAt: entity.createdAt.toUtc().toIso8601String(),
@@ -86,6 +89,7 @@ class TransactionResponse {
         'totalAmount': totalAmount,
         'transactionType': transactionType,
         'receiptNumber': receiptNumber,
+        if (paymentReference != null) 'paymentReference': paymentReference,
         'description': description,
         'transactionDate': transactionDate,
         'createdAt': createdAt,

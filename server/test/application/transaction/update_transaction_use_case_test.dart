@@ -502,5 +502,118 @@ void main() {
         ),
       ).called(1);
     });
+
+    test('trims whitespace from paymentReference before persisting', () async {
+      // Arrange
+      when(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: 'PAY-REF-099',
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: tEntityId,
+        contactId: tExisting.contactId,
+        generalLedgerId: tExisting.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        paymentReference: '  PAY-REF-099  ',
+        description: '',
+        transactionDate: tDate,
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: 'PAY-REF-099',
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).called(1);
+    });
+
+    test('passes null paymentReference to repository when omitted or blank', () async {
+      // Arrange
+      when(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: null,
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: tEntityId,
+        contactId: tExisting.contactId,
+        generalLedgerId: tExisting.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        description: '',
+        transactionDate: tDate,
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: tId,
+          entityId: tEntityId,
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: null,
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).called(1);
+    });
   });
 }

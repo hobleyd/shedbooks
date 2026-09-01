@@ -41,6 +41,10 @@ class Transaction {
   /// External receipt or reference number for document tracking.
   final String receiptNumber;
 
+  /// Optional Money-Out payment reference. When set, used in place of
+  /// [receiptNumber] as the lodgement reference on the generated bank (ABA) upload file.
+  final String? paymentReference;
+
   /// Optional free-text description for this transaction.
   final String description;
 
@@ -79,6 +83,7 @@ class Transaction {
     required this.gstAmount,
     required this.transactionType,
     required this.receiptNumber,
+    this.paymentReference,
     required this.description,
     required this.transactionDate,
     required this.createdAt,

@@ -111,6 +111,7 @@ class TransactionHandler {
         gstAmount: dto.gstAmount,
         transactionType: dto.transactionType,
         receiptNumber: dto.receiptNumber,
+        paymentReference: dto.paymentReference,
         description: dto.description,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash,
@@ -181,6 +182,7 @@ class TransactionHandler {
         gstAmount: dto.gstAmount,
         transactionType: dto.transactionType,
         receiptNumber: dto.receiptNumber,
+        paymentReference: dto.paymentReference,
         description: dto.description,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash,
@@ -357,6 +359,7 @@ class TransactionHandler {
         'gstAmount': t.gstAmount,
         'transactionType': t.transactionType.name,
         'receiptNumber': t.receiptNumber,
+        'paymentReference': t.paymentReference,
         'description': t.description,
         'transactionDate': t.transactionDate.toIso8601String(),
       };

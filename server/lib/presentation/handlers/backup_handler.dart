@@ -79,7 +79,7 @@ class BackupHandler {
         SELECT id::text, entity_id, contact_id::text, general_ledger_id::text,
                amount, gst_amount,
                transaction_type::text AS transaction_type,
-               receipt_number, description, transaction_date, is_cash,
+               receipt_number, payment_reference, description, transaction_date, is_cash,
                created_at, updated_at, deleted_at, bank_matched,
                bank_account_id::text
         FROM transactions WHERE entity_id = @entityId
@@ -567,13 +567,13 @@ class BackupHandler {
             Sql.named('''
               INSERT INTO transactions
                 (id, entity_id, contact_id, general_ledger_id, amount,
-                 gst_amount, transaction_type, receipt_number, description,
+                 gst_amount, transaction_type, receipt_number, payment_reference, description,
                  transaction_date, is_cash, created_at, updated_at, deleted_at,
                  bank_matched, bank_account_id)
               VALUES (
                 @id::uuid, @e, @cid::uuid, @glid::uuid,
                 @amt, @gst, @tt::transaction_type,
-                @rcpt, @desc, @td::date, @ic,
+                @rcpt, @pref, @desc, @td::date, @ic,
                 @ca::timestamptz, @ua::timestamptz, @da::timestamptz, @bm,
                 @bai::uuid
               )
@@ -587,6 +587,7 @@ class BackupHandler {
               'gst': r['gst_amount'] as int,
               'tt': r['transaction_type'] as String,
               'rcpt': r['receipt_number'] as String,
+              'pref': r['payment_reference'] as String?,
               'desc': r['description'] as String,
               'td': _dateString(r['transaction_date']),
               'ic': (r['is_cash'] as bool?) ?? false,

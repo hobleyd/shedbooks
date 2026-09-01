@@ -305,7 +305,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     // Generate ABA
     try {
       final apiClient = context.read<ApiClient>();
-      final references = selectedTxns.map((t) => t.receiptNumber).toList();
+      final references = selectedTxns.map(_lodgementReference).toList();
       final seqResponse = await apiClient.post(
         '/aba-sequences/next',
         jsonEncode({'references': references}),
@@ -350,6 +350,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     }
   }
 
+  /// Reference used as the bank upload's lodgement reference for [t] — the
+  /// Payment Reference when set, falling back to the Receipt No.
+  String _lodgementReference(TransactionEntry t) {
+    final paymentRef = t.paymentReference?.trim();
+    return paymentRef != null && paymentRef.isNotEmpty ? paymentRef : t.receiptNumber;
+  }
+
   String _generateAba(
       List<TransactionEntry> txns, BankAccountEntry sender, int sequence) {
     final buffer = StringBuffer();
@@ -391,7 +398,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       final accNo = contact.accountNumber!.replaceAll(RegExp(r'[^0-9]'), '');
       final amount = t.totalAmount;
       final name = contact.name.padRight(32).substring(0, 32).toUpperCase();
-      final ref = t.receiptNumber.padRight(18).substring(0, 18);
+      final ref = _lodgementReference(t).padRight(18).substring(0, 18);
 
       // Record 1: Detail Record
       // 01: Record Type (1) - '1'
@@ -683,6 +690,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         'transactionType':
             data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
         'receiptNumber': data.receiptNumber,
+        if (data.paymentReference != null) 'paymentReference': data.paymentReference,
         'description': data.description,
         'transactionDate':
             '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
@@ -793,6 +801,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         'transactionType':
             data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
         'receiptNumber': data.receiptNumber,
+        'paymentReference': data.paymentReference,
         'description': data.description,
         'transactionDate':
             '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',

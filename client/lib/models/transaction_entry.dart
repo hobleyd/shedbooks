@@ -21,6 +21,7 @@ class TransactionEntry {
   final String contactId;
   final String generalLedgerId;
   final String receiptNumber;
+  final String? paymentReference;
   final String description;
   final String transactionType; // 'debit' | 'credit'
   final int amount;
@@ -37,6 +38,7 @@ class TransactionEntry {
     required this.contactId,
     required this.generalLedgerId,
     required this.receiptNumber,
+    this.paymentReference,
     required this.description,
     required this.transactionType,
     required this.amount,
@@ -54,6 +56,7 @@ class TransactionEntry {
         contactId: json['contactId'] as String,
         generalLedgerId: json['generalLedgerId'] as String,
         receiptNumber: json['receiptNumber'] as String,
+        paymentReference: json['paymentReference'] as String?,
         description: (json['description'] as String?) ?? '',
         transactionType: json['transactionType'] as String,
         amount: json['amount'] as int,
@@ -74,6 +77,7 @@ class TransactionEntry {
         contactId: contactId,
         generalLedgerId: generalLedgerId,
         receiptNumber: receiptNumber,
+        paymentReference: paymentReference,
         description: description,
         transactionType: transactionType,
         amount: amount,

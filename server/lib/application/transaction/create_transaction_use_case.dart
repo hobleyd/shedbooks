@@ -36,6 +36,7 @@ class CreateTransactionUseCase {
     required int gstAmount,
     required TransactionType transactionType,
     required String receiptNumber,
+    String? paymentReference,
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
@@ -60,6 +61,9 @@ class CreateTransactionUseCase {
       gstAmount: gstAmount,
       transactionType: transactionType,
       receiptNumber: receiptNumber.trim(),
+      paymentReference: paymentReference?.trim().isEmpty ?? true
+          ? null
+          : paymentReference!.trim(),
       description: description.trim(),
       transactionDate: transactionDate,
       isCash: isCash,

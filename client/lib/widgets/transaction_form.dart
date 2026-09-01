@@ -35,6 +35,7 @@ class TransactionFormData {
   final int amountCents;
   final int gstCents;
   final String receiptNumber;
+  final String? paymentReference;
   final String description;
   final bool isCash;
   final String? bankAccountId;
@@ -47,6 +48,7 @@ class TransactionFormData {
     required this.amountCents,
     required this.gstCents,
     required this.receiptNumber,
+    this.paymentReference,
     required this.description,
     this.isCash = false,
     this.bankAccountId,
@@ -116,6 +118,7 @@ class TransactionFormState extends State<TransactionForm> {
   String? _selectedBankAccountId;
   final TextEditingController _cashReceiptController = TextEditingController();
   final TextEditingController _receiptOutController = TextEditingController();
+  final TextEditingController _paymentReferenceController = TextEditingController();
 
   String? get _cashAccountId =>
       widget.bankAccounts.where((a) => a.isCash).map((a) => a.id).firstOrNull;
@@ -149,6 +152,7 @@ class TransactionFormState extends State<TransactionForm> {
       _descriptionController.text = t.description;
       _selectedBankAccountId = t.bankAccountId ??
           (t.isCash ? _cashAccountId : _singleNonCashAccountId);
+      _paymentReferenceController.text = t.paymentReference ?? '';
       if (_selectedGl?.direction == GlDirection.moneyOut) {
         if (t.isCash) {
           _cashReceiptController.text = t.receiptNumber;
@@ -173,6 +177,7 @@ class TransactionFormState extends State<TransactionForm> {
     _descriptionController.dispose();
     _cashReceiptController.dispose();
     _receiptOutController.dispose();
+    _paymentReferenceController.dispose();
     super.dispose();
   }
 
@@ -208,6 +213,7 @@ class TransactionFormState extends State<TransactionForm> {
       _selectedBankAccountId = _singleNonCashAccountId;
       _cashReceiptController.clear();
       _receiptOutController.clear();
+      _paymentReferenceController.clear();
       _anchor = _AmountAnchor.total;
     });
   }
@@ -233,6 +239,9 @@ class TransactionFormState extends State<TransactionForm> {
       amountCents: _dollarsToCents(amount),
       gstCents: _dollarsToCents(gst),
       receiptNumber: _buildReceiptNumber(),
+      paymentReference: _isMoneyOut && _paymentReferenceController.text.trim().isNotEmpty
+          ? _paymentReferenceController.text.trim()
+          : null,
       description: _descriptionController.text.trim(),
       isCash: _isCash,
       bankAccountId: _selectedBankAccountId,
@@ -368,6 +377,7 @@ class TransactionFormState extends State<TransactionForm> {
         _gstController.clear();
         _totalController.clear();
         _receiptOutController.clear();
+        _paymentReferenceController.clear();
         _anchor = _AmountAnchor.total;
       }
     });
@@ -725,34 +735,58 @@ class TransactionFormState extends State<TransactionForm> {
       children: [
         _buildAccountDropdown(width: 240),
         const SizedBox(height: 8),
-        SizedBox(
-          width: 200,
-          child: _isCash
-              ? TextFormField(
-                  controller: _cashReceiptController,
-                  enabled: !widget.isSaving,
-                  decoration: const InputDecoration(
-                    labelText: 'Receipt Number',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                    floatingLabelBehavior: FloatingLabelBehavior.always,
-                  ),
-                )
-              : TextFormField(
-                  controller: _receiptOutController,
-                  enabled: !widget.isSaving,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                    helperText: 'Auto-generated — edit if needed',
-                  ),
-                ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 200,
+              child: _isCash
+                  ? TextFormField(
+                      controller: _cashReceiptController,
+                      enabled: !widget.isSaving,
+                      decoration: const InputDecoration(
+                        labelText: 'Receipt Number',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                        floatingLabelBehavior: FloatingLabelBehavior.always,
+                      ),
+                    )
+                  : TextFormField(
+                      controller: _receiptOutController,
+                      enabled: !widget.isSaving,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                        helperText: 'Auto-generated — edit if needed',
+                      ),
+                    ),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(width: 220, child: _buildPaymentReferenceField()),
+          ],
         ),
       ],
+    );
+  }
+
+  /// Optional Money-Out reference used in place of the Receipt Number as the
+  /// lodgement reference when generating the bank (ABA) upload file.
+  Widget _buildPaymentReferenceField() {
+    return TextFormField(
+      controller: _paymentReferenceController,
+      enabled: !widget.isSaving,
+      decoration: const InputDecoration(
+        labelText: 'Payment Reference (optional)',
+        border: OutlineInputBorder(),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+        helperText: 'Used instead of Receipt No. on bank upload',
+      ),
     );
   }
 
@@ -896,7 +930,7 @@ class TransactionFormState extends State<TransactionForm> {
                 const SizedBox(width: 8),
                 if (isMoneyOut) ...[
                   SizedBox(
-                    width: 160,
+                    width: 100,
                     child: _stretch(_isCash
                         ? TextFormField(
                             controller: _cashReceiptController,
@@ -916,6 +950,19 @@ class TransactionFormState extends State<TransactionForm> {
                             style: const TextStyle(fontSize: 13),
                             decoration: dec.copyWith(labelText: 'Receipt No.'),
                           )),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 100,
+                    child: _stretch(TextFormField(
+                      controller: _paymentReferenceController,
+                      enabled: !widget.isSaving,
+                      expands: true,
+                      maxLines: null,
+                      textAlignVertical: TextAlignVertical.center,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: dec.copyWith(labelText: 'Payment Ref.'),
+                    )),
                   ),
                   const SizedBox(width: 8),
                 ] else if (_isCash) ...[

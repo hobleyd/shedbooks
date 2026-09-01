@@ -25,6 +25,7 @@ class CreateTransactionRequest {
   final int gstAmount;
   final TransactionType transactionType;
   final String receiptNumber;
+  final String? paymentReference;
   final String description;
   final DateTime transactionDate;
   final bool isCash;
@@ -37,6 +38,7 @@ class CreateTransactionRequest {
     required this.gstAmount,
     required this.transactionType,
     required this.receiptNumber,
+    this.paymentReference,
     required this.description,
     required this.transactionDate,
     this.isCash = false,
@@ -59,6 +61,10 @@ class CreateTransactionRequest {
     if (gstAmount is! int) throw const FormatException('gstAmount must be an integer (cents)');
     if (transactionTypeRaw is! String) throw const FormatException('transactionType must be a string');
     if (receiptNumber is! String) throw const FormatException('receiptNumber must be a string');
+    final paymentReferenceRaw = json['paymentReference'];
+    if (paymentReferenceRaw != null && paymentReferenceRaw is! String) {
+      throw const FormatException('paymentReference must be a string');
+    }
     if (description is! String) throw const FormatException('description must be a string');
     if (transactionDateRaw is! String) throw const FormatException('transactionDate must be an ISO 8601 date string');
 
@@ -87,6 +93,7 @@ class CreateTransactionRequest {
       gstAmount: gstAmount,
       transactionType: transactionType,
       receiptNumber: receiptNumber,
+      paymentReference: paymentReferenceRaw as String?,
       description: description,
       transactionDate: transactionDate,
       isCash: isCash,

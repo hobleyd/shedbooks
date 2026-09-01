@@ -493,5 +493,105 @@ void main() {
         ),
       ).called(1);
     });
+
+    test('trims whitespace from paymentReference before persisting', () async {
+      // Arrange
+      when(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: 'PAY-REF-001',
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+        ),
+      ).thenAnswer((_) async => tTransaction);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        contactId: tTransaction.contactId,
+        generalLedgerId: tTransaction.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        paymentReference: '  PAY-REF-001  ',
+        description: '',
+        transactionDate: tDate,
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: 'PAY-REF-001',
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+        ),
+      ).called(1);
+    });
+
+    test('passes null paymentReference to repository when omitted or blank', () async {
+      // Arrange
+      when(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: null,
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+        ),
+      ).thenAnswer((_) async => tTransaction);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        contactId: tTransaction.contactId,
+        generalLedgerId: tTransaction.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        paymentReference: '   ',
+        description: '',
+        transactionDate: tDate,
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: null,
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+        ),
+      ).called(1);
+    });
   });
 }

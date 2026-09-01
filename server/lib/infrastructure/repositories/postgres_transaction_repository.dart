@@ -39,6 +39,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required int gstAmount,
     required TransactionType transactionType,
     required String receiptNumber,
+    String? paymentReference,
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
@@ -50,20 +51,20 @@ class PostgresTransactionRepository implements ITransactionRepository {
         Sql.named('''
           INSERT INTO transactions (
             id, entity_id, contact_id, general_ledger_id, amount, gst_amount,
-            transaction_type, receipt_number, description, transaction_date,
+            transaction_type, receipt_number, payment_reference, description, transaction_date,
             is_cash, bank_matched, bank_account_id
           )
           VALUES (
             @id::uuid, @entityId::text, @contactId::uuid, @generalLedgerId::uuid,
             @amount, @gstAmount, @transactionType::transaction_type,
-            @receiptNumber, @description, @transactionDate::date,
+            @receiptNumber, @paymentReference, @description, @transactionDate::date,
             @isCash, @isCash,
             (SELECT id FROM bank_accounts
              WHERE id = @bankAccountId::uuid AND entity_id = @entityId::text AND deleted_at IS NULL)
           )
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
-            transaction_type::text, receipt_number, description, transaction_date,
+            transaction_type::text, receipt_number, payment_reference, description, transaction_date,
             created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
             bank_account_id
         '''),
@@ -76,6 +77,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           'gstAmount': gstAmount,
           'transactionType': transactionType.name,
           'receiptNumber': receiptNumber,
+          'paymentReference': paymentReference,
           'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
           'isCash': isCash,
@@ -95,7 +97,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
       Sql.named('''
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
-          transaction_type::text, receipt_number, description, transaction_date,
+          transaction_type::text, receipt_number, payment_reference, description, transaction_date,
           created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
           bank_account_id
         FROM transactions
@@ -116,7 +118,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
       Sql.named('''
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
-          transaction_type::text, receipt_number, description, transaction_date,
+          transaction_type::text, receipt_number, payment_reference, description, transaction_date,
           created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
           bank_account_id
         FROM transactions
@@ -140,6 +142,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required int gstAmount,
     required TransactionType transactionType,
     required String receiptNumber,
+    String? paymentReference,
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
@@ -156,6 +159,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
               gst_amount        = @gstAmount,
               transaction_type  = @transactionType::transaction_type,
               receipt_number    = @receiptNumber,
+              payment_reference = @paymentReference,
               description       = @description,
               transaction_date  = @transactionDate::date,
               is_cash           = @isCash,
@@ -168,7 +172,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
             AND deleted_at IS NULL
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
-            transaction_type::text, receipt_number, description, transaction_date,
+            transaction_type::text, receipt_number, payment_reference, description, transaction_date,
             created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
             bank_account_id
         '''),
@@ -181,6 +185,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           'gstAmount': gstAmount,
           'transactionType': transactionType.name,
           'receiptNumber': receiptNumber,
+          'paymentReference': paymentReference,
           'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
           'isCash': isCash,
@@ -316,6 +321,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         row['transaction_type'] as String,
       ),
       receiptNumber: row['receipt_number'] as String,
+      paymentReference: row['payment_reference'] as String?,
       description: row['description'] as String,
       transactionDate: DateTime.utc(
         transactionDate.year,

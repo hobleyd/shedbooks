@@ -28,6 +28,7 @@ import '../models/invoice_entry.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/bank_row_matching.dart';
 import '../utils/cba_receipt_parser.dart';
 import '../utils/receipt_format.dart';
 import '../widgets/bank_match_widgets.dart';
@@ -59,6 +60,239 @@ class _RecRow {
       status == BankMatchStatus.autoMatched ||
       status == BankMatchStatus.manuallyMatched ||
       status == BankMatchStatus.invoiceMatched;
+}
+
+// ── Matching logic (pure, unit-tested) ──────────────────────────────────────
+
+/// Result of matching a single bank statement row against the ledger.
+/// [invoiceMatch] is only ever set by [matchRecCreditRow].
+typedef RecRowMatchResult = ({
+  BankMatchStatus status,
+  List<TransactionEntry> matched,
+  InvoiceEntry? invoiceMatch,
+});
+
+/// Matching decision for a debit ("Money-Out") bank statement row. Pulled out
+/// as a top-level function (rather than kept as a private [State] method) so
+/// it can be unit tested directly with plain Dart values, independent of
+/// Flutter widget infrastructure — see
+/// `test/utils/bank_reconciliation_matching_test.dart`.
+///
+/// [alreadyImportedByKey] is precomputed by the caller from its own
+/// `_importedRowKeys` set (rows already brought in via a prior CSV import) —
+/// whether this exact date/debit/amount combination was seen before.
+RecRowMatchResult matchRecDebitRow({
+  required List<TransactionEntry> allTransactions,
+  required Set<String> reservedIds,
+  required String? selectedBankAccountId,
+  required List<String> parsedReceipts,
+  required String description,
+  required int amountCents,
+  required String processDate,
+  required Map<String, String> contactNames,
+  required bool alreadyImportedByKey,
+}) {
+  final referencedTxns = allTransactions
+      .where((t) => referenceMatches(
+            parsedReceipts: parsedReceipts,
+            description: description,
+            transaction: t,
+          ))
+      .toList();
+
+  if (parsedReceipts.isNotEmpty || referencedTxns.isNotEmpty) {
+    final found = referencedTxns
+        .where((t) =>
+            !t.bankMatched &&
+            !reservedIds.contains(t.id) &&
+            (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+            t.transactionType == 'debit')
+        .toList();
+
+    if (found.isEmpty) {
+      final already = referencedTxns.any((t) =>
+          t.bankMatched &&
+          (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+          t.transactionType == 'debit');
+      return (
+        status: already ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched,
+        matched: [],
+        invoiceMatch: null,
+      );
+    }
+
+    final subset = findMatchingSubset(found, amountCents);
+    return (
+      status: subset != null ? BankMatchStatus.autoMatched : BankMatchStatus.amountMismatch,
+      matched: subset ?? found,
+      invoiceMatch: null,
+    );
+  }
+
+  // Check for ABA batch name (e.g. WMS260620001) before falling back to date+amount.
+  final batchName = extractAbaBatchName(description);
+  if (batchName != null) {
+    final batchFound = allTransactions
+        .where((t) =>
+            !t.bankMatched &&
+            !reservedIds.contains(t.id) &&
+            (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+            t.transactionType == 'debit' &&
+            t.abaBatchName == batchName)
+        .toList();
+    if (batchFound.isNotEmpty) {
+      final subset = findMatchingSubset(batchFound, amountCents);
+      return (
+        status: subset != null ? BankMatchStatus.autoMatched : BankMatchStatus.amountMismatch,
+        matched: subset ?? batchFound,
+        invoiceMatch: null,
+      );
+    }
+    // Batch transactions already bank-matched (e.g. via CSV import).
+    final alreadyByBatch = allTransactions
+        .where((t) =>
+            t.bankMatched &&
+            (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+            t.transactionType == 'debit' &&
+            t.abaBatchName == batchName)
+        .toList();
+    final batchTotal = alreadyByBatch.fold(0, (int s, t) => s + t.totalAmount);
+    if (alreadyByBatch.isNotEmpty && batchTotal == amountCents) {
+      return (status: BankMatchStatus.alreadyImported, matched: [], invoiceMatch: null);
+    }
+  }
+
+  final candidates = allTransactions
+      .where((t) =>
+          !t.bankMatched &&
+          !reservedIds.contains(t.id) &&
+          (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+          t.transactionType == 'debit' &&
+          t.transactionDate == processDate &&
+          t.totalAmount == amountCents)
+      .toList();
+
+  if (candidates.length == 1) {
+    return (status: BankMatchStatus.autoMatched, matched: candidates, invoiceMatch: null);
+  } else if (candidates.length > 1) {
+    final disambiguated = disambiguateByContactName(candidates, description, contactNames);
+    return disambiguated != null
+        ? (status: BankMatchStatus.autoMatched, matched: disambiguated, invoiceMatch: null)
+        : (status: BankMatchStatus.needsSelection, matched: candidates, invoiceMatch: null);
+  } else {
+    // A single already-matched transaction may not carry the full bank
+    // amount on its own — e.g. an invoice with several line items is
+    // split into one transaction per line item. Check whether some
+    // subset of already-matched transactions on this date sums to it.
+    final alreadyMatchedTxns = allTransactions
+        .where((t) =>
+            t.bankMatched &&
+            (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+            t.transactionType == 'debit' &&
+            t.transactionDate == processDate)
+        .toList();
+    final already =
+        findMatchingSubset(alreadyMatchedTxns, amountCents) != null || alreadyImportedByKey;
+    return (
+      status: already ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched,
+      matched: [],
+      invoiceMatch: null,
+    );
+  }
+}
+
+/// Matching decision for a credit ("Money-In") bank statement row. See
+/// [matchRecDebitRow] for why this is a top-level function and what
+/// [alreadyImportedByKey] means.
+RecRowMatchResult matchRecCreditRow({
+  required List<TransactionEntry> allTransactions,
+  required Set<String> reservedIds,
+  required String? selectedBankAccountId,
+  required List<String> parsedReceipts,
+  required String description,
+  required int amountCents,
+  required String processDate,
+  required Map<String, String> contactNames,
+  required List<InvoiceEntry> unpaidInvoices,
+  required bool alreadyImportedByKey,
+}) {
+  if (parsedReceipts.isNotEmpty) {
+    final found = allTransactions
+        .where((t) =>
+            !t.bankMatched &&
+            !reservedIds.contains(t.id) &&
+            (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+            t.transactionType == 'credit' &&
+            parsedReceipts.contains(t.receiptNumber))
+        .toList();
+
+    if (found.isNotEmpty) {
+      final subset = findMatchingSubset(found, amountCents);
+      return (
+        status: subset != null ? BankMatchStatus.autoMatched : BankMatchStatus.amountMismatch,
+        matched: subset ?? found,
+        invoiceMatch: null,
+      );
+    }
+
+    final alreadyByReceipt = allTransactions.any((t) =>
+        t.bankMatched &&
+        (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+        t.transactionType == 'credit' &&
+        parsedReceipts.contains(t.receiptNumber));
+    if (alreadyByReceipt) {
+      return (status: BankMatchStatus.alreadyImported, matched: [], invoiceMatch: null);
+    }
+
+    // Check unpaid invoices by invoice number.
+    final matchedInvoice =
+        unpaidInvoices.where((inv) => parsedReceipts.contains(inv.invoiceNumber)).firstOrNull;
+    if (matchedInvoice != null) {
+      return (
+        status: BankMatchStatus.invoiceMatched,
+        matched: [],
+        invoiceMatch: matchedInvoice,
+      );
+    }
+  }
+
+  final candidates = allTransactions
+      .where((t) =>
+          !t.bankMatched &&
+          !reservedIds.contains(t.id) &&
+          (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+          t.transactionType == 'credit' &&
+          t.transactionDate == processDate &&
+          t.totalAmount == amountCents)
+      .toList();
+
+  if (candidates.length == 1) {
+    return (status: BankMatchStatus.autoMatched, matched: candidates, invoiceMatch: null);
+  } else if (candidates.length > 1) {
+    final disambiguated = disambiguateByContactName(candidates, description, contactNames);
+    return disambiguated != null
+        ? (status: BankMatchStatus.autoMatched, matched: disambiguated, invoiceMatch: null)
+        : (status: BankMatchStatus.needsSelection, matched: candidates, invoiceMatch: null);
+  } else {
+    // A single already-matched transaction may not carry the full bank
+    // amount on its own — e.g. an invoice with several line items is
+    // split into one transaction per line item. Check whether some
+    // subset of already-matched transactions on this date sums to it.
+    final alreadyMatchedTxns = allTransactions
+        .where((t) =>
+            t.bankMatched &&
+            (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
+            t.transactionType == 'credit' &&
+            t.transactionDate == processDate)
+        .toList();
+    final already =
+        findMatchingSubset(alreadyMatchedTxns, amountCents) != null || alreadyImportedByKey;
+    return (
+      status: already ? BankMatchStatus.alreadyImported : BankMatchStatus.unmatched,
+      matched: [],
+      invoiceMatch: null,
+    );
+  }
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -615,230 +849,43 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     for (final t in row.matched) _reservedIds.add(t.id);
   }
 
-  void _matchDebitRow(_RecRow row) {
-    if (row.parsedReceipts.isNotEmpty) {
-      final found = _allTransactions
-          .where((t) =>
-              !t.bankMatched &&
-              !_reservedIds.contains(t.id) &&
-              (t.bankAccountId == null ||
-                  t.bankAccountId == _selectedBankAccountId) &&
-              t.transactionType == 'debit' &&
-              row.parsedReceipts.contains(t.receiptNumber))
-          .toList();
-
-      if (found.isEmpty) {
-        final already = _allTransactions.any((t) =>
-            t.bankMatched &&
-            (t.bankAccountId == null ||
-                t.bankAccountId == _selectedBankAccountId) &&
-            t.transactionType == 'debit' &&
-            row.parsedReceipts.contains(t.receiptNumber));
-        row.status = already
-            ? BankMatchStatus.alreadyImported
-            : BankMatchStatus.unmatched;
-        row.matched = [];
-        return;
-      }
-
-      final subset = findMatchingSubset(found, row.source.amountCents);
-      row.matched = subset ?? found;
-      row.status = subset != null
-          ? BankMatchStatus.autoMatched
-          : BankMatchStatus.amountMismatch;
-      return;
-    }
-
-    // Check for ABA batch name (e.g. WMS260620001) before falling back to date+amount.
-    final batchName = _extractBatchName(row.source.description);
-    if (batchName != null) {
-      final batchFound = _allTransactions
-          .where((t) =>
-              !t.bankMatched &&
-              !_reservedIds.contains(t.id) &&
-              (t.bankAccountId == null ||
-                  t.bankAccountId == _selectedBankAccountId) &&
-              t.transactionType == 'debit' &&
-              t.abaBatchName == batchName)
-          .toList();
-      if (batchFound.isNotEmpty) {
-        final subset = findMatchingSubset(batchFound, row.source.amountCents);
-        row.matched = subset ?? batchFound;
-        row.status = subset != null
-            ? BankMatchStatus.autoMatched
-            : BankMatchStatus.amountMismatch;
-        return;
-      }
-      // Batch transactions already bank-matched (e.g. via CSV import).
-      final alreadyByBatch = _allTransactions
-          .where((t) =>
-              t.bankMatched &&
-              (t.bankAccountId == null ||
-                  t.bankAccountId == _selectedBankAccountId) &&
-              t.transactionType == 'debit' &&
-              t.abaBatchName == batchName)
-          .toList();
-      final batchTotal =
-          alreadyByBatch.fold(0, (int s, t) => s + t.totalAmount);
-      if (alreadyByBatch.isNotEmpty && batchTotal == row.source.amountCents) {
-        row.status = BankMatchStatus.alreadyImported;
-        row.matched = [];
-        return;
-      }
-    }
-
-    final candidates = _allTransactions
-        .where((t) =>
-            !t.bankMatched &&
-            !_reservedIds.contains(t.id) &&
-            (t.bankAccountId == null ||
-                t.bankAccountId == _selectedBankAccountId) &&
-            t.transactionType == 'debit' &&
-            t.transactionDate == row.processDate &&
-            t.totalAmount == row.source.amountCents)
-        .toList();
-
-    if (candidates.length == 1) {
-      row.status = BankMatchStatus.autoMatched;
-      row.matched = candidates;
-    } else if (candidates.length > 1) {
-      final disambiguated = disambiguateByContactName(
-          candidates, row.source.description, _contactNames);
-      if (disambiguated != null) {
-        row.status = BankMatchStatus.autoMatched;
-        row.matched = disambiguated;
-      } else {
-        row.status = BankMatchStatus.needsSelection;
-        row.matched = candidates;
-      }
-    } else {
-      // A single already-matched transaction may not carry the full bank
-      // amount on its own — e.g. an invoice with several line items is
-      // split into one transaction per line item. Check whether some
-      // subset of already-matched transactions on this date sums to it.
-      final alreadyMatchedTxns = _allTransactions
-          .where((t) =>
-              t.bankMatched &&
-              (t.bankAccountId == null ||
-                  t.bankAccountId == _selectedBankAccountId) &&
-              t.transactionType == 'debit' &&
-              t.transactionDate == row.processDate)
-          .toList();
-      final already = findMatchingSubset(
-              alreadyMatchedTxns, row.source.amountCents) !=
-          null ||
-          _importedRowKeys.contains(_bankImportKey(
-              row.processDate, true, row.source.amountCents));
-      row.status = already
-          ? BankMatchStatus.alreadyImported
-          : BankMatchStatus.unmatched;
-      row.matched = [];
-    }
-  }
-
   static String _bankImportKey(String date, bool isDebit, int amountCents) =>
       '$date|${isDebit ? 'd' : 'c'}|$amountCents';
 
-  static final _batchNamePattern = RegExp(r'WMS\d{9}');
-
-  static String? _extractBatchName(String description) {
-    final match = _batchNamePattern.firstMatch(description);
-    return match?[0];
+  void _matchDebitRow(_RecRow row) {
+    final result = matchRecDebitRow(
+      allTransactions: _allTransactions,
+      reservedIds: _reservedIds,
+      selectedBankAccountId: _selectedBankAccountId,
+      parsedReceipts: row.parsedReceipts,
+      description: row.source.description,
+      amountCents: row.source.amountCents,
+      processDate: row.processDate,
+      contactNames: _contactNames,
+      alreadyImportedByKey: _importedRowKeys.contains(
+          _bankImportKey(row.processDate, true, row.source.amountCents)),
+    );
+    row.status = result.status;
+    row.matched = result.matched;
   }
 
   void _matchCreditRow(_RecRow row) {
-    row.invoiceMatch = null;
-
-    if (row.parsedReceipts.isNotEmpty) {
-      final found = _allTransactions
-          .where((t) =>
-              !t.bankMatched &&
-              !_reservedIds.contains(t.id) &&
-              (t.bankAccountId == null ||
-                  t.bankAccountId == _selectedBankAccountId) &&
-              t.transactionType == 'credit' &&
-              row.parsedReceipts.contains(t.receiptNumber))
-          .toList();
-
-      if (found.isNotEmpty) {
-        final subset = findMatchingSubset(found, row.source.amountCents);
-        row.matched = subset ?? found;
-        row.status = subset != null
-            ? BankMatchStatus.autoMatched
-            : BankMatchStatus.amountMismatch;
-        return;
-      }
-
-      final alreadyByReceipt = _allTransactions.any((t) =>
-          t.bankMatched &&
-          (t.bankAccountId == null ||
-              t.bankAccountId == _selectedBankAccountId) &&
-          t.transactionType == 'credit' &&
-          row.parsedReceipts.contains(t.receiptNumber));
-      if (alreadyByReceipt) {
-        row.status = BankMatchStatus.alreadyImported;
-        row.matched = [];
-        return;
-      }
-
-      // Check unpaid invoices by invoice number.
-      final matchedInvoice = _unpaidInvoices.where((inv) =>
-          row.parsedReceipts.contains(inv.invoiceNumber)).firstOrNull;
-      if (matchedInvoice != null) {
-        row.invoiceMatch = matchedInvoice;
-        row.matched = [];
-        row.status = BankMatchStatus.invoiceMatched;
-        return;
-      }
-    }
-
-    final candidates = _allTransactions
-        .where((t) =>
-            !t.bankMatched &&
-            !_reservedIds.contains(t.id) &&
-            (t.bankAccountId == null ||
-                t.bankAccountId == _selectedBankAccountId) &&
-            t.transactionType == 'credit' &&
-            t.transactionDate == row.processDate &&
-            t.totalAmount == row.source.amountCents)
-        .toList();
-
-    if (candidates.length == 1) {
-      row.status = BankMatchStatus.autoMatched;
-      row.matched = candidates;
-    } else if (candidates.length > 1) {
-      final disambiguated = disambiguateByContactName(
-          candidates, row.source.description, _contactNames);
-      if (disambiguated != null) {
-        row.status = BankMatchStatus.autoMatched;
-        row.matched = disambiguated;
-      } else {
-        row.status = BankMatchStatus.needsSelection;
-        row.matched = candidates;
-      }
-    } else {
-      // A single already-matched transaction may not carry the full bank
-      // amount on its own — e.g. an invoice with several line items is
-      // split into one transaction per line item. Check whether some
-      // subset of already-matched transactions on this date sums to it.
-      final alreadyMatchedTxns = _allTransactions
-          .where((t) =>
-              t.bankMatched &&
-              (t.bankAccountId == null ||
-                  t.bankAccountId == _selectedBankAccountId) &&
-              t.transactionType == 'credit' &&
-              t.transactionDate == row.processDate)
-          .toList();
-      final already = findMatchingSubset(
-              alreadyMatchedTxns, row.source.amountCents) !=
-          null ||
-          _importedRowKeys.contains(_bankImportKey(
-              row.processDate, false, row.source.amountCents));
-      row.status = already
-          ? BankMatchStatus.alreadyImported
-          : BankMatchStatus.unmatched;
-      row.matched = [];
-    }
+    final result = matchRecCreditRow(
+      allTransactions: _allTransactions,
+      reservedIds: _reservedIds,
+      selectedBankAccountId: _selectedBankAccountId,
+      parsedReceipts: row.parsedReceipts,
+      description: row.source.description,
+      amountCents: row.source.amountCents,
+      processDate: row.processDate,
+      contactNames: _contactNames,
+      unpaidInvoices: _unpaidInvoices,
+      alreadyImportedByKey: _importedRowKeys.contains(
+          _bankImportKey(row.processDate, false, row.source.amountCents)),
+    );
+    row.status = result.status;
+    row.matched = result.matched;
+    row.invoiceMatch = result.invoiceMatch;
   }
 
   void _recomputeFrom(int index) {
