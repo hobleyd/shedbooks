@@ -190,6 +190,16 @@ class BackupHandler {
         FROM assets WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
+      final capexRequests = await _queryRows('''
+        SELECT id::text, entity_id, request_no, request_date, prepared_by_name,
+               description, what_is_requested, need_or_benefit,
+               alternatives_considered, purchase_cost_cents, ongoing_costs_cents,
+               other_costs_cents, cost_notes, total_amount_cents,
+               quotes_received_count, status, decision_by_name, decision_at,
+               decision_notes, created_at, updated_at, deleted_at
+        FROM capex_requests WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
       // certificate_pfx / certificate_password are already ciphertext
       // (app-level AES-256-GCM via FieldEncryptor) — pass them through
       // as opaque strings, do not decrypt/re-encrypt.
@@ -227,6 +237,7 @@ class BackupHandler {
         'invoice_line_items': invoiceLineItems,
         'members': members,
         'assets': assets,
+        'capex_requests': capexRequests,
         'o365_sync_settings': o365SyncSettings,
       };
 
@@ -315,6 +326,7 @@ class BackupHandler {
         await _del(tx, 'bank_accounts', entityId);
         await _del(tx, 'members', entityId);
         await _del(tx, 'assets', entityId);
+        await _del(tx, 'capex_requests', entityId);
         await _del(tx, 'o365_sync_settings', entityId);
         await tx.execute(
           Sql.named('DELETE FROM dashboard_preferences WHERE entity_id = @e'),
@@ -842,6 +854,52 @@ class BackupHandler {
               'serial': r['serial_no'],
               'myr': r['manufacture_year'],
               'val': r['estimated_market_value_cents'],
+              'ca': r['created_at'] as String,
+              'ua': r['updated_at'] as String,
+              'da': r['deleted_at'],
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'capex_requests')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO capex_requests
+                (id, entity_id, request_no, request_date, prepared_by_name,
+                 description, what_is_requested, need_or_benefit,
+                 alternatives_considered, purchase_cost_cents, ongoing_costs_cents,
+                 other_costs_cents, cost_notes, total_amount_cents,
+                 quotes_received_count, status, decision_by_name, decision_at,
+                 decision_notes, created_at, updated_at, deleted_at)
+              VALUES (
+                @id::uuid, @e, @no, @date::date, @prep,
+                @desc, @what, @need,
+                @alt, @purchase, @ongoing,
+                @other, @notes, @total,
+                @quotes, @status, @decBy, @decAt::timestamptz,
+                @decNotes, @ca::timestamptz, @ua::timestamptz, @da::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'no': r['request_no'] as String,
+              'date': _dateString(r['request_date']),
+              'prep': r['prepared_by_name'] as String,
+              'desc': r['description'] as String,
+              'what': r['what_is_requested'] as String,
+              'need': r['need_or_benefit'] as String,
+              'alt': r['alternatives_considered'],
+              'purchase': r['purchase_cost_cents'] as int,
+              'ongoing': r['ongoing_costs_cents'],
+              'other': r['other_costs_cents'],
+              'notes': r['cost_notes'],
+              'total': r['total_amount_cents'] as int,
+              'quotes': r['quotes_received_count'],
+              'status': r['status'] as String,
+              'decBy': r['decision_by_name'],
+              'decAt': r['decision_at'],
+              'decNotes': r['decision_notes'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],

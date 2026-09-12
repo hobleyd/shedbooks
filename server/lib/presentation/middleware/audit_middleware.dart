@@ -159,6 +159,7 @@ const _tableMap = {
   'members': 'members',
   'carddav': 'members',
   'assets': 'assets',
+  'capex-requests': 'capex_requests',
   'invoices': 'invoices',
   'api-key': 'user_api_keys',
 };
@@ -178,7 +179,7 @@ String? _recordId(String path) {
   const nonIdSegments = {
     'merge', 'effective', 'backup', 'restore', 'audit-log', 'users', 'next',
     'confirm-import', 'gl-mappings', 'import', 'members',
-    'next-number', 'mark-paid', 'generate', 'sync-o365',
+    'next-number', 'mark-paid', 'decision', 'generate', 'sync-o365',
     'generate-certificate', 'sections',
   };
   final last = parts.last;

@@ -184,6 +184,12 @@ class _AppSidebarState extends State<AppSidebar> {
                     path: '/assets',
                     currentPath: currentPath,
                   ),
+                  _NavItem(
+                    label: 'Capex Requests',
+                    icon: Icons.request_quote_outlined,
+                    path: '/capex-requests',
+                    currentPath: currentPath,
+                  ),
                   _ReportsNavGroup(
                     currentPath: currentPath,
                     expanded: _reportsExpanded,

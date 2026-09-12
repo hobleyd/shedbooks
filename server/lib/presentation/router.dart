@@ -117,6 +117,13 @@ import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/stamp_aba_batch_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
+import '../application/capex_request/create_capex_request_use_case.dart';
+import '../application/capex_request/decide_capex_request_use_case.dart';
+import '../application/capex_request/delete_capex_request_use_case.dart';
+import '../application/capex_request/get_capex_request_use_case.dart';
+import '../application/capex_request/get_next_capex_request_no_use_case.dart';
+import '../application/capex_request/list_capex_requests_use_case.dart';
+import '../application/capex_request/update_capex_request_use_case.dart';
 import '../application/asset/create_asset_use_case.dart';
 import '../application/asset/delete_asset_use_case.dart';
 import '../application/asset/get_asset_use_case.dart';
@@ -125,6 +132,7 @@ import '../application/asset/import_assets_use_case.dart';
 import '../application/asset/list_asset_sections_use_case.dart';
 import '../application/asset/list_assets_use_case.dart';
 import '../application/asset/update_asset_use_case.dart';
+import '../infrastructure/repositories/postgres_capex_request_repository.dart';
 import '../infrastructure/repositories/postgres_asset_repository.dart';
 import '../infrastructure/repositories/postgres_invoice_repository.dart';
 import '../infrastructure/repositories/postgres_user_api_key_repository.dart';
@@ -132,6 +140,7 @@ import '../application/api_key/generate_api_key_use_case.dart';
 import '../application/api_key/get_api_key_status_use_case.dart';
 import 'handlers/api_key_handler.dart';
 import 'handlers/aba_sequence_handler.dart';
+import 'handlers/capex_request_handler.dart';
 import 'handlers/asset_handler.dart';
 import 'handlers/carddav_handler.dart';
 import 'handlers/member_handler.dart';
@@ -356,6 +365,16 @@ Handler buildRouter({
     nextNumber: GetNextAssetNoUseCase(entityDetailsRepository, assetRepository),
     listSections: ListAssetSectionsUseCase(assetRepository),
   );
+  final capexRequestRepository = PostgresCapexRequestRepository(pool);
+  final capexRequestHandler = CapexRequestHandler(
+    create: CreateCapexRequestUseCase(capexRequestRepository),
+    get: GetCapexRequestUseCase(capexRequestRepository),
+    list: ListCapexRequestsUseCase(capexRequestRepository),
+    update: UpdateCapexRequestUseCase(capexRequestRepository),
+    delete: DeleteCapexRequestUseCase(capexRequestRepository),
+    decide: DecideCapexRequestUseCase(capexRequestRepository),
+    nextNumber: GetNextCapexRequestNoUseCase(capexRequestRepository),
+  );
 
   final cardDavPathPrefix =
       Platform.environment['CARDDAV_PATH_PREFIX'] ?? '/api';
@@ -442,6 +461,8 @@ Handler buildRouter({
         _authed(_memberRouter(memberHandler)))
     ..mount('/assets',
         _authed(_assetRouter(assetHandler)))
+    ..mount('/capex-requests',
+        _authed(_capexRequestRouter(capexRequestHandler)))
     ..mount('/admin',
         _authed(_adminRouter(
             backupHandler, auditHandler, usersHandler, o365SettingsHandler)))
@@ -667,6 +688,26 @@ Router _assetRouter(AssetHandler h) {
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+}
+
+// Viewers can read; contributors and admins can create/edit/delete;
+// only administrators can approve/reject (record the decision).
+// Fixed paths (next-number) must be registered before /<id> to avoid shadowing.
+Router _capexRequestRouter(CapexRequestHandler h) {
+  return Router()
+    ..get('/', h.handleList)
+    ..post('/', _role(requireContributor(), h.handleCreate))
+    ..get('/next-number', h.handleNextNumber)
+    ..get('/<id>', h.handleGet)
+    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
+    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete))
+    ..post(
+      '/<id>/decision',
+      (Request req, String id) => _role(
+        requireAdministrator(),
+        (r) => h.handleDecide(r, id),
+      )(req),
+    );
 }
 
 // Contributors and administrators only.
