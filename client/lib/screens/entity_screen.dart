@@ -249,7 +249,7 @@ class _EntityScreenState extends State<EntityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,131 +331,177 @@ class _EntityScreenState extends State<EntityScreen> {
   }
 
   Widget _buildBody() {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 480),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_isCreating)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: Text(
-                'No entity details have been configured yet. '
-                'Please enter your organisation information below.',
-                style: TextStyle(color: Colors.black54),
+    const spacing = 24.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 1000 ? 2 : 1;
+        final cardWidth = columns == 1
+            ? constraints.maxWidth
+            : (constraints.maxWidth - spacing) / 2;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            if (_isCreating)
+              SizedBox(
+                width: constraints.maxWidth,
+                child: Text(
+                  'No entity details have been configured yet. '
+                  'Please enter your organisation information below.',
+                  style: TextStyle(color: Colors.black54),
+                ),
               ),
-            ),
-          _buildField(
-            label: 'Organisation Name',
-            controller: _nameController,
-            enabled: _editing,
-            isRequired: true,
-          ),
-          const SizedBox(height: 16),
-          _buildField(
-            label: 'ABN',
-            controller: _abnController,
-            enabled: _editing,
-            isRequired: true,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(11),
-            ],
-            helperText: '11 digits, no spaces',
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 16),
-          _buildField(
-            label: 'Incorporation Identifier',
-            controller: _incorporationController,
-            enabled: _editing,
-            isRequired: true,
-          ),
-          const SizedBox(height: 16),
-          _buildField(
-            label: 'APCA ID (User ID)',
-            controller: _apcaIdController,
-            enabled: _editing,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(6),
-            ],
-            helperText: '6-digit User ID assigned by your bank for Direct Entry',
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 24),
-          Text('Invoice Number Format',
-              style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 4),
-          Text(
-            'Tokens: # digit  YY 2-digit year  YYYY 4-digit year. '
-            'All other characters are required literals.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Colors.black54),
-          ),
-          const SizedBox(height: 12),
-          _buildField(
-            label: 'Invoice Format',
-            controller: _invoiceNumberFormatController,
-            enabled: _editing,
-            helperText: 'e.g. WMS-YY-###',
-          ),
-          _buildFormatExample(_invoiceNumberFormatController.text),
-          const SizedBox(height: 24),
-          Text('Asset No Format',
-              style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 4),
-          Text(
-            'Tokens: # digit  {S} Section letter  YY 2-digit year  YYYY 4-digit year. '
-            'All other characters are required literals.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Colors.black54),
-          ),
-          const SizedBox(height: 12),
-          _buildField(
-            label: 'Asset No Format',
-            controller: _assetNoFormatController,
-            enabled: _editing,
-            helperText: 'e.g. YYYY-{S}-####',
-          ),
-          _buildFormatExample(_assetNoFormatController.text,
-              sectionLetter: 'N'),
-          const SizedBox(height: 24),
-          Text('Receipt Number Formats',
-              style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 4),
-          Text(
-            'Tokens: # digit  @ letter  * alphanumeric  '
-            'YY 2-digit year  YYYY 4-digit year  x? optional literal.\n'
-            'All other characters are required literals. '
-            'Leave blank for no constraint.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Colors.black54),
-          ),
-          const SizedBox(height: 12),
-          _buildField(
-            label: 'Money-In Receipt Format',
-            controller: _moneyInReceiptFormatController,
-            enabled: _editing,
-            helperText: 'e.g. #######',
-          ),
-          _buildFormatExample(_moneyInReceiptFormatController.text),
-          const SizedBox(height: 16),
-          _buildField(
-            label: 'Money-Out Receipt Format',
-            controller: _moneyOutReceiptFormatController,
-            enabled: _editing,
-            helperText: 'e.g. P-?YY###',
-          ),
-          _buildFormatExample(_moneyOutReceiptFormatController.text),
-        ],
+            SizedBox(width: cardWidth, child: _buildOrganisationCard()),
+            SizedBox(width: cardWidth, child: _buildInvoiceFormatCard()),
+            SizedBox(width: cardWidth, child: _buildAssetFormatCard()),
+            SizedBox(width: cardWidth, child: _buildReceiptFormatsCard()),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionCard({
+    required String title,
+    String? description,
+    required List<Widget> children,
+  }) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.grey.shade200),
       ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleSmall),
+            if (description != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.black54),
+              ),
+            ],
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrganisationCard() {
+    return _buildSectionCard(
+      title: 'Organisation Details',
+      children: [
+        _buildField(
+          label: 'Organisation Name',
+          controller: _nameController,
+          enabled: _editing,
+          isRequired: true,
+        ),
+        const SizedBox(height: 16),
+        _buildField(
+          label: 'ABN',
+          controller: _abnController,
+          enabled: _editing,
+          isRequired: true,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(11),
+          ],
+          helperText: '11 digits, no spaces',
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 16),
+        _buildField(
+          label: 'Incorporation Identifier',
+          controller: _incorporationController,
+          enabled: _editing,
+          isRequired: true,
+        ),
+        const SizedBox(height: 16),
+        _buildField(
+          label: 'APCA ID (User ID)',
+          controller: _apcaIdController,
+          enabled: _editing,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(6),
+          ],
+          helperText: '6-digit User ID assigned by your bank for Direct Entry',
+          keyboardType: TextInputType.number,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInvoiceFormatCard() {
+    return _buildSectionCard(
+      title: 'Invoice Number Format',
+      description: 'Tokens: # digit  YY 2-digit year  YYYY 4-digit year. '
+          'All other characters are required literals.',
+      children: [
+        _buildField(
+          label: 'Invoice Format',
+          controller: _invoiceNumberFormatController,
+          enabled: _editing,
+          helperText: 'e.g. WMS-YY-###',
+        ),
+        _buildFormatExample(_invoiceNumberFormatController.text),
+      ],
+    );
+  }
+
+  Widget _buildAssetFormatCard() {
+    return _buildSectionCard(
+      title: 'Asset No Format',
+      description: 'Tokens: # digit  {S} Section letter  YY 2-digit year  '
+          'YYYY 4-digit year. All other characters are required literals.',
+      children: [
+        _buildField(
+          label: 'Asset No Format',
+          controller: _assetNoFormatController,
+          enabled: _editing,
+          helperText: 'e.g. YYYY-{S}-####',
+        ),
+        _buildFormatExample(_assetNoFormatController.text,
+            sectionLetter: 'N'),
+      ],
+    );
+  }
+
+  Widget _buildReceiptFormatsCard() {
+    return _buildSectionCard(
+      title: 'Receipt Number Formats',
+      description: 'Tokens: # digit  @ letter  * alphanumeric  '
+          'YY 2-digit year  YYYY 4-digit year  x? optional literal.\n'
+          'All other characters are required literals. '
+          'Leave blank for no constraint.',
+      children: [
+        _buildField(
+          label: 'Money-In Receipt Format',
+          controller: _moneyInReceiptFormatController,
+          enabled: _editing,
+          helperText: 'e.g. #######',
+        ),
+        _buildFormatExample(_moneyInReceiptFormatController.text),
+        const SizedBox(height: 16),
+        _buildField(
+          label: 'Money-Out Receipt Format',
+          controller: _moneyOutReceiptFormatController,
+          enabled: _editing,
+          helperText: 'e.g. P-?YY###',
+        ),
+        _buildFormatExample(_moneyOutReceiptFormatController.text),
+      ],
     );
   }
 
