@@ -70,6 +70,7 @@ const _glIn = GeneralLedgerEntry(
 
 const _contacts = [
   ContactEntry(id: 'c1', name: 'Acme', contactType: ContactType.company, gstRegistered: true),
+  ContactEntry(id: 'c2', name: 'Bob', contactType: ContactType.person, gstRegistered: false),
 ];
 
 const _bankCash = BankAccountSummary(
@@ -170,6 +171,13 @@ Future<void> _selectAccount(WidgetTester tester, String accountName) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _selectContact(WidgetTester tester, String name) async {
+  await tester.enterText(_fieldLabeled('Contact'), name);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(name).last);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('editing GST after Total was set recalculates Amount ex GST',
       (tester) async {
@@ -260,6 +268,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _selectGlAccount(tester, 'Stationery');
+      await _selectContact(tester, 'Acme');
       expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isTrue);
 
       await tester.enterText(_fieldLabeled('Total'), '110.00');
@@ -281,6 +290,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _selectGlAccount(tester, 'Stationery');
+      await _selectContact(tester, 'Acme');
       await tester.enterText(_fieldLabeled('Amt ex GST'), '100.00');
       await tester.pump();
       expect(find.widgetWithText(TextFormField, '10.00'), findsOneWidget); // GST
@@ -291,6 +301,76 @@ void main() {
 
       expect(find.widgetWithText(TextFormField, '100.00'), findsOneWidget); // Amount unchanged
       expect(find.widgetWithText(TextFormField, '120.00'), findsOneWidget); // Total = 100 + 20
+    });
+  });
+
+  group('Money-Out GST gated by contact GST-registration', () {
+    testWidgets(
+        'GST stays disabled after selecting a GST-applicable account until a contact is chosen',
+        (tester) async {
+      await tester.pumpWidget(_addHarness());
+      await tester.pumpAndSettle();
+
+      await _selectGlAccount(tester, 'Stationery');
+      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isFalse);
+    });
+
+    testWidgets('selecting a non-GST-registered contact keeps GST disabled and pinned to 0.00',
+        (tester) async {
+      await tester.pumpWidget(_addHarness());
+      await tester.pumpAndSettle();
+
+      await _selectGlAccount(tester, 'Stationery');
+      await _selectContact(tester, 'Bob');
+
+      final gstField = tester.widget<TextFormField>(_fieldLabeled('GST'));
+      expect(gstField.enabled, isFalse);
+
+      await tester.enterText(_fieldLabeled('Total'), '110.00');
+      await tester.pump();
+
+      expect(find.widgetWithText(TextFormField, '110.00'), findsNWidgets(2)); // Total & Amount
+      expect(find.widgetWithText(TextFormField, '0.00'), findsOneWidget); // GST
+    });
+
+    testWidgets('selecting a GST-registered contact enables GST', (tester) async {
+      await tester.pumpWidget(_addHarness());
+      await tester.pumpAndSettle();
+
+      await _selectGlAccount(tester, 'Stationery');
+      await _selectContact(tester, 'Acme');
+
+      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isTrue);
+    });
+
+    testWidgets(
+        'switching from a GST-registered to a non-GST-registered contact folds Total into '
+        'Amount ex GST and zeroes GST', (tester) async {
+      await tester.pumpWidget(_addHarness());
+      await tester.pumpAndSettle();
+
+      await _selectGlAccount(tester, 'Stationery');
+      await _selectContact(tester, 'Acme');
+      await tester.enterText(_fieldLabeled('Total'), '110.00');
+      await tester.pump();
+      expect(find.widgetWithText(TextFormField, '100.00'), findsOneWidget); // Amount
+      expect(find.widgetWithText(TextFormField, '10.00'), findsOneWidget); // GST
+
+      await _selectContact(tester, 'Bob');
+
+      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isFalse);
+      expect(find.widgetWithText(TextFormField, '110.00'), findsNWidgets(2)); // Total & Amount
+      expect(find.widgetWithText(TextFormField, '0.00'), findsOneWidget); // GST
+    });
+
+    testWidgets('Money-In GST is unaffected by contact GST-registration status', (tester) async {
+      await tester.pumpWidget(_multiAccountHarness(GlDirection.moneyIn));
+      await tester.pumpAndSettle();
+
+      await _selectGlAccount(tester, 'Membership Fees');
+      await _selectContact(tester, 'Bob');
+
+      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isTrue);
     });
   });
 

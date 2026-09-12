@@ -191,7 +191,15 @@ class TransactionFormState extends State<TransactionForm> {
     return false;
   }
 
-  bool get _gstApplicable => _selectedGl?.gstApplicable ?? false;
+  /// GST is driven by the GL account's `gstApplicable` flag, except on
+  /// Money-Out: a contact that isn't GST-registered can't legally charge
+  /// GST, so GST is forced to zero regardless of the GL account until a
+  /// GST-registered contact is selected. Money-In is unaffected.
+  bool get _gstApplicable {
+    if (!(_selectedGl?.gstApplicable ?? false)) return false;
+    if (!_isMoneyOut) return true;
+    return _selectedContact?.gstRegistered ?? false;
+  }
 
   bool get _hasUnmatchedContact =>
       _selectedContact == null && _contactTypedText.trim().isNotEmpty;
@@ -354,12 +362,46 @@ class TransactionFormState extends State<TransactionForm> {
     }
   }
 
+  /// Recomputes the GST/Amount/Total trio after something that can flip
+  /// [_gstApplicable] changes — the GL account, or (Money-Out only) the
+  /// selected contact's GST-registration status. Mirrors whichever of
+  /// [_handleAmountChanged] / [_handleTotalChanged] matches the field the
+  /// user last edited, so that field's value is preserved.
+  void _recalculateGstFields() {
+    if (_gstApplicable) {
+      if (_anchor == _AmountAnchor.total) {
+        final total = _parseAmount(_totalController.text);
+        if (total == null) return;
+        final totalCents = _dollarsToCents(total);
+        final gstCents = (totalCents / 11).round();
+        _amountController.text = _centsToString(totalCents - gstCents);
+        _gstController.text = _centsToString(gstCents);
+      } else {
+        final amount = _parseAmount(_amountController.text);
+        if (amount == null) return;
+        final amountCents = _dollarsToCents(amount);
+        final gstCents = (amountCents / 10).round();
+        _gstController.text = _centsToString(gstCents);
+        _totalController.text = _centsToString(amountCents + gstCents);
+      }
+    } else {
+      _gstController.text = '0.00';
+      if (_anchor == _AmountAnchor.total) {
+        final total = _parseAmount(_totalController.text);
+        if (total != null) _amountController.text = _totalController.text;
+      } else {
+        final amount = _parseAmount(_amountController.text);
+        if (amount != null) _totalController.text = _amountController.text;
+      }
+    }
+  }
+
   void _onGlChangedFull(GeneralLedgerEntry? gl) {
     setState(() {
       _selectedGl = gl;
       _selectedDirection = gl?.direction;
       _amountController.clear();
-      _gstController.text = (gl?.gstApplicable ?? false) ? '' : '0.00';
+      _gstController.text = _gstApplicable ? '' : '0.00';
       _totalController.clear();
       _receiptOutController.text = gl?.direction == GlDirection.moneyOut
           ? widget.nextMoneyOutReceipt
@@ -386,7 +428,7 @@ class TransactionFormState extends State<TransactionForm> {
   void _onGlChangedCompact(GeneralLedgerEntry? gl) {
     setState(() {
       _selectedGl = gl;
-      if (gl != null && !gl.gstApplicable) {
+      if (gl != null && !_gstApplicable) {
         _gstController.text = '0.00';
         final total = _parseAmount(_totalController.text);
         if (total != null) _amountController.text = _totalController.text;
@@ -514,6 +556,7 @@ class TransactionFormState extends State<TransactionForm> {
       onSelected: (contact) => setState(() {
         _selectedContact = contact;
         _contactTypedText = contact.name;
+        _recalculateGstFields();
       }),
       fieldViewBuilder: (context, textController, focusNode, _) {
         return TextFormField(
@@ -528,6 +571,7 @@ class TransactionFormState extends State<TransactionForm> {
               _contactTypedText = value;
               if (_selectedContact != null && value != _selectedContact!.name) {
                 _selectedContact = null;
+                _recalculateGstFields();
               }
             });
           },
