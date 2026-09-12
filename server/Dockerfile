@@ -19,6 +19,18 @@ FROM debian:bookworm-slim
 # This adds several hundred MB to the image — accepted tradeoff, see
 # 2026-08-16-o365-member-sync.md.
 #
+# The Microsoft.Graph.* modules are required for creating tenant mailbox
+# accounts (server/lib/infrastructure/services/exchange_online_mailbox_service.dart,
+# scripts/list_o365_licenses.ps1, scripts/create_o365_mailbox.ps1) —
+# specifically listing/assigning Microsoft 365 licenses, which is a Graph
+# (Entra ID) operation with no Exchange equivalent. Requires the app
+# registration to separately hold Graph *application* permissions
+# `Organization.Read.All` and `User.ReadWrite.All` with admin consent, and
+# the Exchange RBAC "Mail Recipient Creation" role — none of which is
+# granted by the existing "Mail Recipients"/"Distribution Groups" roles
+# used by the contact-sync feature above. See create_o365_mailbox.ps1's
+# header for the full breakdown.
+#
 # Installed from Microsoft's official GitHub release tarball rather than
 # their apt feed — that feed has historically only published amd64 packages,
 # which would silently break this build on arm64 hosts (e.g. Apple Silicon,
@@ -46,7 +58,11 @@ RUN apt-get update \
     && ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh \
     && pwsh -NoProfile -Command " \
          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; \
-         Install-Module -Name ExchangeOnlineManagement -Force -Scope AllUsers"
+         Install-Module -Name ExchangeOnlineManagement -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Authentication -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Identity.DirectoryManagement -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Users -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Users.Actions -Force -Scope AllUsers"
 
 WORKDIR /app
 COPY --from=build /app/bin/server ./bin/server

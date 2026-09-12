@@ -180,7 +180,8 @@ String? _recordId(String path) {
     'merge', 'effective', 'backup', 'restore', 'audit-log', 'users', 'next',
     'confirm-import', 'gl-mappings', 'import', 'members',
     'next-number', 'mark-paid', 'decision', 'generate', 'sync-o365',
-    'generate-certificate', 'sections',
+    'generate-certificate', 'sections', 'available-licenses',
+    'create-mailbox',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

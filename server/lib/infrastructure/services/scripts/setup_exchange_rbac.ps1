@@ -29,11 +29,25 @@
   gap is caught and fixed once, up front, instead of per-tenant trial and
   error.
 
-  Two roles are ensured:
+  Three roles are ensured:
     - "Mail Recipients"    — New-/Set-MailContact, Set-Contact (member sync)
     - "Distribution Groups" — New-/Set-DistributionGroup,
                                Update-DistributionGroupMember, Get-DistributionGroup
                                ("Shed Members" list management)
+    - "Mail Recipient Creation" — New-Mailbox (the "Create O365 mailbox"
+                               admin action, create_o365_mailbox.ps1). NOT
+                               covered by "Mail Recipients", which only
+                               permits managing recipients that already
+                               exist.
+
+  This script only covers Exchange RBAC. The "Create O365 mailbox" feature
+  ALSO requires Microsoft Graph *application* permissions
+  `Organization.Read.All` and `User.ReadWrite.All` granted with admin
+  consent to this same app registration — a separate step, done in Entra
+  admin center -> App registrations -> (this app) -> API permissions ->
+  Add a permission -> Microsoft Graph -> Application permissions. Exchange
+  RBAC and Graph API permissions are independent grant systems; granting
+  one never implies the other.
 
 .PARAMETER AppId
   The Azure AD Application (client) ID of the Shedbooks O365 sync app
@@ -78,6 +92,7 @@ $ErrorActionPreference = 'Stop'
 $requiredRoles = @(
     @{ Role = 'Mail Recipients'; Reason = 'member GAL contact sync (New-/Set-MailContact, Set-Contact)' }
     @{ Role = 'Distribution Groups'; Reason = '"Shed Members" distribution list (New-/Set-DistributionGroup, Update-DistributionGroupMember)' }
+    @{ Role = 'Mail Recipient Creation'; Reason = '"Create O365 mailbox" admin action (New-Mailbox)' }
 )
 
 Import-Module ExchangeOnlineManagement -ErrorAction Stop
@@ -152,7 +167,8 @@ try {
 
     if ($missing.Count -eq 0) {
         Write-Host "All required roles are assigned: $($finalRoleNames -join ', ')" -ForegroundColor Green
-        Write-Host "This tenant is ready for Shedbooks O365 GAL contact + distribution list sync."
+        Write-Host "This tenant's Exchange RBAC is ready for Shedbooks O365 GAL contact + distribution list sync, and mailbox creation."
+        Write-Host "Reminder: mailbox creation ALSO needs Graph API permissions granted separately — see this script's header." -ForegroundColor Yellow
         Write-Host "Note: app-only sessions can take several minutes to pick up a new role grant — an immediate sync run may still fail even though this succeeded." -ForegroundColor Yellow
     } else {
         Write-Warning "Still showing as missing: $($missing -join ', '). If the grant above reported success, this is most likely replication lag — re-run this script in a few minutes before assuming the grant failed."

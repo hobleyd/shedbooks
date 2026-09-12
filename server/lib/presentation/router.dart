@@ -32,8 +32,10 @@ import '../infrastructure/repositories/postgres_bank_import_repository.dart';
 import '../infrastructure/repositories/postgres_locked_month_repository.dart';
 import '../infrastructure/repositories/postgres_member_repository.dart';
 import '../infrastructure/repositories/postgres_o365_sync_settings_repository.dart';
+import '../infrastructure/security/temporary_password_generator.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/services/exchange_online_mail_contact_sync_service.dart';
+import '../infrastructure/services/exchange_online_mailbox_service.dart';
 import '../infrastructure/services/openssl_certificate_generator.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
@@ -97,8 +99,10 @@ import '../application/member/get_member_use_case.dart';
 import '../application/member/import_members_use_case.dart';
 import '../application/member/list_members_use_case.dart';
 import '../application/member/update_member_use_case.dart';
+import '../application/o365/create_member_mailbox_use_case.dart';
 import '../application/o365/generate_o365_certificate_use_case.dart';
 import '../application/o365/get_o365_sync_settings_use_case.dart';
+import '../application/o365/list_available_o365_licenses_use_case.dart';
 import '../application/o365/member_o365_auto_sync.dart';
 import '../application/o365/save_o365_sync_settings_use_case.dart';
 import '../application/o365/sync_members_to_o365_use_case.dart';
@@ -324,6 +328,7 @@ Handler buildRouter({
   final o365SettingsRepository =
       PostgresO365SyncSettingsRepository(pool, fieldEncryptor);
   final o365ContactSyncService = ExchangeOnlineMailContactSyncService();
+  final o365MailboxService = ExchangeOnlineMailboxService();
   final o365SettingsHandler = O365SettingsHandler(
     get: GetO365SyncSettingsUseCase(o365SettingsRepository),
     save: SaveO365SyncSettingsUseCase(o365SettingsRepository),
@@ -352,6 +357,16 @@ Handler buildRouter({
       o365SettingsRepository,
       memberRepository,
       o365ContactSyncService,
+    ),
+    availableLicenses: ListAvailableO365LicensesUseCase(
+      o365SettingsRepository,
+      o365MailboxService,
+    ),
+    createMailbox: CreateMemberMailboxUseCase(
+      o365SettingsRepository,
+      memberRepository,
+      o365MailboxService,
+      TemporaryPasswordGenerator(),
     ),
   );
   final assetRepository = PostgresAssetRepository(pool);
@@ -661,18 +676,28 @@ Router _budgetRouter(BudgetHandler h) {
 }
 
 // Viewers can read; contributors and admins can write.
-// O365 sync settings are admin-owned, so triggering a sync run is
-// administrator-only. /import and /sync-o365 must be registered before
-// /<id> to avoid being shadowed.
+// O365 sync settings are admin-owned, so triggering a sync run — and
+// creating a tenant mailbox account — is administrator-only. Fixed paths
+// (import, sync-o365, available-licenses) must be registered before /<id>
+// to avoid being shadowed.
 Router _memberRouter(MemberHandler h) {
   return Router()
     ..get('/', h.handleList)
     ..post('/', _role(requireContributor(), h.handleCreate))
     ..post('/import', _role(requireContributor(), h.handleImport))
     ..post('/sync-o365', _role(requireAdministrator(), h.handleSyncO365))
+    ..get('/available-licenses',
+        _role(requireAdministrator(), h.handleAvailableLicenses))
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete))
+    ..post(
+      '/<id>/create-mailbox',
+      (Request req, String id) => _role(
+        requireAdministrator(),
+        (r) => h.handleCreateMailbox(r, id),
+      )(req),
+    );
 }
 
 // Viewers can read; contributors and admins can write.

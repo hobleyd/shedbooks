@@ -141,6 +141,17 @@ abstract interface class IMemberRepository {
     required String id,
     required String entityId,
   });
+
+  /// Records that a tenant sign-in account was created for member [id] at
+  /// [upn] — see [Member.o365MailboxUpn]. Deliberately does not touch
+  /// `updated_at`/`etag`, for the same reason [markO365Synced] doesn't (a
+  /// mailbox-creation action should not make CardDAV clients see a
+  /// spurious contact change).
+  Future<void> markO365MailboxCreated({
+    required String id,
+    required String entityId,
+    required String upn,
+  });
 }
 
 /// Data transfer object for bulk member import.

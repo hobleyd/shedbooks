@@ -319,16 +319,27 @@ Write-Host "Found Enterprise Application Object ID: \$servicePrincipalObjectId"
 
     final script = '''
 <#
-Shedbooks O365 GAL sync — one-off Exchange Online setup.
+Shedbooks O365 setup — one-off Exchange Online setup.
 
 Run this once, as a Global Administrator, AFTER uploading
 shedbooks-o365-cert.cer to this app registration in the Azure Portal
 (App registrations -> (your app) -> Certificates & secrets ->
 Certificates -> Upload certificate).
 
-Grants the app registration permission to create and update mail
-contacts in your Global Address List. Only needs to be run once per
-tenant.
+Grants the app registration permission to: create and update mail
+contacts in your Global Address List; manage the "Shed Members"
+distribution list; and create O365 mailbox accounts for members (the
+"Create O365 mailbox" admin action). Only needs to be run once per
+tenant — safe to re-run later if a future Shedbooks release adds another
+required role, since every grant here checks first and skips what's
+already assigned.
+
+NOTE: mailbox creation ALSO requires Microsoft Graph *application*
+permissions (Organization.Read.All, User.ReadWrite.All) granted with
+admin consent to this app registration — a separate step in Entra admin
+center -> App registrations -> (this app) -> API permissions, not
+covered by this script. Exchange RBAC (granted below) and Graph API
+permissions are independent grant systems.
 
 $signInNote
 #>
@@ -346,8 +357,8 @@ Connect-MgGraph -Scopes "Application.Read.All","AppRoleAssignment.ReadWrite.All"
 $objectIdLookup
 # Exchange.ManageAsApp lets this app's certificate-based connection to
 # Exchange Online PowerShell authenticate at all — separate from the
-# "Mail Recipients" role granted further down, which controls what the
-# app is allowed to do once connected. Well-known first-party app ID
+# RBAC roles granted further down, which control what the app is allowed
+# to do once connected. Well-known first-party app ID
 # below is Microsoft's own "Office 365 Exchange Online" service
 # principal, the same in every tenant.
 \$exoServicePrincipal = Get-MgServicePrincipal -Filter "appId eq '00000002-0000-0ff1-ce00-000000000000'"
@@ -364,8 +375,8 @@ if (\$existingGrant) {
 }
 
 # Exchange Administrator directory role — the other half of what lets
-# the app connect at all; distinct from Exchange Online's own
-# "Mail Recipients" RBAC role granted further down.
+# the app connect at all; distinct from Exchange Online's own RBAC
+# roles granted further down.
 \$roleTemplate = Get-MgDirectoryRoleTemplate | Where-Object { \$_.DisplayName -eq "Exchange Administrator" }
 \$exchangeAdminRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '\$(\$roleTemplate.Id)'"
 if (-not \$exchangeAdminRole) {
@@ -436,36 +447,68 @@ if (\$alreadyInOrgMgmt) {
 
 # Idempotent: skip creation if this app already has a service principal
 # registered in Exchange Online — e.g. a previous run of this script
-# already succeeded here but failed on the role assignment below.
-\$existingSp = Get-ServicePrincipal | Where-Object { \$_.AppId -eq "$clientId" }
-if (\$existingSp) {
+# already succeeded here but failed on a role assignment below. Captured
+# into \$exchangeSp either way so the role-assignment checks below always
+# have the Exchange-side service principal identity to query against.
+\$exchangeSp = Get-ServicePrincipal | Where-Object { \$_.AppId -eq "$clientId" }
+if (\$exchangeSp) {
     Write-Host "Service principal already registered in Exchange Online — skipping New-ServicePrincipal."
 } else {
-    New-ServicePrincipal -AppId "$clientId" -ObjectId \$servicePrincipalObjectId -DisplayName "Shedbooks O365 Sync"
+    \$exchangeSp = New-ServicePrincipal -AppId "$clientId" -ObjectId \$servicePrincipalObjectId -DisplayName "Shedbooks O365 Sync"
 }
 
-# Small safety net for genuine replication lag — the reconnect above is
-# the real fix for the "already enabled but still refused" loop.
-\$maxAttempts = 2
-\$delaySeconds = 15
-for (\$attempt = 1; \$attempt -le \$maxAttempts; \$attempt++) {
-    try {
-        New-ManagementRoleAssignment -Role "Mail Recipients" -App "$clientId"
-        break
-    } catch {
-        \$isCustomizationLag = \$_.Exception.Message -like "*Enable-OrganizationCustomization*"
-        if (\$isCustomizationLag -and \$attempt -lt \$maxAttempts) {
-            Write-Host "Role assignment not ready yet — retrying in \$delaySeconds s (attempt \$attempt of \$maxAttempts)..."
-            Start-Sleep -Seconds \$delaySeconds
-        } elseif (\$isCustomizationLag) {
-            throw "Still refused after reconnecting and confirming Organization Management membership. This may be a longer-than-usual replication delay — wait a while and re-run this script (it's safe to run again)."
-        } else {
-            throw
+# Every Exchange RBAC role Shedbooks' O365 features need, and why. Extend
+# this list (and re-run this script) if a future feature needs another
+# cmdlet's role — mirrors \$requiredRoles in
+# server/lib/infrastructure/services/scripts/setup_exchange_rbac.ps1,
+# which this generated script exists to match so a brand-new tenant
+# doesn't need to run two separate setup scripts.
+\$requiredRoles = @(
+    @{ Role = 'Mail Recipients'; Reason = 'member GAL contact sync (New-/Set-MailContact, Set-Contact)' }
+    @{ Role = 'Distribution Groups'; Reason = '"Shed Members" distribution list (New-/Set-DistributionGroup, Update-DistributionGroupMember)' }
+    @{ Role = 'Mail Recipient Creation'; Reason = '"Create O365 mailbox" admin action (New-Mailbox)' }
+)
+
+# DisplayName lookup can occasionally fail to resolve as a RoleAssignee
+# identity depending on tenant/module version; ObjectId is the fallback —
+# same two-step probe as setup_exchange_rbac.ps1.
+\$existingAssignments = @(Get-ManagementRoleAssignment -RoleAssignee \$exchangeSp.DisplayName -ErrorAction SilentlyContinue)
+if (\$existingAssignments.Count -eq 0) {
+    \$existingAssignments = @(Get-ManagementRoleAssignment -RoleAssignee \$exchangeSp.ObjectId.ToString() -ErrorAction SilentlyContinue)
+}
+\$existingRoleNames = @(\$existingAssignments | Select-Object -ExpandProperty Role -Unique)
+
+foreach (\$entry in \$requiredRoles) {
+    \$role = \$entry.Role
+    if (\$role -in \$existingRoleNames) {
+        Write-Host "'\$role' already assigned — skipping (\$(\$entry.Reason))."
+        continue
+    }
+
+    Write-Host "Granting '\$role' (\$(\$entry.Reason))..."
+    # Small safety net for genuine replication lag — the reconnect above is
+    # the real fix for the "already enabled but still refused" loop.
+    \$maxAttempts = 2
+    \$delaySeconds = 15
+    for (\$attempt = 1; \$attempt -le \$maxAttempts; \$attempt++) {
+        try {
+            New-ManagementRoleAssignment -Role \$role -App "$clientId"
+            break
+        } catch {
+            \$isCustomizationLag = \$_.Exception.Message -like "*Enable-OrganizationCustomization*"
+            if (\$isCustomizationLag -and \$attempt -lt \$maxAttempts) {
+                Write-Host "Role assignment not ready yet — retrying in \$delaySeconds s (attempt \$attempt of \$maxAttempts)..."
+                Start-Sleep -Seconds \$delaySeconds
+            } elseif (\$isCustomizationLag) {
+                throw "Still refused after reconnecting and confirming Organization Management membership. This may be a longer-than-usual replication delay — wait a while and re-run this script (it's safe to run again)."
+            } else {
+                throw
+            }
         }
     }
 }
 
-Write-Host "Setup complete. $clientId can now create and update GAL mail contacts."
+Write-Host "Setup complete. $clientId can now create/update GAL mail contacts, manage the 'Shed Members' distribution list, and create O365 mailboxes for members."
 ''';
 
     _downloadBytes(
@@ -813,8 +856,10 @@ Write-Host "Setup complete. $clientId can now create and update GAL mail contact
                 '2. Download the setup script below and, as a Global '
                 'Administrator, run it (cannot be done from the Azure '
                 'Portal UI) — it grants this app permission to create '
-                'and update GAL mail contacts, looking up its Enterprise '
-                'Application Object ID itself.\n'
+                'and update GAL mail contacts, manage the "Shed Members" '
+                'distribution list, and create O365 mailboxes for '
+                'members, looking up its Enterprise Application Object '
+                'ID itself.\n'
                 '3. Azure Portal → App registrations → your app → API '
                 'permissions → Add a permission → APIs my organization '
                 'uses → Office 365 Exchange Online → Application '
@@ -826,7 +871,14 @@ Write-Host "Setup complete. $clientId can now create and update GAL mail contact
                 'this app by name → Assign. This is separate from step 2 '
                 '— step 2 lets the app manage mail contacts once '
                 'connected, this lets it connect at all. Without both, '
-                'syncing fails with "UnAuthorized".',
+                'syncing fails with "UnAuthorized".\n'
+                '5. Only needed for "Create O365 mailbox": Azure Portal → '
+                'App registrations → your app → API permissions → Add a '
+                'permission → Microsoft Graph → Application permissions → '
+                'add Organization.Read.All and User.ReadWrite.All → Add, '
+                'then "Grant admin consent". This is unrelated to steps '
+                '3-4 — Exchange RBAC (granted by the script) and Microsoft '
+                'Graph API permissions are independent grant systems.',
                 style: TextStyle(fontSize: 13, color: Colors.black54),
               ),
               const SizedBox(height: 8),

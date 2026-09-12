@@ -38,6 +38,8 @@ class MemberResponse {
   final String? gymWaiver;
   final String? o365SyncedAt;
   final String? o365SyncFailedAt;
+  final String? o365MailboxUpn;
+  final String? o365MailboxCreatedAt;
   final String etag;
   final String createdAt;
   final String updatedAt;
@@ -60,6 +62,8 @@ class MemberResponse {
     this.gymWaiver,
     this.o365SyncedAt,
     this.o365SyncFailedAt,
+    this.o365MailboxUpn,
+    this.o365MailboxCreatedAt,
     required this.etag,
     required this.createdAt,
     required this.updatedAt,
@@ -86,6 +90,8 @@ class MemberResponse {
       gymWaiver: entity.gymWaiver?.toIso8601String().substring(0, 10),
       o365SyncedAt: entity.o365SyncedAt?.toUtc().toIso8601String(),
       o365SyncFailedAt: entity.o365SyncFailedAt?.toUtc().toIso8601String(),
+      o365MailboxUpn: entity.o365MailboxUpn,
+      o365MailboxCreatedAt: entity.o365MailboxCreatedAt?.toUtc().toIso8601String(),
       etag: entity.etag,
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
@@ -110,6 +116,8 @@ class MemberResponse {
         'gymWaiver': gymWaiver,
         'o365SyncedAt': o365SyncedAt,
         'o365SyncFailedAt': o365SyncFailedAt,
+        'o365MailboxUpn': o365MailboxUpn,
+        'o365MailboxCreatedAt': o365MailboxCreatedAt,
         'etag': etag,
         'createdAt': createdAt,
         'updatedAt': updatedAt,

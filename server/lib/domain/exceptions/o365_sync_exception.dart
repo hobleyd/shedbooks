@@ -59,3 +59,27 @@ class O365CertificateGenerationException implements Exception {
   @override
   String toString() => 'O365CertificateGenerationException: $message';
 }
+
+/// Thrown when creating a member's O365 mailbox, or listing available
+/// licenses, fails at the session level (couldn't connect, certificate
+/// rejected, PowerShell/module unavailable) — no mutation was attempted.
+class O365MailboxException implements Exception {
+  final String message;
+  const O365MailboxException(this.message);
+
+  @override
+  String toString() => 'O365MailboxException: $message';
+}
+
+/// Thrown when the tenant already has a user/mailbox at the address the
+/// member's name would resolve to — e.g. another member shares the same
+/// normalized name, or this call is a retry after a prior partial success.
+/// Deliberately does not attempt to resolve the collision (e.g. by
+/// suffixing a number) — that requires a human decision.
+class O365MailboxConflictException implements Exception {
+  final String message;
+  const O365MailboxConflictException(this.message);
+
+  @override
+  String toString() => 'O365MailboxConflictException: $message';
+}

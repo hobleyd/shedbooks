@@ -167,19 +167,19 @@ class BackupHandler {
       ''', {'entityId': entityId});
 
       // street_address, email, phone, date_of_birth, emergency_contact_name,
-      // and emergency_contact_phone are already ciphertext (app-level
-      // AES-256-GCM via FieldEncryptor) — round-tripped as opaque strings,
-      // no decrypt/re-encrypt. date_of_birth is TEXT (not DATE) since
-      // migration 038. `name`/`emergency_contact` are deprecated, nullable
-      // legacy columns (migrations 039/040) kept only for history.
+      // emergency_contact_phone, and o365_mailbox_upn are already ciphertext
+      // (app-level AES-256-GCM via FieldEncryptor) — round-tripped as opaque
+      // strings, no decrypt/re-encrypt. date_of_birth is TEXT (not DATE)
+      // since migration 038. `name`/`emergency_contact` are deprecated,
+      // nullable legacy columns (migrations 039/040) kept only for history.
       final members = await _queryRows('''
         SELECT id::text, entity_id, name, first_name, last_name, date_joined,
                membership_status, street_address, po_box, email, phone,
                date_of_birth, emergency_contact, emergency_contact_name,
                emergency_contact_phone, woodworking_induction,
                metalworking_induction, gym_waiver, etag, o365_contact_id,
-               o365_synced_at, o365_sync_failed_at, created_at, updated_at,
-               deleted_at
+               o365_synced_at, o365_sync_failed_at, o365_mailbox_upn,
+               o365_mailbox_created_at, created_at, updated_at, deleted_at
         FROM members WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -777,7 +777,8 @@ class BackupHandler {
                  date_of_birth, emergency_contact, emergency_contact_name,
                  emergency_contact_phone, woodworking_induction,
                  metalworking_induction, gym_waiver, etag, o365_contact_id,
-                 o365_synced_at, o365_sync_failed_at, created_at, updated_at,
+                 o365_synced_at, o365_sync_failed_at, o365_mailbox_upn,
+                 o365_mailbox_created_at, created_at, updated_at,
                  deleted_at)
               VALUES (
                 @id::uuid, @e, @name, @fn, @ln, @dj::date,
@@ -785,7 +786,8 @@ class BackupHandler {
                 @dob, @ec, @ecn,
                 @ecp, @wi::date,
                 @mi::date, @gw::date, @etag, @ocid,
-                @osync::timestamptz, @ofail::timestamptz, @ca::timestamptz,
+                @osync::timestamptz, @ofail::timestamptz, @mupn,
+                @mcreated::timestamptz, @ca::timestamptz,
                 @ua::timestamptz, @da::timestamptz
               )
             '''),
@@ -823,6 +825,8 @@ class BackupHandler {
               'ocid': r['o365_contact_id'],
               'osync': r['o365_synced_at'],
               'ofail': r['o365_sync_failed_at'],
+              'mupn': r['o365_mailbox_upn'],
+              'mcreated': r['o365_mailbox_created_at'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],

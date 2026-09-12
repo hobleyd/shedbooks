@@ -51,6 +51,10 @@ class MemberEntry {
   /// attempt — not necessarily the only one — failed.
   final DateTime? o365SyncFailedAt;
 
+  /// The tenant sign-in address created for this member via "Create O365
+  /// mailbox", or null if none has been created.
+  final String? o365MailboxUpn;
+
   /// CardDAV ETag — changes on every server-side update.
   final String etag;
 
@@ -72,6 +76,7 @@ class MemberEntry {
     this.gymWaiver,
     this.o365SyncedAt,
     this.o365SyncFailedAt,
+    this.o365MailboxUpn,
     required this.etag,
   });
 
@@ -104,6 +109,7 @@ class MemberEntry {
       o365SyncFailedAt: json['o365SyncFailedAt'] != null
           ? DateTime.parse(json['o365SyncFailedAt'] as String)
           : null,
+      o365MailboxUpn: json['o365MailboxUpn'] as String?,
       etag: json['etag'] as String,
     );
   }

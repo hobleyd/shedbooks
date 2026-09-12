@@ -44,6 +44,7 @@ class PostgresMemberRepository implements IMemberRepository {
     emergency_contact_name, emergency_contact_phone,
     woodworking_induction, metalworking_induction, gym_waiver,
     etag, o365_contact_id, o365_synced_at, o365_sync_failed_at,
+    o365_mailbox_upn, o365_mailbox_created_at,
     created_at, updated_at, deleted_at
   ''';
 
@@ -302,6 +303,28 @@ class PostgresMemberRepository implements IMemberRepository {
   }
 
   @override
+  Future<void> markO365MailboxCreated({
+    required String id,
+    required String entityId,
+    required String upn,
+  }) async {
+    await _pool.execute(
+      Sql.named('''
+        UPDATE members
+        SET o365_mailbox_upn        = @upn,
+            o365_mailbox_created_at = NOW()
+        WHERE id = @id::uuid
+          AND entity_id = @entityId
+      '''),
+      parameters: {
+        'id': id,
+        'entityId': entityId,
+        'upn': _encStr(upn),
+      },
+    );
+  }
+
+  @override
   Future<void> delete(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -394,6 +417,8 @@ class PostgresMemberRepository implements IMemberRepository {
       o365ContactId: row['o365_contact_id'] as String?,
       o365SyncedAt: row['o365_synced_at'] as DateTime?,
       o365SyncFailedAt: row['o365_sync_failed_at'] as DateTime?,
+      o365MailboxUpn: _decStr(row['o365_mailbox_upn']),
+      o365MailboxCreatedAt: row['o365_mailbox_created_at'] as DateTime?,
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,

@@ -26,14 +26,19 @@ import '../../application/member/get_member_use_case.dart';
 import '../../application/member/import_members_use_case.dart';
 import '../../application/member/list_members_use_case.dart';
 import '../../application/member/update_member_use_case.dart';
+import '../../application/o365/create_member_mailbox_use_case.dart';
+import '../../application/o365/list_available_o365_licenses_use_case.dart';
 import '../../application/o365/sync_members_to_o365_use_case.dart';
 import '../../domain/entities/member.dart';
 import '../../domain/exceptions/member_exception.dart';
 import '../../domain/exceptions/o365_sync_exception.dart';
 import '../audit_changes.dart';
+import '../dto/create_mailbox_request.dart';
+import '../dto/create_mailbox_response.dart';
 import '../dto/create_member_request.dart';
 import '../dto/import_member_request.dart';
 import '../dto/member_response.dart';
+import '../dto/o365_available_licenses_response.dart';
 import '../dto/o365_sync_result_response.dart';
 import 'handler_diff.dart';
 
@@ -46,6 +51,8 @@ class MemberHandler {
   final DeleteMemberUseCase _delete;
   final ImportMembersUseCase _import;
   final SyncMembersToO365UseCase _syncO365;
+  final ListAvailableO365LicensesUseCase _availableLicenses;
+  final CreateMemberMailboxUseCase _createMailbox;
 
   const MemberHandler({
     required CreateMemberUseCase create,
@@ -55,13 +62,17 @@ class MemberHandler {
     required DeleteMemberUseCase delete,
     required ImportMembersUseCase import,
     required SyncMembersToO365UseCase syncO365,
+    required ListAvailableO365LicensesUseCase availableLicenses,
+    required CreateMemberMailboxUseCase createMailbox,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
         _delete = delete,
         _import = import,
-        _syncO365 = syncO365;
+        _syncO365 = syncO365,
+        _availableLicenses = availableLicenses,
+        _createMailbox = createMailbox;
 
   /// GET /members
   Future<Response> handleList(Request request) async {
@@ -275,6 +286,70 @@ class MemberHandler {
     }
   }
 
+  /// GET /members/available-licenses — Microsoft 365 license SKUs with
+  /// spare seats, for the admin to pick from before creating a mailbox.
+  /// Read-only: not audited.
+  Future<Response> handleAvailableLicenses(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    try {
+      final licenses = await _availableLicenses.execute(entityId: entityId);
+      return Response.ok(
+        O365AvailableLicensesResponse(licenses).toJsonString(),
+        headers: _jsonHeaders,
+      );
+    } on O365SyncNotConfiguredException catch (e) {
+      return _badRequest(e.message);
+    } on O365MailboxException catch (e) {
+      return _syncFailed(e.message);
+    }
+  }
+
+  /// POST /members/:id/create-mailbox — creates a tenant sign-in account
+  /// for the member and returns the one-time temporary password. The
+  /// password is never persisted or included in the audit trail — only the
+  /// resulting address is.
+  Future<Response> handleCreateMailbox(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final CreateMailboxRequest dto;
+    try {
+      final json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      dto = CreateMailboxRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    try {
+      final result = await _createMailbox.execute(
+        memberId: id,
+        entityId: entityId,
+        licenseSkuId: dto.licenseSkuId,
+      );
+      _auditChanges(request)?.set({
+        'memberId': id,
+        'upn': result.upn,
+        'licenseAssigned': result.licenseAssigned,
+      });
+      return Response.ok(
+        CreateMailboxResponse.fromResult(result).toJsonString(),
+        headers: _jsonHeaders,
+      );
+    } on MemberNotFoundException catch (e) {
+      return _notFound(e.message);
+    } on O365SyncNotConfiguredException catch (e) {
+      return _badRequest(e.message);
+    } on O365MailboxConflictException catch (e) {
+      return _conflict(e.message);
+    } on O365MailboxException catch (e) {
+      return _syncFailed(e.message);
+    }
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
   static String? _entityId(Request request) {
@@ -317,6 +392,12 @@ class MemberHandler {
 
   static Response _notFound(String message) => Response.notFound(
         jsonEncode({'error': message}),
+        headers: _jsonHeaders,
+      );
+
+  static Response _conflict(String message) => Response(
+        409,
+        body: jsonEncode({'error': message}),
         headers: _jsonHeaders,
       );
 

@@ -75,6 +75,7 @@ class _MemberRow {
   // fields rather than controllers (no dirty-check/toRequestJson/reset).
   final DateTime? o365SyncedAt;
   final DateTime? o365SyncFailedAt;
+  final String? o365MailboxUpn;
 
   // Originals for dirty-check
   final String _origLastName;
@@ -112,6 +113,7 @@ class _MemberRow {
         lastNameFocus = FocusNode(),
         o365SyncedAt = null,
         o365SyncFailedAt = null,
+        o365MailboxUpn = null,
         _origLastName = '',
         _origFirstName = '',
         _origDateJoined = '',
@@ -156,6 +158,7 @@ class _MemberRow {
         lastNameFocus = FocusNode(),
         o365SyncedAt = e.o365SyncedAt,
         o365SyncFailedAt = e.o365SyncFailedAt,
+        o365MailboxUpn = e.o365MailboxUpn,
         _origLastName = e.lastName,
         _origFirstName = e.firstName,
         _origDateJoined = _isoToDisplay(e.dateJoined ?? ''),
@@ -710,11 +713,14 @@ class _MembershipScreenState extends State<MembershipScreen> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _showSyncErrorDialog(String message) {
+  void _showSyncErrorDialog(String message) =>
+      _showErrorDialog('O365 sync failed', message);
+
+  void _showErrorDialog(String title, String message) {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('O365 sync failed'),
+        title: Text(title),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
@@ -740,6 +746,209 @@ class _MembershipScreenState extends State<MembershipScreen> {
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Creates a tenant sign-in account for [row] via the "Create O365
+  /// mailbox" action: confirms with the admin (this is a real, billed
+  /// account), resolves which license to assign (auto-picking the only
+  /// option, or prompting when the tenant has more than one with spare
+  /// seats), then shows the one-time temporary password. The password is
+  /// never requested again after this dialog closes — it isn't persisted
+  /// server-side.
+  Future<void> _createMailbox(_MemberRow row) async {
+    final name = '${row.firstNameCtrl.text} ${row.lastNameCtrl.text}'.trim();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Create O365 mailbox'),
+        content: Text(
+          'Create a tenant sign-in account for $name?\n\n'
+          'This creates a real Microsoft 365 mailbox '
+          '(firstname.surname@your tenant domain) and consumes one license '
+          'seat. The temporary password is shown once — you\'ll need to '
+          'pass it on to the member yourself.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Create')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      final client = context.read<ApiClient>();
+
+      final licensesRes = await client.get('/members/available-licenses');
+      if (!mounted) return;
+      if (licensesRes.statusCode != 200) {
+        String msg = 'Failed to check available licenses';
+        try {
+          msg = (jsonDecode(licensesRes.body) as Map<String, dynamic>)['error']
+                  as String? ??
+              msg;
+        } catch (_) {}
+        _showErrorDialog('Mailbox creation failed', msg);
+        return;
+      }
+
+      final licenses =
+          ((jsonDecode(licensesRes.body) as Map<String, dynamic>)['licenses']
+                  as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+
+      if (licenses.isEmpty) {
+        _showErrorDialog(
+          'No licenses available',
+          'There are no Microsoft 365 licenses with a spare seat in your '
+              'tenant. Free up a seat or purchase one, then try again.',
+        );
+        return;
+      }
+
+      String skuId;
+      if (licenses.length == 1) {
+        skuId = licenses.first['skuId'] as String;
+      } else {
+        final chosen = await _pickLicense(licenses);
+        if (chosen == null || !mounted) return;
+        skuId = chosen;
+      }
+
+      final createRes = await client.post(
+        '/members/${row.id}/create-mailbox',
+        jsonEncode({'licenseSkuId': skuId}),
+      );
+      if (!mounted) return;
+      if (createRes.statusCode != 200) {
+        String msg = 'Mailbox creation failed (${createRes.statusCode})';
+        try {
+          msg = (jsonDecode(createRes.body) as Map<String, dynamic>)['error']
+                  as String? ??
+              msg;
+        } catch (_) {}
+        _showErrorDialog('Mailbox creation failed', msg);
+        return;
+      }
+
+      final result = jsonDecode(createRes.body) as Map<String, dynamic>;
+      await _load();
+      if (!mounted) return;
+      _showMailboxCreatedDialog(
+        name: name,
+        upn: result['upn'] as String,
+        password: result['temporaryPassword'] as String,
+        warning: result['licenseWarning'] as String?,
+      );
+    } catch (e) {
+      if (mounted) {
+        _showErrorDialog('Mailbox creation failed', 'Error: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<String?> _pickLicense(List<Map<String, dynamic>> licenses) {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Choose a license'),
+        children: [
+          for (final l in licenses)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(l['skuId'] as String),
+              child: Text(
+                  '${l['skuPartNumber']} (${l['availableUnits']} available)'),
+            ),
+          const Divider(height: 1),
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMailboxCreatedDialog({
+    required String name,
+    required String upn,
+    required String password,
+    String? warning,
+  }) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mailbox created'),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$name can now sign in with:'),
+              const SizedBox(height: 8),
+              SelectableText(upn, style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 16),
+              const Text('Temporary password (shown once — copy it now):'),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      password,
+                      style: Theme.of(ctx)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontFamily: 'monospace'),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 18),
+                    tooltip: 'Copy password',
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: password));
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(
+                            content: Text('Password copied to clipboard'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'The member will be required to change it on first sign-in.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              if (warning != null) ...[
+                const SizedBox(height: 16),
+                Text(warning,
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Done'),
           ),
         ],
       ),
@@ -843,8 +1052,10 @@ class _MembershipScreenState extends State<MembershipScreen> {
                   : _MemberTable(
                         rows: _rows,
                         canEdit: canEdit,
+                        isAdmin: authState.isAdmin,
                         onSave: _saveRow,
                         onDelete: _deleteRow,
+                        onCreateMailbox: _createMailbox,
                         onChanged: _updateDirty,
                         sortColumn: _sortColumn,
                         sortAscending: _sortAscending,
@@ -934,7 +1145,7 @@ const double _kWoodworkingW = 130;
 const double _kMetalworkingW = 130;
 const double _kGymWaiverW = 100;
 const double _kO365W = 56;
-const double _kActionsW = 80;
+const double _kActionsW = 116;
 
 // Minimum width of the edit panel — equals the sum of all column widths so the
 // panel always spans the full table regardless of content width.
@@ -953,8 +1164,10 @@ const double _kTableMinWidth = _kExpandW +
 class _MemberTable extends StatefulWidget {
   final List<_MemberRow> rows;
   final bool canEdit;
+  final bool isAdmin;
   final Future<void> Function(_MemberRow) onSave;
   final Future<void> Function(_MemberRow) onDelete;
+  final Future<void> Function(_MemberRow)? onCreateMailbox;
   final VoidCallback onChanged;
   final int? sortColumn;
   final bool sortAscending;
@@ -967,8 +1180,10 @@ class _MemberTable extends StatefulWidget {
   const _MemberTable({
     required this.rows,
     required this.canEdit,
+    this.isAdmin = false,
     required this.onSave,
     required this.onDelete,
+    this.onCreateMailbox,
     required this.onChanged,
     required this.sortColumn,
     required this.sortAscending,
@@ -1505,6 +1720,31 @@ class _MemberTableState extends State<_MemberTable> {
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(
                               minWidth: 32, minHeight: 32),
+                        ),
+                      if (widget.isAdmin && row.o365MailboxUpn == null)
+                        IconButton(
+                          icon: Icon(Icons.mail_outline,
+                              size: 18,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant),
+                          tooltip: 'Create O365 mailbox',
+                          onPressed: widget.onCreateMailbox == null
+                              ? null
+                              : () => widget.onCreateMailbox!(row),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 32, minHeight: 32),
+                        )
+                      else if (widget.isAdmin && row.o365MailboxUpn != null)
+                        Tooltip(
+                          message: 'O365 mailbox: ${row.o365MailboxUpn}',
+                          child: Icon(Icons.mail,
+                              size: 18,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant
+                                  .withAlpha(150)),
                         ),
                     ],
                   ),

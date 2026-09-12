@@ -57,8 +57,14 @@ server {
         # Raised from nginx's 60s default: POST /members/sync-o365 opens an
         # Exchange Online PowerShell session (module import + Connect-
         # ExchangeOnline can alone take 10-20s) before processing its batch
-        # of members — see SyncMembersToO365UseCase.
-        proxy_read_timeout 120s;
+        # of members — see SyncMembersToO365UseCase. POST
+        # /members/<id>/create-mailbox needs even more headroom — it opens
+        # a Graph session AND an Exchange session in the same request (see
+        # create_o365_mailbox.ps1's header and
+        # ExchangeOnlineMailboxService's timeout) — so this is raised
+        # further, past both features' needs, rather than kept at the
+        # sync-o365-only value.
+        proxy_read_timeout 180s;
     }
 
     location / {

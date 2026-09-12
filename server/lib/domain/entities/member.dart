@@ -91,6 +91,16 @@ class Member {
   /// occupying every batch ahead of them.
   final DateTime? o365SyncFailedAt;
 
+  /// The tenant sign-in address (`firstname.surname@<tenant domain>`)
+  /// assigned to this member via the "Create O365 mailbox" admin action, or
+  /// null if no mailbox has been created for them. Distinct from [email]
+  /// (the member's own personal address, used for GAL contact matching) —
+  /// see migration 057.
+  final String? o365MailboxUpn;
+
+  /// Timestamp the mailbox in [o365MailboxUpn] was created, or null.
+  final DateTime? o365MailboxCreatedAt;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -121,6 +131,8 @@ class Member {
     this.o365ContactId,
     this.o365SyncedAt,
     this.o365SyncFailedAt,
+    this.o365MailboxUpn,
+    this.o365MailboxCreatedAt,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -157,4 +169,7 @@ class Member {
   /// (see [isValidEmailFormat]) — i.e. this member can receive a synced
   /// O365 GAL contact.
   bool get hasSyncableEmail => email != null && isValidEmailFormat(email!);
+
+  /// True once a tenant sign-in account has been created for this member.
+  bool get hasO365Mailbox => o365MailboxUpn != null;
 }
