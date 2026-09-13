@@ -368,10 +368,23 @@ $objectIdLookup
 if (\$existingGrant) {
     Write-Host "Exchange.ManageAsApp is already granted."
 } else {
-    New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId \$servicePrincipalObjectId ``
-        -PrincipalId \$servicePrincipalObjectId -ResourceId \$exoServicePrincipal.Id ``
-        -AppRoleId \$manageAsAppRole.Id | Out-Null
-    Write-Host "Granted Exchange.ManageAsApp with admin consent."
+    try {
+        New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId \$servicePrincipalObjectId `
+            -PrincipalId \$servicePrincipalObjectId -ResourceId \$exoServicePrincipal.Id `
+            -AppRoleId \$manageAsAppRole.Id | Out-Null
+        Write-Host "Granted Exchange.ManageAsApp with admin consent."
+    } catch {
+        # Graph's read of existing app role assignments can lag behind a
+        # write that already succeeded (this run or an earlier one) — the
+        # pre-check above can miss it even though the grant is real, and
+        # the write then correctly rejects the duplicate. Treat that
+        # specific error as success rather than aborting the script here.
+        if (\$_.Exception.Message -like "*already exist*") {
+            Write-Host "Exchange.ManageAsApp was already granted (detected on write, not on the earlier read)."
+        } else {
+            throw
+        }
+    }
 }
 
 # Exchange Administrator directory role — the other half of what lets
@@ -389,10 +402,19 @@ if (-not \$exchangeAdminRole) {
 if (\$alreadyAssignedRole) {
     Write-Host "Exchange Administrator role is already assigned."
 } else {
-    New-MgDirectoryRoleMemberByRef -DirectoryRoleId \$exchangeAdminRole.Id -BodyParameter @{
-        "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/\$servicePrincipalObjectId"
+    try {
+        New-MgDirectoryRoleMemberByRef -DirectoryRoleId \$exchangeAdminRole.Id -BodyParameter @{
+            "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/\$servicePrincipalObjectId"
+        }
+        Write-Host "Assigned the Exchange Administrator role."
+    } catch {
+        # Same lagging-read/correct-write race as Exchange.ManageAsApp above.
+        if (\$_.Exception.Message -like "*already exist*") {
+            Write-Host "Exchange Administrator role was already assigned (detected on write, not on the earlier read)."
+        } else {
+            throw
+        }
     }
-    Write-Host "Assigned the Exchange Administrator role."
 }
 
 Disconnect-MgGraph | Out-Null
