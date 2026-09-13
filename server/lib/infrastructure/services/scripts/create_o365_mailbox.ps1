@@ -138,7 +138,18 @@ catch {
 
 try {
     try {
-        $sku = Get-MgSubscribedSku -SubscribedSkuId $config.licenseSkuId -ErrorAction Stop
+        # -SubscribedSkuId (a "get by id" call) expects Graph's compound
+        # `id` property (documented as `{accountId}_{skuId}`), NOT the bare
+        # SKU GUID list_o365_licenses.ps1 exposes as `SkuId` and that Dart
+        # echoes back here as licenseSkuId — passing the bare GUID into
+        # that parameter fails with a Graph "Request_BadRequest" error.
+        # Filtering the full list by `SkuId` avoids the id-vs-skuId
+        # confusion entirely and matches how the license was surfaced to
+        # the admin in the first place.
+        $sku = Get-MgSubscribedSku -All -ErrorAction Stop | Where-Object { $_.SkuId -eq $config.licenseSkuId }
+        if (-not $sku) {
+            throw "No license SKU found in this tenant matching SkuId $($config.licenseSkuId)."
+        }
         $available = $sku.PrepaidUnits.Enabled - $sku.ConsumedUnits
         if ($available -le 0) {
             Write-Result -Status 'license_unavailable' -Upn $upn
