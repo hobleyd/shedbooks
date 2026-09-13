@@ -173,6 +173,12 @@ class _AppSidebarState extends State<AppSidebar> {
                     currentPath: currentPath,
                   ),
                   _NavItem(
+                    label: 'Capex Requests',
+                    icon: Icons.request_quote_outlined,
+                    path: '/capex-requests',
+                    currentPath: currentPath,
+                  ),
+                  _NavItem(
                     label: 'Members',
                     icon: Icons.badge_outlined,
                     path: '/members',
@@ -182,12 +188,6 @@ class _AppSidebarState extends State<AppSidebar> {
                     label: 'Asset Register',
                     icon: Icons.inventory_2_outlined,
                     path: '/assets',
-                    currentPath: currentPath,
-                  ),
-                  _NavItem(
-                    label: 'Capex Requests',
-                    icon: Icons.request_quote_outlined,
-                    path: '/capex-requests',
                     currentPath: currentPath,
                   ),
                   _ReportsNavGroup(

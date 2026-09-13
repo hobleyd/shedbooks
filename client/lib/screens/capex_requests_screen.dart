@@ -38,6 +38,8 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
   bool _loading = true;
   String? _loadError;
   List<CapexRequestEntry> _requests = [];
+  int? _sortColumn;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -68,6 +70,7 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
 
       setState(() {
         _requests = requests;
+        _applySort();
         _loading = false;
       });
     } catch (e) {
@@ -78,6 +81,36 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
         });
       }
     }
+  }
+
+  void _applySort() {
+    if (_sortColumn == null) return;
+    _requests.sort((a, b) {
+      final int cmp = switch (_sortColumn) {
+        0 => a.requestNo.toLowerCase().compareTo(b.requestNo.toLowerCase()),
+        1 => a.requestDate.compareTo(b.requestDate),
+        2 => a.preparedByName
+            .toLowerCase()
+            .compareTo(b.preparedByName.toLowerCase()),
+        3 => a.description.toLowerCase().compareTo(b.description.toLowerCase()),
+        4 => a.totalAmountCents.compareTo(b.totalAmountCents),
+        5 => a.status.compareTo(b.status),
+        _ => 0,
+      };
+      return _sortAscending ? cmp : -cmp;
+    });
+  }
+
+  void _onSort(int col) {
+    setState(() {
+      if (_sortColumn == col) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortColumn = col;
+        _sortAscending = true;
+      }
+      _applySort();
+    });
   }
 
   Future<void> _openDialog({CapexRequestEntry? existing}) async {
@@ -241,11 +274,6 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
       );
     }
 
-    final headerStyle = Theme.of(context)
-        .textTheme
-        .labelLarge
-        ?.copyWith(fontWeight: FontWeight.bold);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -253,16 +281,12 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           child: Row(
             children: [
-              SizedBox(width: 110, child: Text('Request No', style: headerStyle)),
-              SizedBox(width: 90, child: Text('Date', style: headerStyle)),
-              SizedBox(width: 140, child: Text('Prepared By', style: headerStyle)),
-              Expanded(child: Text('Description', style: headerStyle)),
-              SizedBox(
-                  width: 90,
-                  child: Text('Total', style: headerStyle, textAlign: TextAlign.right)),
-              SizedBox(
-                  width: 100,
-                  child: Text('Status', style: headerStyle, textAlign: TextAlign.center)),
+              _sortHeader('Request No', 0, width: 110),
+              _sortHeader('Date', 1, width: 90),
+              _sortHeader('Prepared By', 2, width: 140),
+              _sortHeader('Description', 3),
+              _sortHeader('Total', 4, width: 90, alignment: Alignment.centerRight),
+              _sortHeader('Status', 5, width: 100, alignment: Alignment.center),
               const SizedBox(width: 200),
             ],
           ),
@@ -279,6 +303,37 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
         ),
       ],
     );
+  }
+
+  Widget _sortHeader(String label, int col,
+      {double? width, Alignment alignment = Alignment.centerLeft}) {
+    final isActive = _sortColumn == col;
+    final style = Theme.of(context)
+        .textTheme
+        .labelLarge
+        ?.copyWith(fontWeight: FontWeight.bold);
+    final mainAxisAlignment = switch (alignment) {
+      Alignment.centerRight => MainAxisAlignment.end,
+      Alignment.center => MainAxisAlignment.center,
+      _ => MainAxisAlignment.start,
+    };
+    final content = InkWell(
+      onTap: () => _onSort(col),
+      child: Row(
+        mainAxisAlignment: mainAxisAlignment,
+        children: [
+          Flexible(
+              child: Text(label, style: style, overflow: TextOverflow.ellipsis)),
+          if (isActive) ...[
+            const SizedBox(width: 2),
+            Icon(
+                _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                size: 12),
+          ],
+        ],
+      ),
+    );
+    return width != null ? SizedBox(width: width, child: content) : Expanded(child: content);
   }
 
   Widget _buildRow(CapexRequestEntry entry,

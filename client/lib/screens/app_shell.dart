@@ -54,8 +54,10 @@ class AppShell extends StatelessWidget {
 
   Future<void> _signOut(BuildContext context, AuthState authState) async {
     final auth0 = Auth0Web(_auth0Domain, _auth0ClientId);
+    final origin = '${Uri.base.scheme}://${Uri.base.host}'
+        '${Uri.base.hasPort ? ":${Uri.base.port}" : ""}';
     authState.clearCredentials();
-    await auth0.logout(returnToUrl: 'https://shedbooks.sharpblue.com.au');
+    await auth0.logout(returnToUrl: origin);
     if (context.mounted) context.go('/');
   }
 }
