@@ -205,19 +205,42 @@ try {
     # The mailbox above already exists regardless of what happens from here —
     # every path below must exit 0 and write a result rather than throw, so
     # Dart still records the member as having a mailbox (see file header).
-    try {
-        # Entra rejects a license assignment with no UsageLocation set —
-        # New-Mailbox does not populate it.
-        Update-MgUser -UserId $upn -UsageLocation $UsageLocation -ErrorAction Stop
-        # -AddLicenses expects an array of assigned-license objects, not a
-        # bare hashtable — Graph's underlying assignLicense payload is a list.
-        Set-MgUserLicense -UserId $upn `
-            -AddLicenses @(@{ SkuId = $config.licenseSkuId }) -RemoveLicenses @() `
-            -ErrorAction Stop | Out-Null
-        Write-Result -Status 'created' -Upn $upn
-    }
-    catch {
-        Write-Result -Status 'created_license_failed' -Upn $upn -LicenseError $_.Exception.Message
+    #
+    # New-Mailbox above creates the Exchange mailbox AND the underlying
+    # Entra ID user object together, but Microsoft Graph's own read path
+    # can lag a few seconds behind that write becoming visible — confirmed
+    # against the live tenant: Update-MgUser -UserId <the UPN just created>
+    # failed immediately afterward with "Request_ResourceNotFound:
+    # Resource: <upn> does not exist", even though the mailbox was real.
+    # This is the same class of replication-lag race already seen (and
+    # retried around) for the Exchange Administrator role assignment in
+    # the generated setup script — retry a few times before giving up.
+    $maxLicenseAttempts = 5
+    $licenseRetryDelaySeconds = 5
+    for ($attempt = 1; $attempt -le $maxLicenseAttempts; $attempt++) {
+        try {
+            # Entra rejects a license assignment with no UsageLocation set —
+            # New-Mailbox does not populate it.
+            Update-MgUser -UserId $upn -UsageLocation $UsageLocation -ErrorAction Stop
+            # -AddLicenses expects an array of assigned-license objects, not
+            # a bare hashtable — Graph's assignLicense payload is a list.
+            Set-MgUserLicense -UserId $upn `
+                -AddLicenses @(@{ SkuId = $config.licenseSkuId }) -RemoveLicenses @() `
+                -ErrorAction Stop | Out-Null
+            Write-Result -Status 'created' -Upn $upn
+            break
+        }
+        catch {
+            $isReplicationLag = $_.Exception.Message -like "*ResourceNotFound*" -or
+                                 $_.Exception.Message -like "*does not exist*"
+            if ($isReplicationLag -and $attempt -lt $maxLicenseAttempts) {
+                Write-Host "License assignment failed (attempt $attempt of $maxLicenseAttempts) — the new user may not have replicated to Graph yet. Retrying in $licenseRetryDelaySeconds s..."
+                Start-Sleep -Seconds $licenseRetryDelaySeconds
+                continue
+            }
+            Write-Result -Status 'created_license_failed' -Upn $upn -LicenseError $_.Exception.Message
+            break
+        }
     }
 }
 finally {
