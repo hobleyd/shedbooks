@@ -113,7 +113,9 @@ Three roles managed in Auth0 RBAC and enforced on both server and client:
 
 **Admin resources** (contributor has no access, viewer can read):
 - Bank accounts (`/bank-accounts/*`)
-- GST rates (`/gst-rates/*`)
+- GST rates (`/gst-rates/*`) — except `GET /gst-rates/effective`, which every
+  authenticated role can read (needed to price a transaction; the rate
+  *list* and CRUD stay administrator-only)
 - Audit log (`/admin/audit-log`)
 - Backup/restore (`/admin/backup`, `/admin/restore`)
 

@@ -17,11 +17,24 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shedbooks_client/models/bank_account_summary.dart';
 import 'package:shedbooks_client/models/contact_entry.dart';
 import 'package:shedbooks_client/models/general_ledger_entry.dart';
 import 'package:shedbooks_client/models/transaction_entry.dart';
+import 'package:shedbooks_client/services/api_client.dart';
+import 'package:shedbooks_client/services/reference_data_cache.dart';
 import 'package:shedbooks_client/widgets/transaction_form.dart';
+
+/// [TransactionForm] reads the entity's GST rate history from
+/// [ReferenceDataCache] (falling back to 10% when the cache holds no rates,
+/// which it never does in these tests since nothing calls
+/// `ensureGstRatesLoaded`/`refreshGstRates`) — every harness needs one as an
+/// ancestor so `context.read<ReferenceDataCache>()` doesn't throw.
+Widget _withGstRateCache(Widget child) => ChangeNotifierProvider<ReferenceDataCache>.value(
+      value: ReferenceDataCache(ApiClient(baseUrl: '', getToken: () => null)),
+      child: child,
+    );
 
 const _gl = GeneralLedgerEntry(
   id: 'gl1',
@@ -101,7 +114,7 @@ const _bankB = BankAccountSummary(
 // silently default to either one; the user has to pick.
 const _multiBankAccounts = [_bankCash, _bankA, _bankB];
 
-Widget _editHarness() => MaterialApp(
+Widget _editHarness() => _withGstRateCache(MaterialApp(
       home: Scaffold(
         body: TransactionForm(
           contacts: _contacts,
@@ -113,11 +126,11 @@ Widget _editHarness() => MaterialApp(
           onSave: (_) {},
         ),
       ),
-    );
+    ));
 
 /// Mirrors the real "Add transaction" row: no [initial], so the form starts
 /// with no GL account selected — matching the reported bug scenario.
-Widget _addHarness() => MaterialApp(
+Widget _addHarness() => _withGstRateCache(MaterialApp(
       home: Scaffold(
         body: TransactionForm(
           contacts: _contacts,
@@ -129,7 +142,7 @@ Widget _addHarness() => MaterialApp(
           onSave: (_) {},
         ),
       ),
-    );
+    ));
 
 /// Compact "Add transaction" harness with multiple bank accounts, so the
 /// account dropdown has real choices instead of just Cash.
@@ -137,7 +150,7 @@ Widget _multiAccountHarness(
   GlDirection direction, {
   void Function(TransactionFormData)? onSave,
 }) =>
-    MaterialApp(
+    _withGstRateCache(MaterialApp(
       home: Scaffold(
         body: TransactionForm(
           contacts: _contacts,
@@ -150,7 +163,7 @@ Widget _multiAccountHarness(
           onSave: onSave ?? (_) {},
         ),
       ),
-    );
+    ));
 
 Finder _fieldLabeled(String label) => find.ancestor(
       of: find.text(label),
@@ -228,15 +241,35 @@ void main() {
   });
 
   group('GST-exempt GL account', () {
-    testWidgets('GST field is disabled and pinned to 0.00', (tester) async {
+    testWidgets('GST field stays editable (for manual override) but is pinned to 0.00 by default',
+        (tester) async {
       await tester.pumpWidget(_editHarness());
       await tester.pumpAndSettle();
 
       await _selectGlAccount(tester, 'Wages');
 
       final gstField = tester.widget<TextFormField>(_fieldLabeled('GST'));
-      expect(gstField.enabled, isFalse);
+      expect(gstField.enabled, isTrue);
       expect(find.widgetWithText(TextFormField, '0.00'), findsOneWidget);
+    });
+
+    testWidgets('GST-exempt account still lets GST be manually overridden away from 0.00',
+        (tester) async {
+      await tester.pumpWidget(_editHarness());
+      await tester.pumpAndSettle();
+
+      await _selectGlAccount(tester, 'Wages');
+      expect(find.widgetWithText(TextFormField, '0.00'), findsOneWidget);
+
+      // Manual override — despite the GL account being GST-exempt, the user
+      // can still type a GST amount and Total recalculates from it.
+      await tester.enterText(_fieldLabeled('Total'), '110.00');
+      await tester.pump();
+      await tester.enterText(_fieldLabeled('GST'), '10.00');
+      await tester.pump();
+
+      expect(find.widgetWithText(TextFormField, '110.00'), findsOneWidget); // Total unchanged
+      expect(find.widgetWithText(TextFormField, '100.00'), findsOneWidget); // Amount = 110 - 10
     });
 
     testWidgets('switching from a GST-applicable account folds Total into Amount ex GST',
@@ -253,12 +286,12 @@ void main() {
   });
 
   group('Add transaction (no GL account selected yet)', () {
-    testWidgets('GST field starts disabled until a GL account is chosen', (tester) async {
+    testWidgets('GST field is editable from the start, like Amount and Total', (tester) async {
       await tester.pumpWidget(_addHarness());
       await tester.pumpAndSettle();
 
       final gstField = tester.widget<TextFormField>(_fieldLabeled('GST'));
-      expect(gstField.enabled, isFalse);
+      expect(gstField.enabled, isTrue);
     });
 
     testWidgets(
@@ -306,16 +339,23 @@ void main() {
 
   group('Money-Out GST gated by contact GST-registration', () {
     testWidgets(
-        'GST stays disabled after selecting a GST-applicable account until a contact is chosen',
+        'GST stays pinned to 0.00 after selecting a GST-applicable account until a contact is chosen',
         (tester) async {
       await tester.pumpWidget(_addHarness());
       await tester.pumpAndSettle();
 
       await _selectGlAccount(tester, 'Stationery');
-      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isFalse);
+      // Still editable (for manual override) even though not yet auto-applicable.
+      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isTrue);
+
+      await tester.enterText(_fieldLabeled('Total'), '110.00');
+      await tester.pump();
+
+      expect(find.widgetWithText(TextFormField, '110.00'), findsNWidgets(2)); // Total & Amount
+      expect(find.widgetWithText(TextFormField, '0.00'), findsOneWidget); // GST
     });
 
-    testWidgets('selecting a non-GST-registered contact keeps GST disabled and pinned to 0.00',
+    testWidgets('selecting a non-GST-registered contact keeps GST pinned to 0.00 by default',
         (tester) async {
       await tester.pumpWidget(_addHarness());
       await tester.pumpAndSettle();
@@ -324,7 +364,7 @@ void main() {
       await _selectContact(tester, 'Bob');
 
       final gstField = tester.widget<TextFormField>(_fieldLabeled('GST'));
-      expect(gstField.enabled, isFalse);
+      expect(gstField.enabled, isTrue);
 
       await tester.enterText(_fieldLabeled('Total'), '110.00');
       await tester.pump();
@@ -358,7 +398,7 @@ void main() {
 
       await _selectContact(tester, 'Bob');
 
-      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isFalse);
+      expect(tester.widget<TextFormField>(_fieldLabeled('GST')).enabled, isTrue);
       expect(find.widgetWithText(TextFormField, '110.00'), findsNWidgets(2)); // Total & Amount
       expect(find.widgetWithText(TextFormField, '0.00'), findsOneWidget); // GST
     });
@@ -451,7 +491,7 @@ void main() {
         bankAccountId: 'deleted-account-id',
       );
 
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(_withGstRateCache(MaterialApp(
         home: Scaffold(
           body: TransactionForm(
             contacts: _contacts,
@@ -464,7 +504,7 @@ void main() {
             onSave: (_) {},
           ),
         ),
-      ));
+      )));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);

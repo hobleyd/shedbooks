@@ -17,11 +17,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
+import '../services/reference_data_cache.dart';
 import 'gl_account_dropdown.dart';
 
 enum _AmountAnchor { total, amount }
@@ -167,6 +169,7 @@ class TransactionFormState extends State<TransactionForm> {
       _receiptOutController.text = widget.nextMoneyOutReceipt;
       _selectedBankAccountId = _singleNonCashAccountId;
     }
+    _loadGstRate();
   }
 
   @override
@@ -195,10 +198,51 @@ class TransactionFormState extends State<TransactionForm> {
   /// Money-Out: a contact that isn't GST-registered can't legally charge
   /// GST, so GST is forced to zero regardless of the GL account until a
   /// GST-registered contact is selected. Money-In is unaffected.
+  ///
+  /// This only governs the *default* auto-calculated value — the GST field
+  /// itself stays editable regardless, so an unusual case can be entered
+  /// manually by overriding it (see [_buildAmountsRow] / compact GST field).
   bool get _gstApplicable {
     if (!(_selectedGl?.gstApplicable ?? false)) return false;
     if (!_isMoneyOut) return true;
     return _selectedContact?.gstRegistered ?? false;
+  }
+
+  /// The GST rate effective on the transaction's date, fetched from the
+  /// server (`GET /gst-rates/effective`, mirroring
+  /// `GetEffectiveGstRateUseCase`) rather than a hardcoded 10% — so a rate
+  /// change on a known future/past date is picked up correctly. Loaded via
+  /// [_loadGstRate] (initially, and whenever [_date] changes) rather than
+  /// read synchronously, since fetching it is a network call; defaults to
+  /// 10% until that resolves or if the entity has no rate configured.
+  ///
+  /// [ReferenceDataCache.effectiveGstRate]'s cached-list lookup isn't used
+  /// here because its backing list (`GET /gst-rates`) is administrator-only,
+  /// while every role needs this to price a transaction.
+  double _gstRate = 0.10;
+
+  /// Loads [_gstRate] for the current [_date] only — deliberately does not
+  /// recalculate the amount fields. Called from [initState], where an
+  /// edited transaction's fields are pre-filled from its saved (possibly
+  /// manually-overridden) amounts; recalculating here would silently
+  /// discard that override the moment the form opens. Callers that change
+  /// something the displayed amounts should react to (the date) recalculate
+  /// explicitly afterwards — see [_onDateChanged].
+  Future<void> _loadGstRate() async {
+    final cache = context.read<ReferenceDataCache>();
+    final rate = await cache.fetchEffectiveGstRate(_date);
+    if (!mounted) return;
+    setState(() => _gstRate = rate?.rate ?? 0.10);
+  }
+
+  /// Sets [_date], reloads [_gstRate] for it, then recalculates the amount
+  /// fields — the rate may differ on the new date, so (unlike the initial
+  /// load) the displayed amounts must be refreshed to match.
+  Future<void> _onDateChanged(DateTime picked) async {
+    setState(() => _date = picked);
+    await _loadGstRate();
+    if (!mounted) return;
+    setState(_recalculateGstFields);
   }
 
   bool get _hasUnmatchedContact =>
@@ -224,6 +268,12 @@ class TransactionFormState extends State<TransactionForm> {
       _paymentReferenceController.clear();
       _anchor = _AmountAnchor.total;
     });
+    // Full-layout forms are long-lived (the parent calls reset() after each
+    // save rather than remounting the widget via GlobalKey), so initState's
+    // one-time load isn't enough — re-fetch for the new date, otherwise
+    // every entry after a rate change keeps using whatever was effective
+    // when the form first mounted.
+    _loadGstRate();
   }
 
   void submit() {
@@ -315,7 +365,7 @@ class TransactionFormState extends State<TransactionForm> {
     }
     final amountCents = _dollarsToCents(amount);
     if (_gstApplicable) {
-      final gstCents = (amountCents / 10).round();
+      final gstCents = (amountCents * _gstRate).round();
       _gstController.text = _centsToString(gstCents);
       _totalController.text = _centsToString(amountCents + gstCents);
     } else {
@@ -334,7 +384,8 @@ class TransactionFormState extends State<TransactionForm> {
     }
     final totalCents = _dollarsToCents(total);
     if (_gstApplicable) {
-      final gstCents = (totalCents / 11).round();
+      final rate = _gstRate;
+      final gstCents = (totalCents * rate / (1 + rate)).round();
       _amountController.text = _centsToString(totalCents - gstCents);
       _gstController.text = _centsToString(gstCents);
     } else {
@@ -369,18 +420,19 @@ class TransactionFormState extends State<TransactionForm> {
   /// user last edited, so that field's value is preserved.
   void _recalculateGstFields() {
     if (_gstApplicable) {
+      final rate = _gstRate;
       if (_anchor == _AmountAnchor.total) {
         final total = _parseAmount(_totalController.text);
         if (total == null) return;
         final totalCents = _dollarsToCents(total);
-        final gstCents = (totalCents / 11).round();
+        final gstCents = (totalCents * rate / (1 + rate)).round();
         _amountController.text = _centsToString(totalCents - gstCents);
         _gstController.text = _centsToString(gstCents);
       } else {
         final amount = _parseAmount(_amountController.text);
         if (amount == null) return;
         final amountCents = _dollarsToCents(amount);
-        final gstCents = (amountCents / 10).round();
+        final gstCents = (amountCents * rate).round();
         _gstController.text = _centsToString(gstCents);
         _totalController.text = _centsToString(amountCents + gstCents);
       }
@@ -510,7 +562,7 @@ class TransactionFormState extends State<TransactionForm> {
                 firstDate: DateTime(2020),
                 lastDate: DateTime(2035),
               );
-              if (picked != null) setState(() => _date = picked);
+              if (picked != null) _onDateChanged(picked);
             },
       child: InputDecorator(
         decoration: const InputDecoration(
@@ -745,7 +797,7 @@ class TransactionFormState extends State<TransactionForm> {
         Expanded(
           child: TextFormField(
             controller: _gstController,
-            enabled: !widget.isSaving && _selectedGl != null && _gstApplicable,
+            enabled: !widget.isSaving && _selectedGl != null,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
@@ -753,6 +805,7 @@ class TransactionFormState extends State<TransactionForm> {
             onChanged: _handleGstChanged,
             decoration: decoration.copyWith(
               labelText: 'GST',
+              helperText: _gstApplicable ? null : 'Not normally applicable — override if needed',
               fillColor: _gstApplicable ? null : Colors.grey.shade100,
               filled: !_gstApplicable,
             ),
@@ -1080,7 +1133,7 @@ class TransactionFormState extends State<TransactionForm> {
                   width: 90,
                   child: _stretch(TextFormField(
                     controller: _gstController,
-                    enabled: !widget.isSaving && _gstApplicable,
+                    enabled: !widget.isSaving,
                     expands: true,
                     maxLines: null,
                     textAlignVertical: TextAlignVertical.center,
@@ -1160,7 +1213,7 @@ class TransactionFormState extends State<TransactionForm> {
           firstDate: DateTime(2020),
           lastDate: DateTime(2035),
         );
-        if (picked != null) setState(() => _date = picked);
+        if (picked != null) _onDateChanged(picked);
       },
       decoration: dec.copyWith(labelText: 'Date'),
     );

@@ -594,13 +594,15 @@ Router _dashboardPreferenceRouter(DashboardPreferenceHandler h) {
     ..put('/', _role(requireContributor(), h.handleSave));
 }
 
-// Administrators only.
+// Administrators only, except /effective: every authenticated user needs the
+// current rate to price a transaction, so it's readable by all roles while
+// the rate list/CRUD stay admin-only.
 Router _gstRateRouter(GstRateHandler h) {
   return Router()
     ..get('/', _role(requireAdministrator(), h.handleList))
     ..post('/', _role(requireAdministrator(), h.handleCreate))
     // /effective must be registered before /<id> to avoid shadowing
-    ..get('/effective', _role(requireAdministrator(), h.handleGetEffective))
+    ..get('/effective', h.handleGetEffective)
     ..get('/<id>', _roleId(requireAdministrator(), h.handleGet))
     ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
