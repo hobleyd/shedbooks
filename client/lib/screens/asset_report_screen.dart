@@ -26,6 +26,7 @@ import 'package:provider/provider.dart';
 import '../models/asset_entry.dart';
 import '../models/entity_details.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/asset_pdf_report.dart';
 import '../widgets/pdf_report_components.dart';
@@ -58,33 +59,27 @@ class _AssetReportScreenState extends State<AssetReportScreen> {
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/assets'),
-        client.get('/entity-details'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final assetsFuture = client.get('/assets');
+      await cache.refreshEntityDetails();
+      final assetsRes = await assetsFuture;
       if (!mounted) return;
 
-      if (results[0].statusCode != 200) {
+      if (assetsRes.statusCode != 200) {
         setState(() {
-          _loadError = 'Failed to load assets (${results[0].statusCode})';
+          _loadError = 'Failed to load assets (${assetsRes.statusCode})';
           _loading = false;
         });
         return;
       }
 
-      final assets = (jsonDecode(results[0].body) as List)
+      final assets = (jsonDecode(assetsRes.body) as List)
           .map((e) => AssetEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      EntityDetails? entityDetails;
-      if (results[1].statusCode == 200) {
-        entityDetails = EntityDetails.fromJson(
-            jsonDecode(results[1].body) as Map<String, dynamic>);
-      }
-
       setState(() {
         _assets = assets;
-        _entityDetails = entityDetails;
+        _entityDetails = cache.entityDetails;
         _loading = false;
       });
     } catch (e) {

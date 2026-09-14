@@ -153,11 +153,12 @@ class _BudgetScreenState extends State<BudgetScreen>
       final httpResults = Future.wait([
         client.get('/budgets'),
         client.get('/transactions'),
-        client.get('/entity-details'),
       ]);
       final glLoad = _refCache.ensureGlLoaded();
+      final entityLoad = _refCache.refreshEntityDetails();
       final results = await httpResults;
       await glLoad;
+      await entityLoad;
 
       if (!mounted) return;
 
@@ -176,11 +177,6 @@ class _BudgetScreenState extends State<BudgetScreen>
               .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
               .toList()
           : <TransactionEntry>[];
-      EntityDetails? entityDetails;
-      if (results[2].statusCode == 200) {
-        entityDetails = EntityDetails.fromJson(
-            jsonDecode(results[2].body) as Map<String, dynamic>);
-      }
 
       // Default to current year; fall back to latest available year.
       final now = DateTime.now();
@@ -192,7 +188,7 @@ class _BudgetScreenState extends State<BudgetScreen>
         _selectedYear = year;
         _glAccounts = glList;
         _allTransactions = transactions;
-        _entityDetails = entityDetails;
+        _entityDetails = _refCache.entityDetails;
         _loading = false;
       });
 

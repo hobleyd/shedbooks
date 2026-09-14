@@ -28,6 +28,7 @@ import '../models/general_ledger_entry.dart';
 import '../models/pnl_data.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/pdf_report_components.dart';
 import '../widgets/pnl_pdf_report.dart';
@@ -79,14 +80,13 @@ class _PlReportScreenState extends State<PlReportScreen> {
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/transactions'),
-        client.get('/general-ledger'),
-        client.get('/entity-details'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final txnsFuture = client.get('/transactions');
+      await Future.wait([cache.refreshGl(), cache.refreshEntityDetails()]);
+      final txnsRes = await txnsFuture;
       if (!mounted) return;
 
-      if (results[0].statusCode != 200 || results[1].statusCode != 200) {
+      if (txnsRes.statusCode != 200 || cache.glStatus == LoadStatus.error) {
         setState(() {
           _loadError = 'Failed to load data';
           _loading = false;
@@ -94,24 +94,14 @@ class _PlReportScreenState extends State<PlReportScreen> {
         return;
       }
 
-      final transactions = (jsonDecode(results[0].body) as List)
+      final transactions = (jsonDecode(txnsRes.body) as List)
           .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      final glList = (jsonDecode(results[1].body) as List)
-          .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-
-      EntityDetails? entityDetails;
-      if (results[2].statusCode == 200) {
-        entityDetails = EntityDetails.fromJson(
-            jsonDecode(results[2].body) as Map<String, dynamic>);
-      }
-
       setState(() {
         _allTransactions = transactions;
-        _glMap = {for (final g in glList) g.id: g};
-        _entityDetails = entityDetails;
+        _glMap = {for (final g in cache.glEntries) g.id: g};
+        _entityDetails = cache.entityDetails;
         _loading = false;
       });
     } catch (e) {

@@ -76,25 +76,21 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
       _loadError = null;
     });
     try {
-      final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
-      final results = await Future.wait([client.get('/locked-months')]);
-      await cache.refreshBankAccounts();
-
-      final lockedRes = results[0];
+      await Future.wait([
+        cache.refreshLockedMonths(),
+        cache.refreshBankAccounts(),
+      ]);
 
       if (cache.bankAccountsStatus == LoadStatus.error) {
         throw Exception('Loading bank accounts failed');
       }
-      if (lockedRes.statusCode != 200) {
-        throw Exception('Loading locked months failed (${lockedRes.statusCode})');
+      if (cache.lockedMonthsStatus == LoadStatus.error) {
+        throw Exception('Loading locked months failed');
       }
 
       final accounts = cache.bankAccounts;
-
-      final locked = (jsonDecode(lockedRes.body) as List<dynamic>)
-          .map((j) => LockedMonthEntry.fromJson(j as Map<String, dynamic>))
-          .toList();
+      final locked = cache.lockedMonths;
 
       final map = <String, Map<String, LockedMonthEntry>>{};
       for (final entry in locked) {
@@ -148,7 +144,6 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
         throw Exception(msg);
       }
       await _load();
-      if (mounted) context.read<ReferenceDataCache>().refreshLockedMonths();
     } catch (e) {
       if (mounted) _showSnackbar('Failed to lock: $e');
     } finally {
@@ -203,7 +198,6 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
         throw Exception('Server returned ${res.statusCode}');
       }
       await _load();
-      if (mounted) context.read<ReferenceDataCache>().refreshLockedMonths();
     } catch (e) {
       if (mounted) _showSnackbar('Failed to unlock: $e');
     } finally {

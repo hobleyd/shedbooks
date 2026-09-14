@@ -116,37 +116,26 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
       _loadError = null;
       _saving = false;
     });
-    try {
-      final response = await context.read<ApiClient>().get('/gst-rates');
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        final entries = (jsonDecode(response.body) as List<dynamic>)
-            .map((e) => GstRateEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-        for (final row in _rows) {
-          row.dispose();
-        }
-        setState(() {
-          _rows = entries.map(_GstRow.fromEntry).toList();
-          _pendingDeletions.clear();
-          _isDirty = false;
-          _loading = false;
-        });
-        context.read<NavigationGuard>().setDirty(false);
-      } else {
-        setState(() {
-          _loadError = 'Failed to load (${response.statusCode})';
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadError = 'Failed to load: $e';
-          _loading = false;
-        });
-      }
+    final cache = context.read<ReferenceDataCache>();
+    await cache.refreshGstRates();
+    if (!mounted) return;
+    if (cache.gstRatesStatus == LoadStatus.error) {
+      setState(() {
+        _loadError = cache.gstRatesError ?? 'Failed to load';
+        _loading = false;
+      });
+      return;
     }
+    for (final row in _rows) {
+      row.dispose();
+    }
+    setState(() {
+      _rows = cache.gstRates.map(_GstRow.fromEntry).toList();
+      _pendingDeletions.clear();
+      _isDirty = false;
+      _loading = false;
+    });
+    context.read<NavigationGuard>().setDirty(false);
   }
 
   void _markDirty() {
@@ -249,7 +238,6 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
       }
 
       await _load();
-      if (mounted) context.read<ReferenceDataCache>().refreshGstRates();
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);

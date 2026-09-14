@@ -124,37 +124,26 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
       _loadError = null;
       _saving = false;
     });
-    try {
-      final response = await context.read<ApiClient>().get('/general-ledger');
-      if (!mounted) return;
-      if (response.statusCode == 200) {
-        final entries = (jsonDecode(response.body) as List<dynamic>)
-            .map((e) => GeneralLedgerEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-        for (final row in _rows) {
-          row.dispose();
-        }
-        setState(() {
-          _rows = entries.map(_GlRow.fromEntry).toList();
-          _pendingDeletions.clear();
-          _isDirty = false;
-          _loading = false;
-        });
-        context.read<NavigationGuard>().setDirty(false);
-      } else {
-        setState(() {
-          _loadError = 'Failed to load (${response.statusCode})';
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadError = 'Failed to load: $e';
-          _loading = false;
-        });
-      }
+    final cache = context.read<ReferenceDataCache>();
+    await cache.refreshGl();
+    if (!mounted) return;
+    if (cache.glStatus == LoadStatus.error) {
+      setState(() {
+        _loadError = cache.glError ?? 'Failed to load';
+        _loading = false;
+      });
+      return;
     }
+    for (final row in _rows) {
+      row.dispose();
+    }
+    setState(() {
+      _rows = cache.glEntries.map(_GlRow.fromEntry).toList();
+      _pendingDeletions.clear();
+      _isDirty = false;
+      _loading = false;
+    });
+    context.read<NavigationGuard>().setDirty(false);
   }
 
   void _markDirty() {
@@ -237,7 +226,6 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
       }
 
       await _load();
-      if (mounted) context.read<ReferenceDataCache>().refreshGl();
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);

@@ -155,27 +155,25 @@ class _ContactsScreenState extends State<ContactsScreen> {
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/contacts'),
-        client.get('/transactions'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final txnsFuture = client.get('/transactions');
+      await cache.refreshContacts();
+      final txnsRes = await txnsFuture;
       if (!mounted) return;
 
-      if (results[0].statusCode != 200) {
+      if (cache.contactsStatus == LoadStatus.error) {
         setState(() {
-          _loadError = 'Failed to load (${results[0].statusCode})';
+          _loadError = cache.contactsError ?? 'Failed to load';
           _loading = false;
         });
         return;
       }
 
-      final entries = (jsonDecode(results[0].body) as List<dynamic>)
-          .map((e) => ContactEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final entries = cache.contacts;
 
       final contactsWithTxns = <String>{};
-      if (results[1].statusCode == 200) {
-        final txns = (jsonDecode(results[1].body) as List<dynamic>)
+      if (txnsRes.statusCode == 200) {
+        final txns = (jsonDecode(txnsRes.body) as List<dynamic>)
             .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>));
         for (final t in txns) {
           contactsWithTxns.add(t.contactId);
@@ -400,7 +398,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
       }
 
       await _load();
-      if (mounted) context.read<ReferenceDataCache>().refreshContacts();
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
@@ -462,7 +459,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
       if (!mounted) return;
       if (res.statusCode == 200) {
         await _load();
-        if (mounted) context.read<ReferenceDataCache>().refreshContacts();
       } else {
         setState(() => _merging = false);
         _showSnackbar(_errorMessage(res.body, 'Merge failed (${res.statusCode})'));

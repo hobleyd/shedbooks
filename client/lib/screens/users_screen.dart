@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 
 const _activeThreshold = Duration(minutes: 30);
 
@@ -93,15 +94,12 @@ class _UsersScreenState extends State<UsersScreen> {
 
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/admin/users'),
-        client.get('/entity-details'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final usersFuture = client.get('/admin/users');
+      await cache.refreshEntityDetails();
+      final usersRes = await usersFuture;
 
       if (!mounted) return;
-
-      final usersRes = results[0];
-      final entityRes = results[1];
 
       if (usersRes.statusCode != 200) {
         setState(() => _error = 'Failed to load users (${usersRes.statusCode})');
@@ -109,18 +107,13 @@ class _UsersScreenState extends State<UsersScreen> {
       }
 
       final body = jsonDecode(usersRes.body) as Map<String, dynamic>;
-      String? entityName;
-      if (entityRes.statusCode == 200) {
-        final entityBody = jsonDecode(entityRes.body) as Map<String, dynamic>;
-        entityName = entityBody['name'] as String?;
-      }
 
       setState(() {
         _users = (body['users'] as List)
             .cast<Map<String, dynamic>>()
             .map(_UserPresence.fromJson)
             .toList();
-        _entityName = entityName;
+        _entityName = cache.entityDetails?.name;
         _lastRefreshed = DateTime.now();
       });
     } catch (e) {

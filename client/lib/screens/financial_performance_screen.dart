@@ -27,6 +27,7 @@ import 'package:provider/provider.dart';
 import '../models/entity_details.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/pdf_report_components.dart';
 
@@ -70,14 +71,13 @@ class _FinancialPerformanceScreenState
     });
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/transactions'),
-        client.get('/general-ledger'),
-        client.get('/entity-details'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final txnsFuture = client.get('/transactions');
+      await cache.refreshEntityDetails();
+      final txnsRes = await txnsFuture;
       if (!mounted) return;
 
-      if (results[0].statusCode != 200) {
+      if (txnsRes.statusCode != 200) {
         setState(() {
           _loadError = 'Failed to load data';
           _loading = false;
@@ -85,19 +85,13 @@ class _FinancialPerformanceScreenState
         return;
       }
 
-      final transactions = (jsonDecode(results[0].body) as List)
+      final transactions = (jsonDecode(txnsRes.body) as List)
           .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      EntityDetails? entityDetails;
-      if (results[2].statusCode == 200) {
-        entityDetails = EntityDetails.fromJson(
-            jsonDecode(results[2].body) as Map<String, dynamic>);
-      }
-
       setState(() {
         _allTransactions = transactions;
-        _entityDetails = entityDetails;
+        _entityDetails = cache.entityDetails;
         _loading = false;
       });
     } catch (e) {

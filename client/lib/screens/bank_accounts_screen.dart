@@ -51,34 +51,22 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
       _loading = true;
       _loadError = null;
     });
-    try {
-      final res = await context.read<ApiClient>().get('/bank-accounts');
-      if (!mounted) return;
-
-      if (res.statusCode != 200) {
-        setState(() {
-          _loadError = 'Failed to load (${res.statusCode})';
-          _loading = false;
-        });
-        return;
-      }
-
-      final accounts = (jsonDecode(res.body) as List)
-          .map((e) => BankAccountEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-
+    final cache = context.read<ReferenceDataCache>();
+    await cache.refreshBankAccounts();
+    if (!mounted) return;
+    if (cache.bankAccountsStatus == LoadStatus.error) {
       setState(() {
-        _accounts = accounts;
+        _loadError = cache.bankAccountsError ?? 'Failed to load';
         _loading = false;
       });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadError = 'Failed to load: $e';
-          _loading = false;
-        });
-      }
+      return;
     }
+    setState(() {
+      // Copy — cache.bankAccounts is unmodifiable and _reorder() mutates
+      // this list in place.
+      _accounts = cache.bankAccounts.toList();
+      _loading = false;
+    });
   }
 
   void _reorder(int oldIndex, int newIndex) {
@@ -119,7 +107,6 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
     );
     if (saved == true) {
       _load();
-      context.read<ReferenceDataCache>().refreshBankAccounts();
     }
   }
 
@@ -154,7 +141,6 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
 
       if (res.statusCode == 204) {
         _load();
-        context.read<ReferenceDataCache>().refreshBankAccounts();
       } else {
         String msg = 'Delete failed (${res.statusCode})';
         try {
