@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -378,25 +379,21 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
     try {
       final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
-      final results = await Future.wait([
-        client.get('/transactions'),
-        client.get('/invoices?unpaid=true'),
-        client.get('/bank-imports'),
-      ]);
+      final biFuture = client.get('/bank-imports');
       await Future.wait([
+        cache.refreshTransactions(),
+        cache.refreshInvoices(),
         cache.refreshLockedMonths(),
         cache.refreshEntityDetails(),
         cache.refreshContacts(),
         cache.refreshBankAccountSummaries(),
       ]);
+      final biRes = await biFuture;
 
-      final txRes = results[0];
-      if (txRes.statusCode != 200) {
+      if (cache.transactionsStatus == LoadStatus.error) {
         throw Exception('Failed to load transactions');
       }
-      _allTransactions = (jsonDecode(txRes.body) as List<dynamic>)
-          .map((j) => TransactionEntry.fromJson(j as Map<String, dynamic>))
-          .toList();
+      _allTransactions = cache.transactions.toList();
 
       _lockedMonths = cache.lockedMonths
           .map((e) => '${e.monthYear}:${e.bankAccountId}')
@@ -408,15 +405,11 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         _selectedBankAccountId = cache.bankAccountSummaries.first.id;
       }
 
-      final invRes = results[1];
-      if (invRes.statusCode == 200) {
-        final list = jsonDecode(invRes.body) as List<dynamic>;
-        _unpaidInvoices = list
-            .map((j) => InvoiceEntry.fromJson(j as Map<String, dynamic>))
-            .toList();
+      if (cache.invoicesStatus != LoadStatus.error) {
+        _unpaidInvoices =
+            cache.invoices.where((i) => !i.isPaid).toList();
       }
 
-      final biRes = results[2];
       if (biRes.statusCode == 200) {
         final list = jsonDecode(biRes.body) as List<dynamic>;
         _importedRowKeys = {
@@ -690,6 +683,15 @@ class _BankReconciliationScreenState extends State<BankReconciliationScreen> {
         // Remove from unpaid list so it won't be re-matched on re-entry.
         _unpaidInvoices =
             _unpaidInvoices.where((inv) => inv.id != invoice.id).toList();
+      }
+
+      // Push to the shared cache once for the whole batch (not per-row) so
+      // other screens retained off-screen (transactions, invoices, monthly
+      // report) pick up these bank-match/mark-paid writes.
+      if (mounted) {
+        final cache = context.read<ReferenceDataCache>();
+        unawaited(cache.refreshTransactions());
+        unawaited(cache.refreshInvoices());
       }
     } catch (e) {
       if (mounted) {

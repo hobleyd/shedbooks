@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -340,23 +341,21 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
     });
     try {
       final client = context.read<ApiClient>();
-
-      final txRes = await client.get('/transactions');
-      if (txRes.statusCode != 200) {
-        throw Exception('Failed to load transactions (${txRes.statusCode})');
-      }
-      final txList = jsonDecode(txRes.body) as List<dynamic>;
-      _allTransactions = txList
-          .map((j) => TransactionEntry.fromJson(j as Map<String, dynamic>))
-          .toList();
-
       final cache = context.read<ReferenceDataCache>();
       await Future.wait([
+        cache.refreshTransactions(),
+        cache.refreshInvoices(),
         cache.ensureContactsLoaded(),
         cache.ensureGlLoaded(),
         cache.ensureBankAccountSummariesLoaded(),
       ]);
       if (!mounted) return;
+      if (cache.transactionsStatus == LoadStatus.error) {
+        throw Exception(cache.transactionsError ?? 'Failed to load transactions');
+      }
+      // Copy — cache.transactions is unmodifiable and _openCreateTransaction()
+      // adds a newly created transaction to this list in place.
+      _allTransactions = cache.transactions.toList();
       if (cache.contactsStatus == LoadStatus.error) {
         throw Exception(cache.contactsError ?? 'Failed to load contacts');
       }
@@ -392,12 +391,8 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
             .toSet();
       }
 
-      final invRes = await client.get('/invoices?unpaid=true');
-      if (invRes.statusCode == 200) {
-        final list = jsonDecode(invRes.body) as List<dynamic>;
-        _unpaidInvoices = list
-            .map((j) => InvoiceEntry.fromJson(j as Map<String, dynamic>))
-            .toList();
+      if (cache.invoicesStatus != LoadStatus.error) {
+        _unpaidInvoices = cache.invoices.where((i) => !i.isPaid).toList();
       }
     } catch (e) {
       if (mounted) setState(() => _loadError = e.toString());
@@ -851,7 +846,12 @@ class _ImportCbaScreenState extends State<ImportCbaScreen> {
       return;
     }
 
-    if (mounted) Navigator.of(context).pop(true);
+    if (mounted) {
+      final cache = context.read<ReferenceDataCache>();
+      unawaited(cache.refreshTransactions());
+      unawaited(cache.refreshInvoices());
+      Navigator.of(context).pop(true);
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1328,7 +1328,10 @@ class _CreateTransactionDialogState extends State<_CreateTransactionDialog> {
       }
       final tx = TransactionEntry.fromJson(
           jsonDecode(res.body) as Map<String, dynamic>);
-      if (mounted) Navigator.of(context).pop(tx);
+      if (mounted) {
+        context.read<ReferenceDataCache>().refreshTransactions();
+        Navigator.of(context).pop(tx);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {

@@ -25,15 +25,17 @@ import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/gst_rate_entry.dart';
+import '../models/invoice_entry.dart';
 import '../models/locked_month_entry.dart';
+import '../models/transaction_entry.dart';
 import 'api_client.dart';
 
 /// Load state of a single cached resource.
 enum LoadStatus { idle, loading, loaded, error }
 
 /// Shared cache of reference data (contacts, GL accounts, bank accounts,
-/// GST rates, entity details, locked months) fetched lazily and shared
-/// across every screen via [ChangeNotifier].
+/// GST rates, entity details, locked months, transactions, invoices)
+/// fetched lazily and shared across every screen via [ChangeNotifier].
 ///
 /// Screens read the cached lists via `context.watch`/`context.read` instead
 /// of fetching their own copy, so a write on one screen (e.g. adding a
@@ -90,6 +92,20 @@ class ReferenceDataCache extends ChangeNotifier {
   String? _lockedMonthsError;
   int _lockedMonthsGen = 0;
 
+  // Transactions and invoices are large, frequently-mutated resources
+  // (mutated in 2+ screens, read by half a dozen report screens), so unlike
+  // the mostly-static resources above they're always refreshed rather than
+  // lazily ensured — see refreshTransactions()/refreshInvoices() call sites.
+  LoadStatus _transactionsStatus = LoadStatus.idle;
+  List<TransactionEntry> _transactions = [];
+  String? _transactionsError;
+  int _transactionsGen = 0;
+
+  LoadStatus _invoicesStatus = LoadStatus.idle;
+  List<InvoiceEntry> _invoices = [];
+  String? _invoicesError;
+  int _invoicesGen = 0;
+
   LoadStatus get contactsStatus => _contactsStatus;
   List<ContactEntry> get contacts => List.unmodifiable(_contacts);
   String? get contactsError => _contactsError;
@@ -119,6 +135,14 @@ class ReferenceDataCache extends ChangeNotifier {
   List<LockedMonthEntry> get lockedMonths => List.unmodifiable(_lockedMonths);
   String? get lockedMonthsError => _lockedMonthsError;
 
+  LoadStatus get transactionsStatus => _transactionsStatus;
+  List<TransactionEntry> get transactions => List.unmodifiable(_transactions);
+  String? get transactionsError => _transactionsError;
+
+  LoadStatus get invoicesStatus => _invoicesStatus;
+  List<InvoiceEntry> get invoices => List.unmodifiable(_invoices);
+  String? get invoicesError => _invoicesError;
+
   /// CashFlow Manager import: external GL code → matched generalLedgerId.
   ///
   /// Populated as the user resolves unmatched codes while importing a
@@ -147,6 +171,34 @@ class ReferenceDataCache extends ChangeNotifier {
     if (candidates.isEmpty) return null;
     candidates.sort((a, b) => b.effectiveFrom.compareTo(a.effectiveFrom));
     return candidates.first;
+  }
+
+  /// Fetches the GST rate effective at [date] directly via `GET
+  /// /gst-rates/effective` rather than [effectiveGstRate]'s cached-list
+  /// lookup. The list (`GET /gst-rates`, backing [effectiveGstRate]) and
+  /// rate management are administrator-only, but every role needs the
+  /// current rate to price a transaction — `/gst-rates/effective` is
+  /// readable by any authenticated user for exactly that reason. Callers
+  /// that can't assume administrator access (e.g. the transaction form)
+  /// must use this instead of [effectiveGstRate].
+  ///
+  /// [date] is sent as a bare local calendar date (`YYYY-MM-DD`, matching
+  /// how transaction dates are sent elsewhere in this app) rather than
+  /// `.toUtc().toIso8601String()` — the server compares it against a DATE
+  /// column, and converting local midnight to UTC first would shift it back
+  /// a day for any positive UTC offset, landing on the wrong side of a
+  /// rate's effective-from boundary.
+  /// Returns null on any failure (including no rate configured yet).
+  Future<GstRateEntry?> fetchEffectiveGstRate(DateTime date) async {
+    final at =
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    try {
+      final res = await _apiClient.get('/gst-rates/effective?at=$at');
+      if (res.statusCode != 200) return null;
+      return GstRateEntry.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> ensureContactsLoaded() => _isLoadedOrLoading(_contactsStatus)
@@ -186,6 +238,17 @@ class ReferenceDataCache extends ChangeNotifier {
           ? Future.value()
           : _loadLockedMonths();
   Future<void> refreshLockedMonths() => _loadLockedMonths();
+
+  Future<void> ensureTransactionsLoaded() =>
+      _isLoadedOrLoading(_transactionsStatus)
+          ? Future.value()
+          : _loadTransactions();
+  Future<void> refreshTransactions() => _loadTransactions();
+
+  Future<void> ensureInvoicesLoaded() => _isLoadedOrLoading(_invoicesStatus)
+      ? Future.value()
+      : _loadInvoices();
+  Future<void> refreshInvoices() => _loadInvoices();
 
   bool _isLoadedOrLoading(LoadStatus status) =>
       status == LoadStatus.loaded || status == LoadStatus.loading;
@@ -368,6 +431,56 @@ class ReferenceDataCache extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _loadTransactions() async {
+    final epoch = _epoch;
+    final gen = ++_transactionsGen;
+    _transactionsStatus = LoadStatus.loading;
+    try {
+      final res = await _apiClient.get('/transactions');
+      if (epoch != _epoch || gen != _transactionsGen) return;
+      if (res.statusCode != 200) {
+        _transactionsStatus = LoadStatus.error;
+        _transactionsError = 'Failed to load transactions (${res.statusCode})';
+      } else {
+        _transactions = (jsonDecode(res.body) as List)
+            .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _transactionsStatus = LoadStatus.loaded;
+        _transactionsError = null;
+      }
+    } catch (e) {
+      if (epoch != _epoch || gen != _transactionsGen) return;
+      _transactionsStatus = LoadStatus.error;
+      _transactionsError = 'Failed to load transactions: $e';
+    }
+    notifyListeners();
+  }
+
+  Future<void> _loadInvoices() async {
+    final epoch = _epoch;
+    final gen = ++_invoicesGen;
+    _invoicesStatus = LoadStatus.loading;
+    try {
+      final res = await _apiClient.get('/invoices');
+      if (epoch != _epoch || gen != _invoicesGen) return;
+      if (res.statusCode != 200) {
+        _invoicesStatus = LoadStatus.error;
+        _invoicesError = 'Failed to load invoices (${res.statusCode})';
+      } else {
+        _invoices = (jsonDecode(res.body) as List)
+            .map((e) => InvoiceEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+        _invoicesStatus = LoadStatus.loaded;
+        _invoicesError = null;
+      }
+    } catch (e) {
+      if (epoch != _epoch || gen != _invoicesGen) return;
+      _invoicesStatus = LoadStatus.error;
+      _invoicesError = 'Failed to load invoices: $e';
+    }
+    notifyListeners();
+  }
+
   /// Clears every cached resource back to [LoadStatus.idle] and bumps the
   /// epoch so any in-flight load from a previous session (e.g. one still
   /// awaiting its GET at logout) cannot write stale or cross-tenant data
@@ -395,6 +508,12 @@ class ReferenceDataCache extends ChangeNotifier {
     _lockedMonthsStatus = LoadStatus.idle;
     _lockedMonths = [];
     _lockedMonthsError = null;
+    _transactionsStatus = LoadStatus.idle;
+    _transactions = [];
+    _transactionsError = null;
+    _invoicesStatus = LoadStatus.idle;
+    _invoices = [];
+    _invoicesError = null;
     _cashflowManagerGlMappings.clear();
     notifyListeners();
   }

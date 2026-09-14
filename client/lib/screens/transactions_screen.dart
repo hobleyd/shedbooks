@@ -189,14 +189,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       _loadError = null;
     });
     try {
-      final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
-      final results = await Future.wait([client.get('/transactions')]);
       // Reference data is shared across every screen via the cache;
       // refreshing it here keeps this screen's historical "reload
       // everything" behavior while also propagating the fresh data to any
       // other screen watching the cache.
       await Future.wait([
+        cache.refreshTransactions(),
         cache.refreshContacts(),
         cache.refreshGl(),
         cache.refreshBankAccounts(),
@@ -207,7 +206,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
       if (!mounted) return;
 
-      if (results[0].statusCode != 200 ||
+      if (cache.transactionsStatus == LoadStatus.error ||
           cache.contactsStatus == LoadStatus.error ||
           cache.glStatus == LoadStatus.error) {
         setState(() {
@@ -217,9 +216,9 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         return;
       }
 
-      final transactions = (jsonDecode(results[0].body) as List)
-          .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
-          .toList()
+      // Copy — cache.transactions is unmodifiable and _applySort() (and the
+      // date sort below) mutate this list in place.
+      final transactions = cache.transactions.toList()
         ..sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
 
       setState(() {

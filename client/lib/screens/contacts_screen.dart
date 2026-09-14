@@ -24,7 +24,6 @@ import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
 import '../models/contact_entry.dart';
-import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 import '../services/reference_data_cache.dart';
@@ -154,11 +153,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
       _merging = false;
     });
     try {
-      final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
-      final txnsFuture = client.get('/transactions');
-      await cache.refreshContacts();
-      final txnsRes = await txnsFuture;
+      await Future.wait([cache.refreshContacts(), cache.refreshTransactions()]);
       if (!mounted) return;
 
       if (cache.contactsStatus == LoadStatus.error) {
@@ -171,14 +167,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
       final entries = cache.contacts;
 
-      final contactsWithTxns = <String>{};
-      if (txnsRes.statusCode == 200) {
-        final txns = (jsonDecode(txnsRes.body) as List<dynamic>)
-            .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>));
-        for (final t in txns) {
-          contactsWithTxns.add(t.contactId);
-        }
-      }
+      final contactsWithTxns = <String>{
+        for (final t in cache.transactions) t.contactId,
+      };
 
       for (final row in _rows) {
         row.dispose();

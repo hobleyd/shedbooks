@@ -108,18 +108,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
       final results = await Future.wait([
-        client.get('/transactions'),
         client.get('/dashboard-preferences'),
         client.get('/closing-bank-balances'),
       ]);
-      // GL accounts and locked months are required; bank accounts are
-      // admin-only and may legitimately fail to load for other roles.
-      await Future.wait([cache.refreshGl(), cache.refreshLockedMonths()]);
+      // GL accounts, transactions and locked months are required; bank
+      // accounts are admin-only and may legitimately fail to load for other
+      // roles.
+      await Future.wait(
+          [cache.refreshGl(), cache.refreshTransactions(), cache.refreshLockedMonths()]);
       unawaited(cache.refreshBankAccounts());
       if (!mounted) return;
 
       if (results.any((r) => r.statusCode != 200) ||
           cache.glStatus == LoadStatus.error ||
+          cache.transactionsStatus == LoadStatus.error ||
           cache.lockedMonthsStatus == LoadStatus.error) {
         final bad = results.firstWhere((r) => r.statusCode != 200,
             orElse: () => results[0]);
@@ -130,13 +132,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return;
       }
 
-      final transactions = (jsonDecode(results[0].body) as List)
-          .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-
+      final transactions = cache.transactions;
       final glEntries = cache.glEntries;
 
-      final prefJson = jsonDecode(results[1].body) as Map<String, dynamic>;
+      final prefJson = jsonDecode(results[0].body) as Map<String, dynamic>;
       final rawPairs = (prefJson['selectedAccountPairs'] as List?) ?? [];
       final savedPairs = rawPairs
           .whereType<Map<String, dynamic>>()
@@ -149,7 +148,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               glEntries.any((g) => g.id == p.expenseId))
           .toList();
 
-      final closingBalances = (jsonDecode(results[2].body) as List)
+      final closingBalances = (jsonDecode(results[1].body) as List)
           .map((e) =>
               ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
           .toList();

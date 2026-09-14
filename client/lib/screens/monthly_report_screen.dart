@@ -97,12 +97,12 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       final reportYear = DateTime(now.year, now.month - 1).year;
 
       final results = await Future.wait([
-        client.get('/transactions'),
         client.get('/closing-bank-balances'),
         client.get('/budgets/$reportYear'),
         client.get('/capex-requests'),
       ]);
       final cacheRefreshes = [
+        cache.refreshTransactions(),
         cache.refreshEntityDetails(),
         cache.refreshGl(),
         cache.refreshBankAccounts(),
@@ -120,8 +120,9 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       }
       if (!mounted) return;
 
-      // Only transactions/closing-balances (0-1) are required; budget (2) is optional.
-      final failed = results.take(2).any((r) => r.statusCode != 200) ||
+      // Closing balances (0) is required; budget (1) is optional.
+      final failed = results[0].statusCode != 200 ||
+          cache.transactionsStatus == LoadStatus.error ||
           cache.entityDetailsStatus == LoadStatus.error ||
           cache.glStatus == LoadStatus.error ||
           cache.bankAccountsStatus == LoadStatus.error ||
@@ -135,19 +136,17 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
       }
 
       setState(() {
-        _allTransactions = (jsonDecode(results[0].body) as List)
-            .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _closingBalances = (jsonDecode(results[1].body) as List)
+        _allTransactions = cache.transactions;
+        _closingBalances = (jsonDecode(results[0].body) as List)
             .map((e) => ClosingBankBalanceEntry.fromJson(e as Map<String, dynamic>))
             .toList();
-        if (results[2].statusCode == 200) {
+        if (results[1].statusCode == 200) {
           _budget = BudgetEntry.fromJson(
-            jsonDecode(results[2].body) as Map<String, dynamic>,
+            jsonDecode(results[1].body) as Map<String, dynamic>,
           );
         }
-        if (results[3].statusCode == 200) {
-          _capexRequests = (jsonDecode(results[3].body) as List)
+        if (results[2].statusCode == 200) {
+          _capexRequests = (jsonDecode(results[2].body) as List)
               .map((e) => CapexRequestEntry.fromJson(e as Map<String, dynamic>))
               .toList();
         }

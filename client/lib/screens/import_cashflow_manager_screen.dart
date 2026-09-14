@@ -338,6 +338,7 @@ class _ImportCashflowManagerScreenState
       }
 
       if (!mounted) return;
+      if (saved > 0) context.read<ReferenceDataCache>().refreshTransactions();
       setState(() {
         _saving = false;
         _saveStatus = null;

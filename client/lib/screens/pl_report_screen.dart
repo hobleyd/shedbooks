@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -27,7 +25,6 @@ import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/pnl_data.dart';
 import '../models/transaction_entry.dart';
-import '../services/api_client.dart';
 import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/pdf_report_components.dart';
@@ -79,14 +76,16 @@ class _PlReportScreenState extends State<PlReportScreen> {
       _loadError = null;
     });
     try {
-      final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
-      final txnsFuture = client.get('/transactions');
-      await Future.wait([cache.refreshGl(), cache.refreshEntityDetails()]);
-      final txnsRes = await txnsFuture;
+      await Future.wait([
+        cache.refreshTransactions(),
+        cache.refreshGl(),
+        cache.refreshEntityDetails(),
+      ]);
       if (!mounted) return;
 
-      if (txnsRes.statusCode != 200 || cache.glStatus == LoadStatus.error) {
+      if (cache.transactionsStatus == LoadStatus.error ||
+          cache.glStatus == LoadStatus.error) {
         setState(() {
           _loadError = 'Failed to load data';
           _loading = false;
@@ -94,12 +93,8 @@ class _PlReportScreenState extends State<PlReportScreen> {
         return;
       }
 
-      final transactions = (jsonDecode(txnsRes.body) as List)
-          .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-
       setState(() {
-        _allTransactions = transactions;
+        _allTransactions = cache.transactions;
         _glMap = {for (final g in cache.glEntries) g.id: g};
         _entityDetails = cache.entityDetails;
         _loading = false;

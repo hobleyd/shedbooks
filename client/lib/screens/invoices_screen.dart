@@ -106,30 +106,24 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     try {
       final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
-      final results = await Future.wait([
-        client.get('/invoices/next-number'),
-        client.get('/invoices'),
-      ]);
+      final nextNumberFuture = client.get('/invoices/next-number');
       await Future.wait([
+        cache.refreshInvoices(),
         cache.refreshGl(),
         cache.refreshGstRates(),
         cache.refreshEntityDetails(),
         cache.refreshContacts(),
         cache.refreshBankAccountSummaries(),
       ]);
+      final nextNumberRes = await nextNumberFuture;
 
       if (!mounted) return;
 
-      if (results[0].statusCode == 200) {
-        _nextInvoiceNumber =
-            (jsonDecode(results[0].body) as Map<String, dynamic>)['invoiceNumber'] as String;
+      if (nextNumberRes.statusCode == 200) {
+        _nextInvoiceNumber = (jsonDecode(nextNumberRes.body)
+            as Map<String, dynamic>)['invoiceNumber'] as String;
       }
-      if (results[1].statusCode == 200) {
-        final List<dynamic> data = jsonDecode(results[1].body);
-        _invoices = data
-            .map((e) => InvoiceEntry.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
+      _invoices = cache.invoices;
 
       setState(() => _loading = false);
     } catch (e) {
@@ -143,23 +137,18 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Future<void> _refreshInvoices() async {
     try {
       final client = context.read<ApiClient>();
-      final results = await Future.wait([
-        client.get('/invoices'),
-        client.get('/invoices/next-number'),
-      ]);
+      final cache = context.read<ReferenceDataCache>();
+      final nextNumberFuture = client.get('/invoices/next-number');
+      await cache.refreshInvoices();
+      final nextNumberRes = await nextNumberFuture;
       if (!mounted) return;
-      if (results[0].statusCode == 200) {
-        final List<dynamic> data = jsonDecode(results[0].body);
-        setState(() {
-          _invoices = data
-              .map((e) => InvoiceEntry.fromJson(e as Map<String, dynamic>))
-              .toList();
-        });
+      if (cache.invoicesStatus != LoadStatus.error) {
+        setState(() => _invoices = cache.invoices);
       }
-      if (results[1].statusCode == 200) {
+      if (nextNumberRes.statusCode == 200) {
         setState(() {
-          _nextInvoiceNumber =
-              (jsonDecode(results[1].body) as Map<String, dynamic>)['invoiceNumber'] as String;
+          _nextInvoiceNumber = (jsonDecode(nextNumberRes.body)
+              as Map<String, dynamic>)['invoiceNumber'] as String;
         });
       }
     } catch (_) {}

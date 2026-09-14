@@ -150,14 +150,13 @@ class _BudgetScreenState extends State<BudgetScreen>
     });
     try {
       final client = context.read<ApiClient>();
-      final httpResults = Future.wait([
-        client.get('/budgets'),
-        client.get('/transactions'),
-      ]);
+      final budgetsFuture = client.get('/budgets');
       final glLoad = _refCache.ensureGlLoaded();
+      final txnLoad = _refCache.refreshTransactions();
       final entityLoad = _refCache.refreshEntityDetails();
-      final results = await httpResults;
+      final budgetsRes = await budgetsFuture;
       await glLoad;
+      await txnLoad;
       await entityLoad;
 
       if (!mounted) return;
@@ -170,13 +169,11 @@ class _BudgetScreenState extends State<BudgetScreen>
         return;
       }
 
-      final years = (jsonDecode(results[0].body) as List).cast<int>();
+      final years = (jsonDecode(budgetsRes.body) as List).cast<int>();
       final glList = _refCache.glEntries;
-      final transactions = results[1].statusCode == 200
-          ? (jsonDecode(results[1].body) as List)
-              .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : <TransactionEntry>[];
+      final transactions = _refCache.transactionsStatus == LoadStatus.error
+          ? <TransactionEntry>[]
+          : _refCache.transactions;
 
       // Default to current year; fall back to latest available year.
       final now = DateTime.now();

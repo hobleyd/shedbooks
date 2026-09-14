@@ -15,7 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
-import 'dart:convert';
 import 'dart:math' show max;
 
 import 'package:flutter/material.dart';
@@ -26,7 +25,6 @@ import 'package:provider/provider.dart';
 
 import '../models/entity_details.dart';
 import '../models/transaction_entry.dart';
-import '../services/api_client.dart';
 import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/pdf_report_components.dart';
@@ -70,14 +68,12 @@ class _FinancialPerformanceScreenState
       _loadError = null;
     });
     try {
-      final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
-      final txnsFuture = client.get('/transactions');
-      await cache.refreshEntityDetails();
-      final txnsRes = await txnsFuture;
+      await Future.wait(
+          [cache.refreshTransactions(), cache.refreshEntityDetails()]);
       if (!mounted) return;
 
-      if (txnsRes.statusCode != 200) {
+      if (cache.transactionsStatus == LoadStatus.error) {
         setState(() {
           _loadError = 'Failed to load data';
           _loading = false;
@@ -85,12 +81,8 @@ class _FinancialPerformanceScreenState
         return;
       }
 
-      final transactions = (jsonDecode(txnsRes.body) as List)
-          .map((e) => TransactionEntry.fromJson(e as Map<String, dynamic>))
-          .toList();
-
       setState(() {
-        _allTransactions = transactions;
+        _allTransactions = cache.transactions;
         _entityDetails = cache.entityDetails;
         _loading = false;
       });
