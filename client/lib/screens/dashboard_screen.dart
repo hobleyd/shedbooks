@@ -123,10 +123,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
           cache.glStatus == LoadStatus.error ||
           cache.transactionsStatus == LoadStatus.error ||
           cache.lockedMonthsStatus == LoadStatus.error) {
-        final bad = results.firstWhere((r) => r.statusCode != 200,
-            orElse: () => results[0]);
+        String message;
+        final badRes =
+            results.where((r) => r.statusCode != 200).firstOrNull;
+        if (badRes != null) {
+          message = 'Failed to load (${badRes.statusCode})';
+        } else if (cache.transactionsStatus == LoadStatus.error) {
+          message = cache.transactionsError ?? 'Failed to load transactions';
+        } else if (cache.glStatus == LoadStatus.error) {
+          message = cache.glError ?? 'Failed to load general ledger';
+        } else {
+          message = cache.lockedMonthsError ?? 'Failed to load locked months';
+        }
         setState(() {
-          _loadError = 'Failed to load (${bad.statusCode})';
+          _loadError = message;
           _loading = false;
         });
         return;

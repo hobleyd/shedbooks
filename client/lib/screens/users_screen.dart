@@ -96,7 +96,10 @@ class _UsersScreenState extends State<UsersScreen> {
       final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
       final usersFuture = client.get('/admin/users');
-      await cache.refreshEntityDetails();
+      // ensureLoaded (not refresh) — this runs on a 30s polling timer for
+      // the user-presence list; the entity name doesn't need re-fetching
+      // (and re-notifying every cache listener app-wide) that often.
+      await cache.ensureEntityDetailsLoaded();
       final usersRes = await usersFuture;
 
       if (!mounted) return;
