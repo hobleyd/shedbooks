@@ -127,6 +127,7 @@ import '../application/capex_request/delete_capex_request_use_case.dart';
 import '../application/capex_request/get_capex_request_use_case.dart';
 import '../application/capex_request/get_next_capex_request_no_use_case.dart';
 import '../application/capex_request/list_capex_requests_use_case.dart';
+import '../application/capex_request/set_capex_request_executed_date_use_case.dart';
 import '../application/capex_request/update_capex_request_use_case.dart';
 import '../application/asset/create_asset_use_case.dart';
 import '../application/asset/delete_asset_use_case.dart';
@@ -389,6 +390,7 @@ Handler buildRouter({
     delete: DeleteCapexRequestUseCase(capexRequestRepository),
     decide: DecideCapexRequestUseCase(capexRequestRepository),
     nextNumber: GetNextCapexRequestNoUseCase(capexRequestRepository),
+    setExecutedDate: SetCapexRequestExecutedDateUseCase(capexRequestRepository),
   );
 
   final cardDavPathPrefix =
@@ -726,6 +728,7 @@ Router _capexRequestRouter(CapexRequestHandler h) {
     ..get('/<id>', h.handleGet)
     ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
     ..delete('/<id>', _roleId(requireContributor(), h.handleDelete))
+    ..put('/<id>/executed-date', _roleId(requireContributor(), h.handleSetExecutedDate))
     ..post(
       '/<id>/decision',
       (Request req, String id) => _role(

@@ -39,6 +39,7 @@ class CapexRequestResponse {
   final String? decisionByName;
   final String? decisionAt;
   final String? decisionNotes;
+  final String? executedDate;
   final String createdAt;
   final String updatedAt;
 
@@ -61,6 +62,7 @@ class CapexRequestResponse {
     this.decisionByName,
     this.decisionAt,
     this.decisionNotes,
+    this.executedDate,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -84,6 +86,7 @@ class CapexRequestResponse {
         decisionByName: entity.decisionByName,
         decisionAt: entity.decisionAt?.toUtc().toIso8601String(),
         decisionNotes: entity.decisionNotes,
+        executedDate: entity.executedDate?.toIso8601String().substring(0, 10),
         createdAt: entity.createdAt.toUtc().toIso8601String(),
         updatedAt: entity.updatedAt.toUtc().toIso8601String(),
       );
@@ -107,6 +110,7 @@ class CapexRequestResponse {
         'decisionByName': decisionByName,
         'decisionAt': decisionAt,
         'decisionNotes': decisionNotes,
+        'executedDate': executedDate,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };

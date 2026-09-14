@@ -78,6 +78,17 @@ abstract interface class ICapexRequestRepository {
     String? decisionNotes,
   });
 
+  /// Records (or clears, when [executedDate] is null) the date the capex
+  /// request with [id] was actually purchased/carried out.
+  ///
+  /// Throws [CapexRequestNotFoundException] if the request does not exist
+  /// or belongs to a different entity.
+  Future<CapexRequest> setExecutedDate({
+    required String id,
+    required String entityId,
+    DateTime? executedDate,
+  });
+
   /// Soft-deletes the capex request with [id].
   ///
   /// Throws [CapexRequestNotFoundException] if the request does not exist

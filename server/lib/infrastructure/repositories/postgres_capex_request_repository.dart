@@ -35,7 +35,7 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
       'what_is_requested, need_or_benefit, alternatives_considered, '
       'purchase_cost_cents, ongoing_costs_cents, other_costs_cents, cost_notes, '
       'total_amount_cents, quotes_received_count, status, decision_by_name, '
-      'decision_at, decision_notes, created_at, updated_at, deleted_at';
+      'decision_at, decision_notes, executed_date, created_at, updated_at, deleted_at';
 
   @override
   Future<CapexRequest> create({
@@ -209,6 +209,30 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
   }
 
   @override
+  Future<CapexRequest> setExecutedDate({
+    required String id,
+    required String entityId,
+    DateTime? executedDate,
+  }) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        UPDATE capex_requests
+        SET executed_date = @executedDate::date,
+            updated_at    = NOW()
+        WHERE id = @id::uuid AND entity_id = @entityId AND deleted_at IS NULL
+        RETURNING $_cols
+      '''),
+      parameters: {
+        'id': id,
+        'entityId': entityId,
+        'executedDate': executedDate == null ? null : _dateStr(executedDate),
+      },
+    );
+    if (result.isEmpty) throw CapexRequestNotFoundException(id);
+    return _mapRow(result.first.toColumnMap());
+  }
+
+  @override
   Future<void> delete(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -242,6 +266,7 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
   static CapexRequest _mapRow(Map<String, dynamic> row) {
     final requestDate = row['request_date'] as DateTime;
     final decisionAt = row['decision_at'] as DateTime?;
+    final executedDate = row['executed_date'] as DateTime?;
     return CapexRequest(
       id: row['id'].toString(),
       entityId: row['entity_id'] as String,
@@ -267,6 +292,9 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
       decisionByName: row['decision_by_name'] as String?,
       decisionAt: decisionAt,
       decisionNotes: row['decision_notes'] as String?,
+      executedDate: executedDate == null
+          ? null
+          : DateTime.utc(executedDate.year, executedDate.month, executedDate.day),
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,

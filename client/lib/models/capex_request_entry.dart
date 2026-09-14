@@ -35,6 +35,7 @@ class CapexRequestEntry {
   final String? decisionByName;
   final String? decisionAt;
   final String? decisionNotes;
+  final String? executedDate;
 
   const CapexRequestEntry({
     required this.id,
@@ -55,6 +56,7 @@ class CapexRequestEntry {
     this.decisionByName,
     this.decisionAt,
     this.decisionNotes,
+    this.executedDate,
   });
 
   bool get isPending => status == 'pending';
@@ -81,6 +83,7 @@ class CapexRequestEntry {
       decisionByName: json['decisionByName'] as String?,
       decisionAt: json['decisionAt'] as String?,
       decisionNotes: json['decisionNotes'] as String?,
+      executedDate: json['executedDate'] as String?,
     );
   }
 }

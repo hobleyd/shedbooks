@@ -84,6 +84,12 @@ class CapexRequest {
   /// Notes recorded with the decision; null if none.
   final String? decisionNotes;
 
+  /// Date the approved purchase was actually carried out; null if not yet
+  /// executed. Tracked independently of [decisionAt] — approval and
+  /// execution can happen months apart, or execution can be recorded before
+  /// the corresponding decision is finalised.
+  final DateTime? executedDate;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -113,6 +119,7 @@ class CapexRequest {
     this.decisionByName,
     this.decisionAt,
     this.decisionNotes,
+    this.executedDate,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,

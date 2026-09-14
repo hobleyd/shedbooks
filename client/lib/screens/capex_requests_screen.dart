@@ -86,6 +86,15 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
   void _applySort() {
     if (_sortColumn == null) return;
     _requests.sort((a, b) {
+      if (_sortColumn == 6) {
+        final ad = a.executedDate;
+        final bd = b.executedDate;
+        if (ad == null && bd == null) return 0;
+        if (ad == null) return 1;
+        if (bd == null) return -1;
+        final cmp = ad.compareTo(bd);
+        return _sortAscending ? cmp : -cmp;
+      }
       final int cmp = switch (_sortColumn) {
         0 => a.requestNo.toLowerCase().compareTo(b.requestNo.toLowerCase()),
         1 => a.requestDate.compareTo(b.requestDate),
@@ -139,6 +148,14 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
         defaultDecisionByName:
             authState.user?.name ?? authState.user?.email ?? '',
       ),
+    );
+    if (saved == true) _load();
+  }
+
+  Future<void> _setExecutedDate(CapexRequestEntry entry) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _ExecutedDateDialog(entry: entry),
     );
     if (saved == true) _load();
   }
@@ -287,7 +304,8 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
               _sortHeader('Description', 3),
               _sortHeader('Total', 4, width: 90, alignment: Alignment.centerRight),
               _sortHeader('Status', 5, width: 100, alignment: Alignment.center),
-              const SizedBox(width: 200),
+              _sortHeader('Executed', 6, width: 90, alignment: Alignment.center),
+              const SizedBox(width: 232),
             ],
           ),
         ),
@@ -373,7 +391,14 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
           ),
           SizedBox(width: 100, child: Center(child: _statusChip(entry.status))),
           SizedBox(
-            width: 200,
+            width: 90,
+            child: Center(
+              child: Text(entry.executedDate ?? '—',
+                  style: Theme.of(context).textTheme.bodyMedium),
+            ),
+          ),
+          SizedBox(
+            width: 232,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -400,6 +425,15 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
                     onPressed: () => _decide(entry, 'rejected'),
                   ),
                 ],
+                if (canEdit)
+                  IconButton(
+                    icon: Icon(Icons.event_available_outlined,
+                        size: 18, color: Colors.blueGrey.shade700),
+                    tooltip: entry.executedDate == null
+                        ? 'Set Executed Date'
+                        : 'Update Executed Date',
+                    onPressed: () => _setExecutedDate(entry),
+                  ),
                 IconButton(
                   icon: Icon(Icons.delete_outline,
                       size: 18,
@@ -656,6 +690,18 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
               children: [
                 if (e != null && !e.isPending) ...[
                   _decisionBanner(e),
+                  const SizedBox(height: 14),
+                ],
+                if (e != null && e.executedDate != null) ...[
+                  Row(
+                    children: [
+                      Icon(Icons.event_available_outlined,
+                          size: 16, color: Colors.blueGrey.shade700),
+                      const SizedBox(width: 6),
+                      Text(
+                          'Executed on ${DateFormat('dd/MM/yyyy').format(DateTime.parse(e.executedDate!))}'),
+                    ],
+                  ),
                   const SizedBox(height: 14),
                 ],
                 Row(
@@ -1047,6 +1093,133 @@ class _DecisionDialogState extends State<_DecisionDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
               : Text(_approving ? 'Approve' : 'Reject'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Set / clear executed date dialog ────────────────────────────────────────
+
+class _ExecutedDateDialog extends StatefulWidget {
+  final CapexRequestEntry entry;
+
+  const _ExecutedDateDialog({required this.entry});
+
+  @override
+  State<_ExecutedDateDialog> createState() => _ExecutedDateDialogState();
+}
+
+class _ExecutedDateDialogState extends State<_ExecutedDateDialog> {
+  DateTime? _executedDate;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _executedDate = widget.entry.executedDate != null
+        ? DateTime.parse(widget.entry.executedDate!)
+        : null;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _executedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _executedDate = picked);
+  }
+
+  Future<void> _submit() async {
+    setState(() => _saving = true);
+    try {
+      final body = jsonEncode({
+        'executedDate': _executedDate == null
+            ? null
+            : DateFormat('yyyy-MM-dd').format(_executedDate!),
+      });
+      final res = await context
+          .read<ApiClient>()
+          .put('/capex-requests/${widget.entry.id}/executed-date', body);
+      if (!mounted) return;
+
+      if (res.statusCode == 200) {
+        Navigator.of(context).pop(true);
+      } else {
+        String msg = 'Failed (${res.statusCode})';
+        try {
+          msg = (jsonDecode(res.body) as Map)['error'] as String? ?? msg;
+        } catch (_) {}
+        setState(() => _saving = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Executed Date'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${widget.entry.requestNo} — ${widget.entry.description}'),
+            const SizedBox(height: 14),
+            InkWell(
+              onTap: _saving ? null : _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Executed Date',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                ),
+                child: Text(_executedDate == null
+                    ? 'Not set'
+                    : DateFormat('dd/MM/yyyy').format(_executedDate!)),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        if (_executedDate != null)
+          TextButton(
+            onPressed: _saving
+                ? null
+                : () => setState(() => _executedDate = null),
+            child: const Text('Clear'),
+          ),
+        FilledButton(
+          onPressed: _saving ? null : _submit,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Save'),
         ),
       ],
     );

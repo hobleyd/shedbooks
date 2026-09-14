@@ -26,6 +26,7 @@ import '../../application/capex_request/delete_capex_request_use_case.dart';
 import '../../application/capex_request/get_capex_request_use_case.dart';
 import '../../application/capex_request/get_next_capex_request_no_use_case.dart';
 import '../../application/capex_request/list_capex_requests_use_case.dart';
+import '../../application/capex_request/set_capex_request_executed_date_use_case.dart';
 import '../../application/capex_request/update_capex_request_use_case.dart';
 import '../../domain/entities/capex_request.dart';
 import '../../domain/exceptions/capex_request_exception.dart';
@@ -33,6 +34,7 @@ import '../audit_changes.dart';
 import '../dto/capex_request_response.dart';
 import '../dto/create_capex_request_request.dart';
 import '../dto/decide_capex_request_request.dart';
+import '../dto/set_capex_request_executed_date_request.dart';
 import 'handler_diff.dart';
 
 /// Shelf request handlers for the /capex-requests REST resource.
@@ -44,6 +46,7 @@ class CapexRequestHandler {
   final DeleteCapexRequestUseCase _delete;
   final DecideCapexRequestUseCase _decide;
   final GetNextCapexRequestNoUseCase _nextNumber;
+  final SetCapexRequestExecutedDateUseCase _setExecutedDate;
 
   const CapexRequestHandler({
     required CreateCapexRequestUseCase create,
@@ -53,13 +56,15 @@ class CapexRequestHandler {
     required DeleteCapexRequestUseCase delete,
     required DecideCapexRequestUseCase decide,
     required GetNextCapexRequestNoUseCase nextNumber,
+    required SetCapexRequestExecutedDateUseCase setExecutedDate,
   })  : _create = create,
         _get = get,
         _list = list,
         _update = update,
         _delete = delete,
         _decide = decide,
-        _nextNumber = nextNumber;
+        _nextNumber = nextNumber,
+        _setExecutedDate = setExecutedDate;
 
   /// GET /capex-requests/next-number — returns the next request number.
   Future<Response> handleNextNumber(Request request) async {
@@ -233,6 +238,40 @@ class CapexRequestHandler {
       return _notFound(e.message);
     } on CapexRequestValidationException catch (e) {
       return _badRequest(e.message);
+    }
+  }
+
+  /// PUT /capex-requests/:id/executed-date
+  Future<Response> handleSetExecutedDate(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final SetCapexRequestExecutedDateRequest dto;
+    try {
+      final json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      dto = SetCapexRequestExecutedDateRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    try {
+      final capexRequest = await _setExecutedDate.execute(
+        id: id,
+        entityId: entityId,
+        executedDate: dto.executedDate,
+      );
+      _auditChanges(request)?.set({
+        'requestNo': capexRequest.requestNo,
+        'executedDate': capexRequest.executedDate?.toIso8601String().substring(0, 10),
+      });
+      return Response.ok(
+        CapexRequestResponse.fromEntity(capexRequest).toJsonString(),
+        headers: _jsonHeaders,
+      );
+    } on CapexRequestNotFoundException catch (e) {
+      return _notFound(e.message);
     }
   }
 
