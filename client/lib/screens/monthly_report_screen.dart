@@ -83,7 +83,13 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
+  /// Loads report data. In [strict] mode (used immediately before generating
+  /// the PDF) every resource — including locked months and contacts, which
+  /// the normal page-load path fetches unawaited since their absence there
+  /// just leaves those views incomplete — is awaited, and any failure is
+  /// rethrown rather than silently leaving a stale snapshot in place, so the
+  /// report is never built from stale or partially-refreshed data.
+  Future<void> _loadData({bool strict = false}) async {
     try {
       final client = context.read<ApiClient>();
       final cache = context.read<ReferenceDataCache>();
@@ -96,24 +102,35 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         client.get('/budgets/$reportYear'),
         client.get('/capex-requests'),
       ]);
-      // Entity details, GL accounts, bank accounts, locked months and
-      // contacts are required for the report; locked months and contacts
-      // remain optional (their absence just leaves those views incomplete).
-      await Future.wait([
+      final cacheRefreshes = [
         cache.refreshEntityDetails(),
         cache.refreshGl(),
         cache.refreshBankAccounts(),
-      ]);
-      unawaited(cache.refreshLockedMonths());
-      unawaited(cache.refreshContacts());
+      ];
+      if (strict) {
+        cacheRefreshes.addAll([
+          cache.refreshLockedMonths(),
+          cache.refreshContacts(),
+        ]);
+        await Future.wait(cacheRefreshes);
+      } else {
+        await Future.wait(cacheRefreshes);
+        unawaited(cache.refreshLockedMonths());
+        unawaited(cache.refreshContacts());
+      }
       if (!mounted) return;
 
       // Only transactions/closing-balances (0-1) are required; budget (2) is optional.
-      if (results.take(2).any((r) => r.statusCode != 200) ||
+      final failed = results.take(2).any((r) => r.statusCode != 200) ||
           cache.entityDetailsStatus == LoadStatus.error ||
           cache.glStatus == LoadStatus.error ||
-          cache.bankAccountsStatus == LoadStatus.error) {
+          cache.bankAccountsStatus == LoadStatus.error ||
+          (strict &&
+              (cache.lockedMonthsStatus == LoadStatus.error ||
+                  cache.contactsStatus == LoadStatus.error));
+      if (failed) {
         setState(() => _loading = false);
+        if (strict) throw Exception('Failed to refresh report data');
         return;
       }
 
@@ -136,8 +153,9 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         }
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (mounted) setState(() => _loading = false);
+      if (strict) rethrow;
     }
   }
 
@@ -212,6 +230,13 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   }
 
   Future<void> _generatePdfWithProgress(ValueNotifier<String> progress) async {
+    // Re-fetch: this screen is a retained StatefulShellBranch (IndexedStack),
+    // so data loaded in initState() can be stale by the time the report is
+    // generated — e.g. a capex request executed on another screen earlier
+    // in the session would otherwise still show as upcoming here.
+    progress.value = 'Refreshing data…';
+    await _loadData(strict: true);
+
     final authState = context.read<AuthState>();
     final userName = authState.user?.name ?? authState.user?.email ?? 'Unknown';
     final entity = _entityDetails;
