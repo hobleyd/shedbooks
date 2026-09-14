@@ -1261,21 +1261,30 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                 if (isMoneyOut && context.read<AuthState>().isAdmin)
                   SizedBox(
                     width: 40,
-                    child: Checkbox(
-                      value: txns.every((t) => _selectedTransactionIds.contains(t.id)),
-                      tristate: true,
-                      onChanged: (v) {
-                        setState(() {
-                          if (v == true) {
-                            _selectedTransactionIds.addAll(txns.map((t) => t.id));
-                          } else {
-                            for (final t in txns) {
-                              _selectedTransactionIds.remove(t.id);
-                            }
-                          }
-                        });
-                      },
-                    ),
+                    child: Builder(builder: (context) {
+                      final selectable =
+                          txns.where((t) => !t.bankMatched).toList();
+                      return Checkbox(
+                        value: selectable.isNotEmpty &&
+                            selectable.every(
+                                (t) => _selectedTransactionIds.contains(t.id)),
+                        tristate: true,
+                        onChanged: selectable.isEmpty
+                            ? null
+                            : (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selectedTransactionIds
+                                        .addAll(selectable.map((t) => t.id));
+                                  } else {
+                                    for (final t in selectable) {
+                                      _selectedTransactionIds.remove(t.id);
+                                    }
+                                  }
+                                });
+                              },
+                      );
+                    }),
                   ),
                 SizedBox(width: 90, child: _colHeader('Date', 0)),
                 SizedBox(width: 180, child: _colHeader('Contact', 1)),
