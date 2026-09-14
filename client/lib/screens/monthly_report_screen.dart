@@ -235,12 +235,12 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         .where((m) => lockedKeys.contains('$reportYear-${m.month.toString().padLeft(2, '0')}'))
         .toList();
 
-    // Upcoming (non-executed) Capex Requests, and the resulting projected
-    // balance: the most recent locked month's Total Balance less the sum
-    // of every not-yet-executed capex request (rejected ones excluded —
-    // they will never be executed).
+    // Upcoming (approved but not-yet-executed) Capex Requests, and the
+    // resulting projected balance: the most recent locked month's Total
+    // Balance less the sum of every such request. Pending requests are
+    // excluded — they aren't a committed spend yet — as are rejected ones.
     final upcomingCapex = _capexRequests
-        .where((c) => c.executedDate == null && c.status != 'rejected')
+        .where((c) => c.executedDate == null && c.status == 'approved')
         .toList()
       ..sort((a, b) => a.requestNo.compareTo(b.requestNo));
     // The most recent month that actually has a Total Balance (matches
