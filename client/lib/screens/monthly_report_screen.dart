@@ -26,6 +26,7 @@ import 'package:provider/provider.dart';
 import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
 import '../models/budget_entry.dart';
+import '../models/capex_request_entry.dart';
 import '../models/closing_bank_balance_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
@@ -61,6 +62,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   final TextEditingController _narrativeController = TextEditingController();
   List<TransactionEntry> _allTransactions = [];
   List<ClosingBankBalanceEntry> _closingBalances = [];
+  List<CapexRequestEntry> _capexRequests = [];
   BudgetEntry? _budget;
   bool _loading = true;
   List<PlatformFile> _bankStatements = [];
@@ -92,6 +94,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         client.get('/transactions'),
         client.get('/closing-bank-balances'),
         client.get('/budgets/$reportYear'),
+        client.get('/capex-requests'),
       ]);
       // Entity details, GL accounts, bank accounts, locked months and
       // contacts are required for the report; locked months and contacts
@@ -125,6 +128,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
           _budget = BudgetEntry.fromJson(
             jsonDecode(results[2].body) as Map<String, dynamic>,
           );
+        }
+        if (results[3].statusCode == 200) {
+          _capexRequests = (jsonDecode(results[3].body) as List)
+              .map((e) => CapexRequestEntry.fromJson(e as Map<String, dynamic>))
+              .toList();
         }
         _loading = false;
       });
@@ -227,6 +235,30 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
         .where((m) => lockedKeys.contains('$reportYear-${m.month.toString().padLeft(2, '0')}'))
         .toList();
 
+    // Upcoming (non-executed) Capex Requests, and the resulting projected
+    // balance: the most recent locked month's Total Balance less the sum
+    // of every not-yet-executed capex request (rejected ones excluded —
+    // they will never be executed).
+    final upcomingCapex = _capexRequests
+        .where((c) => c.executedDate == null && c.status != 'rejected')
+        .toList()
+      ..sort((a, b) => a.requestNo.compareTo(b.requestNo));
+    // The most recent month that actually has a Total Balance (matches
+    // what the dashboard table's bottom-most non-'-' row shows) — a locked
+    // month with no closing balances renders '-' above, so skip those.
+    _MonthSummary? lastMonthWithBalance;
+    for (final m in dashboardMonths.reversed) {
+      if (m.bankBalances.isNotEmpty) {
+        lastMonthWithBalance = m;
+        break;
+      }
+    }
+    final lastTotalBalanceCents = lastMonthWithBalance?.totalBalanceCents;
+    final capexSumCents =
+        upcomingCapex.fold(0, (s, c) => s + c.totalAmountCents);
+    final projectedBalanceCents =
+        lastTotalBalanceCents == null ? null : lastTotalBalanceCents - capexSumCents;
+
     // P&L Data for the report month
     final pnlData = PnLData.compute(
       allTransactions: _allTransactions,
@@ -282,6 +314,14 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
             style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 8),
         _buildDashboardTable(dashboardMonths, monthNames),
+        pw.SizedBox(height: 24),
+
+        // Upcoming Capex Requests Table
+        pw.Text('Upcoming Capital Expenditure Requests',
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 8),
+        _buildCapexTable(upcomingCapex, projectedBalanceCents,
+            bankAccountCount: _bankAccounts.length),
         pw.SizedBox(height: 24),
       ],
     ));
@@ -459,13 +499,31 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     return summaries.values.toList();
   }
 
+  // Shared column-width flexes so the Capex table's Amount column lines up
+  // directly under the dashboard table's Total Balance column, regardless
+  // of how many bank accounts the entity has.
+  static const double _monthColFlex = 1.4;
+  static const double _stdColFlex = 1.0;
+  static const double _bankColFlex = 1.1;
+  static const double _totalBalanceColFlex = 1.3;
+
   pw.Widget _buildDashboardTable(List<_MonthSummary> months, List<String> monthNames) {
     final totalIncome = months.fold(0, (s, m) => s + m.incomeCents);
     final totalOutgoings = months.fold(0, (s, m) => s + m.outgoingsCents);
     final totalNet = totalIncome - totalOutgoings;
+    final bankAccountCount = _bankAccounts.length;
 
     return pw.Table(
       border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(_monthColFlex),
+        1: const pw.FlexColumnWidth(_stdColFlex),
+        2: const pw.FlexColumnWidth(_stdColFlex),
+        3: const pw.FlexColumnWidth(_stdColFlex),
+        for (int i = 0; i < bankAccountCount; i++)
+          4 + i: const pw.FlexColumnWidth(_bankColFlex),
+        4 + bankAccountCount: const pw.FlexColumnWidth(_totalBalanceColFlex),
+      },
       children: [
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: PdfColors.grey100),
@@ -508,6 +566,66 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                 color: totalNet < 0 ? PdfColors.red700 : PdfColors.black),
             ..._bankAccounts.map((_) => _tableCell('')),
             _tableCell(''),
+          ],
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildCapexTable(List<CapexRequestEntry> requests, int? projectedBalanceCents,
+      {required int bankAccountCount}) {
+    // Request No + Description together span the same width as the
+    // dashboard table's Month/Income/Outgoings/Net/bank-account columns;
+    // Amount takes exactly the Total Balance column's width.
+    final descriptionFlex =
+        _stdColFlex * 3 + _bankColFlex * bankAccountCount;
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(_monthColFlex),
+        1: pw.FlexColumnWidth(descriptionFlex),
+        2: const pw.FlexColumnWidth(_totalBalanceColFlex),
+      },
+      children: [
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+          children: [
+            _tableHeader('Request No'),
+            _tableHeader('Description'),
+            _tableHeader('Amount', align: pw.TextAlign.right),
+          ],
+        ),
+        if (requests.isEmpty)
+          pw.TableRow(children: [
+            _tableCell(''),
+            _tableCell('No upcoming capex requests'),
+            _tableCell(''),
+          ])
+        else
+          ...requests.map((r) => pw.TableRow(
+                children: [
+                  _tableCell(r.requestNo),
+                  _tableCell(r.description),
+                  _tableCell(Formatters.formatCents(r.totalAmountCents),
+                      align: pw.TextAlign.right),
+                ],
+              )),
+        // Footer Row
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: PdfColors.grey50),
+          children: [
+            _tableCell('Projected Balance', fontWeight: pw.FontWeight.bold),
+            _tableCell(''),
+            _tableCell(
+                projectedBalanceCents == null
+                    ? '-'
+                    : Formatters.formatCents(projectedBalanceCents),
+                align: pw.TextAlign.right,
+                fontWeight: pw.FontWeight.bold,
+                color: (projectedBalanceCents ?? 0) < 0
+                    ? PdfColors.red700
+                    : PdfColors.black),
           ],
         ),
       ],
