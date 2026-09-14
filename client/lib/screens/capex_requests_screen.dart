@@ -38,8 +38,8 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
   bool _loading = true;
   String? _loadError;
   List<CapexRequestEntry> _requests = [];
-  int? _sortColumn;
-  bool _sortAscending = true;
+  int? _sortColumn = 0;
+  bool _sortAscending = false;
 
   @override
   void initState() {
