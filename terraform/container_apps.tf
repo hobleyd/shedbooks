@@ -66,6 +66,18 @@ resource "azurerm_container_app_environment" "shedbooks" {
   infrastructure_subnet_id       = azurerm_subnet.container_apps.id
   internal_load_balancer_enabled = false # the client app needs external ingress
 
+  # Every Container Apps Environment carries a workload profile at the
+  # platform level now, even Consumption-only ones — Azure auto-provisions
+  # this "Consumption" profile regardless of whether it's declared here.
+  # Declared explicitly so `tofu plan` matches reality instead of drifting
+  # (a prior apply without this block showed as removing it every time).
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+    minimum_count         = 0
+    maximum_count         = 0
+  }
+
   tags = local.tags
 }
 
@@ -79,6 +91,7 @@ resource "azurerm_container_app" "server" {
   resource_group_name          = azurerm_resource_group.shedbooks.name
   container_app_environment_id = azurerm_container_app_environment.shedbooks.id
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   identity {
     type         = "UserAssigned"
@@ -192,6 +205,7 @@ resource "azurerm_container_app" "client" {
   resource_group_name          = azurerm_resource_group.shedbooks.name
   container_app_environment_id = azurerm_container_app_environment.shedbooks.id
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   identity {
     type         = "UserAssigned"
