@@ -174,6 +174,17 @@ resource "azurerm_container_app" "server" {
         name  = "AUTH0_AUDIENCE"
         value = var.auth0_audience
       }
+      # Entra ID is accepted alongside Auth0 (see entra_login.tf) — the
+      # server treats these as optional (server/bin/server.dart), so this
+      # is additive: Auth0 keeps working unchanged either way.
+      env {
+        name  = "ENTRA_TENANT_ID"
+        value = data.azuread_client_config.current.tenant_id
+      }
+      env {
+        name  = "ENTRA_CLIENT_ID"
+        value = azuread_application.shedbooks_login.client_id
+      }
       env {
         name  = "CORS_ORIGIN"
         value = var.cors_origin
