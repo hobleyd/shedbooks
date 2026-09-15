@@ -23,6 +23,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.0"
     }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.0"
+    }
   }
 
   # Native Azure Storage backend — the resource group, storage account, and
@@ -57,3 +61,15 @@ provider "azurerm" {
   # variables set by azure/login (see terraform.yml). Hardcoding use_oidc =
   # true here would break plain local `az login` usage.
 }
+
+# Manages the Entra ID App Registration used for interactive login
+# (entra_login.tf) — a Microsoft Graph / directory object, not an Azure
+# Resource Manager resource, so it needs its own provider even though it
+# authenticates via the same environment-detected credentials as azurerm
+# above. The identity used (a local `az login` session, or the CI service
+# principal) needs Application.ReadWrite.All (or the "Application
+# Administrator" directory role) to manage the app registration, plus
+# whatever directory-read access is needed to resolve the principal ids
+# passed into azuread_app_role_assignment (a Global Administrator, as used
+# for the initial local apply, already has this).
+provider "azuread" {}

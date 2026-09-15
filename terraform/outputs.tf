@@ -45,6 +45,16 @@ output "acr_image_client" {
   value       = "${data.azurerm_container_registry.shedbooks.login_server}/client:${var.image_tag}"
 }
 
+output "entra_tenant_id" {
+  description = "Entra ID tenant GUID (the `tid` claim on Entra-issued login tokens) — set entity_details.entra_tenant_id to this value for the entity using Entra login."
+  value       = data.azuread_client_config.current.tenant_id
+}
+
+output "entra_login_client_id" {
+  description = "Client (application) ID of the Shedbooks Login app registration — the audience Entra-issued access tokens will carry, and the value the client build/server env need once Entra login is wired up."
+  value       = azuread_application.shedbooks_login.client_id
+}
+
 output "next_steps" {
   description = "Checklist for things this apply does not automate"
   value       = <<-EOT

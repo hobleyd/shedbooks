@@ -90,6 +90,20 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
     return _mapRow(result.first.toColumnMap());
   }
 
+  /// @param tenantId - The Entra tenant GUID (the `tid` claim on Entra login tokens).
+  @override
+  Future<String?> findEntityIdByEntraTenantId(String tenantId) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT entity_id FROM entity_details WHERE entra_tenant_id = @tenantId
+      '''),
+      parameters: {'tenantId': tenantId},
+    );
+
+    if (result.isEmpty) return null;
+    return result.first.toColumnMap()['entity_id'] as String;
+  }
+
   EntityDetails _mapRow(Map<String, dynamic> row) => EntityDetails(
         entityId: row['entity_id'] as String,
         name: row['name'] as String,

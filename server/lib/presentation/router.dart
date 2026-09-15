@@ -21,9 +21,10 @@ import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
-import '../infrastructure/auth/auth0_middleware.dart';
 import '../infrastructure/auth/carddav_auth_middleware.dart';
 import '../infrastructure/auth/jwks_client.dart';
+import '../infrastructure/auth/multi_issuer_auth_middleware.dart';
+import '../infrastructure/auth/multi_issuer_jwt.dart';
 import '../infrastructure/database/database_connection.dart';
 import '../infrastructure/encryption/field_encryptor.dart';
 import '../infrastructure/repositories/postgres_aba_sequence_repository.dart';
@@ -180,6 +181,8 @@ Handler buildRouter({
   required String corsOrigin,
   required FieldEncryptor fieldEncryptor,
   String abrGuid = '',
+  String? entraTenantId,
+  String? entraClientId,
 }) {
   final jwksClient = JwksClient(auth0Domain);
   final pool = DatabaseConnection.pool;
@@ -410,11 +413,33 @@ Handler buildRouter({
     generate: GenerateApiKeyUseCase(apiKeyRepository),
   );
 
-  final authMiddleware = auth0Middleware(
-    auth0Domain: auth0Domain,
-    audience: audience,
-    jwksClient: jwksClient,
-  );
+  // Auth0 is always accepted; Entra ID is accepted alongside it once
+  // ENTRA_TENANT_ID/ENTRA_CLIENT_ID are configured (see server.dart) — both
+  // issuers stay valid throughout the Auth0 -> Entra migration so login
+  // never has a window where it depends on a single provider.
+  final verifiersByIssuer = <String, ClaimsVerifier>{
+    'https://$auth0Domain/': (token) => verifyAuth0Jwt(
+          token,
+          auth0Domain: auth0Domain,
+          audience: audience,
+          jwksClient: jwksClient,
+        ),
+    if (entraTenantId != null && entraClientId != null)
+      'https://login.microsoftonline.com/$entraTenantId/v2.0':
+          EntraJwtVerifier(
+        tenantId: entraTenantId,
+        clientId: entraClientId,
+        jwksClient: JwksClient.forUri(
+          Uri.https(
+            'login.microsoftonline.com',
+            '/$entraTenantId/discovery/v2.0/keys',
+          ),
+        ),
+        entityDetailsRepository: entityDetailsRepository,
+      ),
+  };
+
+  final authMiddleware = multiIssuerAuthMiddleware(verifiersByIssuer);
 
   // Audit middleware is placed after auth so that auth claims are available.
   final audit = auditMiddleware(pool);
@@ -428,9 +453,7 @@ Handler buildRouter({
       .addHandler(inner);
 
   final cardDavAuth = cardDavAuthMiddleware(
-    auth0Domain: auth0Domain,
-    audience: audience,
-    jwksClient: jwksClient,
+    verifiersByIssuer: verifiersByIssuer,
     apiKeyRepository: apiKeyRepository,
   );
 

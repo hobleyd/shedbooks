@@ -23,7 +23,7 @@ import 'package:shelf/shelf.dart';
 
 import '../../domain/repositories/i_user_api_key_repository.dart';
 import '../encryption/sha256_hex.dart';
-import 'jwks_client.dart';
+import 'multi_issuer_jwt.dart';
 
 /// Shelf middleware that authenticates CardDAV endpoints.
 ///
@@ -36,12 +36,12 @@ import 'jwks_client.dart';
 ///   is provided; the API key is looked up by its SHA-256 hash and the username
 ///   must match the stored email (case-insensitive).
 ///
-/// On success, the decoded claims are attached to the request context under
-/// `'auth.claims'`, matching the behaviour of [auth0Middleware].
+/// JWTs are accepted from any issuer in [verifiersByIssuer] — the same set
+/// the standard API routes accept via `multiIssuerAuthMiddleware` — and
+/// normalised claims are attached to the request context under
+/// `'auth.claims'`.
 Middleware cardDavAuthMiddleware({
-  required String auth0Domain,
-  required String audience,
-  required JwksClient jwksClient,
+  required Map<String, ClaimsVerifier> verifiersByIssuer,
   IUserApiKeyRepository? apiKeyRepository,
 }) {
   return (Handler inner) {
@@ -56,9 +56,7 @@ Middleware cardDavAuthMiddleware({
       if (_looksLikeJwt(password)) {
         return _verifyJwt(
           token: password,
-          auth0Domain: auth0Domain,
-          audience: audience,
-          jwksClient: jwksClient,
+          verifiersByIssuer: verifiersByIssuer,
           inner: inner,
           request: request,
         );
@@ -124,46 +122,22 @@ bool _looksLikeJwt(String s) {
 
 Future<Response> _verifyJwt({
   required String token,
-  required String auth0Domain,
-  required String audience,
-  required JwksClient jwksClient,
+  required Map<String, ClaimsVerifier> verifiersByIssuer,
   required Handler inner,
   required Request request,
 }) async {
+  final issuer = peekIssuer(token);
+  final verifier = issuer == null ? null : verifiersByIssuer[issuer];
+  if (verifier == null) {
+    return _unauthorizedMessage('Unknown token issuer');
+  }
+
   // JWT validation is confined to this try/catch; inner(request) is called
   // after it returns normally, so a downstream handler error propagates as
   // itself rather than being caught here and misreported as an auth failure.
-  final Map<String, dynamic>? claims;
+  final Map<String, dynamic> claims;
   try {
-    final headerPart = token.split('.').first;
-    final headerJson = utf8.decode(
-      base64Url.decode(base64Url.normalize(headerPart)),
-    );
-    final header = jsonDecode(headerJson) as Map<String, dynamic>;
-    final kid = header['kid'] as String?;
-    if (kid == null) {
-      return _unauthorizedMessage('JWT header missing kid');
-    }
-
-    final publicKey = await jwksClient.getPublicKey(kid);
-    final jwt = JWT.verify(
-      token,
-      publicKey,
-      issuer: 'https://$auth0Domain/',
-    );
-
-    final payload = jwt.payload as Map<String, dynamic>?;
-    final rawAud = payload?['aud'];
-    final audList = rawAud is List
-        ? rawAud.cast<String>()
-        : rawAud is String
-            ? [rawAud]
-            : <String>[];
-    if (!audList.contains(audience)) {
-      return _unauthorizedMessage('Invalid token: invalid audience');
-    }
-
-    claims = jwt.payload;
+    claims = await verifier(token);
   } on JWTExpiredException {
     return _unauthorizedMessage('Token has expired');
   } on JWTException catch (e) {

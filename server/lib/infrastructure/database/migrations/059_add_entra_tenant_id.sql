@@ -1,0 +1,37 @@
+-- Copyright (C) 2026 David Hobley
+--
+-- This file is part of Shedbooks.
+--
+-- Shedbooks is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- Shedbooks is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
+
+-- Migration: 059_add_entra_tenant_id
+-- Supports accepting Microsoft Entra ID login tokens alongside Auth0.
+-- Entra's `tid` claim (the tenant GUID) is resolved to this entity's
+-- entity_id at auth time, the same way the Auth0 org id already resolves to
+-- it via the `https://shedbooks.com/entity_id` claim set by the Auth0
+-- Action. One entity may have exactly one Entra tenant.
+--
+-- Deliberately a separate column from o365_sync_settings.tenant_id, which
+-- stores this tenant's *default domain* (<tenant>.onmicrosoft.com, required
+-- by Exchange Online's certificate-based auth) rather than the tenant GUID
+-- used in JWT `tid` claims — different format, different feature, not
+-- interchangeable even when both happen to point at the same real tenant.
+--
+-- Parameters: none
+
+-- @param entity_details.entra_tenant_id  Microsoft Entra tenant GUID (the `tid` claim
+--                                         on Entra-issued login tokens) used to resolve
+--                                         entity_id for Entra logins. NULL until an
+--                                         entity has an Entra login configured.
+ALTER TABLE entity_details ADD COLUMN entra_tenant_id TEXT NULL;

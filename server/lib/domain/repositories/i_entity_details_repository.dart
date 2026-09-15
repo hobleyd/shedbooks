@@ -24,4 +24,8 @@ abstract class IEntityDetailsRepository {
 
   /// Upserts the entity details and returns the persisted record.
   Future<EntityDetails> save(EntityDetails details);
+
+  /// Returns the entity_id whose `entra_tenant_id` matches [tenantId], or
+  /// null if no entity has Entra login configured for that tenant.
+  Future<String?> findEntityIdByEntraTenantId(String tenantId);
 }

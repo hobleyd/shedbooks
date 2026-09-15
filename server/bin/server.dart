@@ -49,6 +49,10 @@ void main() async {
   final abrGuid = Platform.environment['ABR_GUID'] ?? '';
   final encryptionKey = _require('ENCRYPTION_KEY');
   final fieldEncryptor = FieldEncryptor(encryptionKey);
+  // Unset (or blank) until Entra login is fully wired up — Auth0 alone
+  // still works when these are absent, since the migration is additive.
+  final entraTenantId = _optional('ENTRA_TENANT_ID');
+  final entraClientId = _optional('ENTRA_CLIENT_ID');
 
   final handler = buildRouter(
     auth0Domain: auth0Domain,
@@ -56,6 +60,8 @@ void main() async {
     corsOrigin: corsOrigin,
     fieldEncryptor: fieldEncryptor,
     abrGuid: abrGuid,
+    entraTenantId: entraTenantId,
+    entraClientId: entraClientId,
   );
 
   final server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
@@ -68,4 +74,9 @@ String _require(String key) {
     throw StateError('Required environment variable $key is not set');
   }
   return value;
+}
+
+String? _optional(String key) {
+  final value = Platform.environment[key];
+  return (value == null || value.isEmpty) ? null : value;
 }

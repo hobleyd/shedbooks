@@ -25,6 +25,7 @@ import 'package:shedbooks_server/domain/entities/user_api_key.dart';
 import 'package:shedbooks_server/domain/repositories/i_user_api_key_repository.dart';
 import 'package:shedbooks_server/infrastructure/auth/carddav_auth_middleware.dart';
 import 'package:shedbooks_server/infrastructure/auth/jwks_client.dart';
+import 'package:shedbooks_server/infrastructure/auth/multi_issuer_jwt.dart';
 import 'package:shedbooks_server/infrastructure/encryption/sha256_hex.dart';
 
 class MockJwksClient extends Mock implements JwksClient {}
@@ -43,16 +44,23 @@ final _okHandler = (Request req) => Response.ok('ok');
 void main() {
   late MockJwksClient mockJwksClient;
   late Middleware middleware;
+  late Map<String, ClaimsVerifier> verifiersByIssuer;
 
   const auth0Domain = 'test.auth0.com';
   const audience = 'https://shedbooks.com';
 
   setUp(() {
     mockJwksClient = MockJwksClient();
+    verifiersByIssuer = {
+      'https://$auth0Domain/': (token) => verifyAuth0Jwt(
+            token,
+            auth0Domain: auth0Domain,
+            audience: audience,
+            jwksClient: mockJwksClient,
+          ),
+    };
     middleware = cardDavAuthMiddleware(
-      auth0Domain: auth0Domain,
-      audience: audience,
-      jwksClient: mockJwksClient,
+      verifiersByIssuer: verifiersByIssuer,
     );
   });
 
@@ -148,7 +156,8 @@ void main() {
       // The token below has a decodable header with kid="test-kid".
       final header =
           base64Url.encode(utf8.encode('{"alg":"RS256","kid":"test-kid"}'));
-      final payload = base64Url.encode(utf8.encode('{"sub":"1"}'));
+      final payload = base64Url
+          .encode(utf8.encode('{"sub":"1","iss":"https://$auth0Domain/"}'));
       const sig = 'fakesig';
       final fakeJwt = '$header.$payload.$sig';
 
@@ -184,7 +193,8 @@ void main() {
       // JWT with no kid in header
       final header =
           base64Url.encode(utf8.encode('{"alg":"RS256"}'));
-      final payload = base64Url.encode(utf8.encode('{"sub":"1"}'));
+      final payload = base64Url
+          .encode(utf8.encode('{"sub":"1","iss":"https://$auth0Domain/"}'));
       final fakeJwt = '$header.$payload.fakesig';
 
       final req = Request(
@@ -220,9 +230,7 @@ void main() {
     setUp(() {
       mockRepo = MockUserApiKeyRepository();
       middlewareWithRepo = cardDavAuthMiddleware(
-        auth0Domain: auth0Domain,
-        audience: audience,
-        jwksClient: mockJwksClient,
+        verifiersByIssuer: verifiersByIssuer,
         apiKeyRepository: mockRepo,
       );
     });

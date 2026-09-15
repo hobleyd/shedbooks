@@ -17,20 +17,26 @@
 
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:shelf/shelf.dart';
 
-import 'jwks_client.dart';
+import 'multi_issuer_jwt.dart';
 
-/// Shelf middleware that validates Auth0 Bearer JWTs on every request.
+/// Shelf middleware that accepts Bearer JWTs from any of several issuers —
+/// e.g. Auth0 and Entra ID concurrently during the migration between them.
 ///
-/// On success, the decoded JWT payload is attached to the request context
-/// under the key 'auth.claims'.
-Middleware auth0Middleware({
-  required String auth0Domain,
-  required String audience,
-  required JwksClient jwksClient,
-}) {
+/// Dispatch is by the token's own (unverified) `iss` claim; the token is
+/// only ever trusted once the [ClaimsVerifier] registered for that issuer
+/// in [verifiersByIssuer] has actually verified its signature. A token
+/// naming an issuer not present in the map is rejected outright.
+///
+/// On success, the verified/normalised claims are attached to the request
+/// context under the key 'auth.claims', exactly as [auth0Middleware] alone
+/// used to.
+Middleware multiIssuerAuthMiddleware(
+  Map<String, ClaimsVerifier> verifiersByIssuer,
+) {
   return (Handler inner) {
     return (Request request) async {
       final authHeader = request.headers[HttpHeaders.authorizationHeader];
@@ -40,47 +46,19 @@ Middleware auth0Middleware({
       }
 
       final token = authHeader.substring(7);
+      final issuer = peekIssuer(token);
+      final verifier = issuer == null ? null : verifiersByIssuer[issuer];
+      if (verifier == null) {
+        return _unauthorised('Unknown token issuer');
+      }
 
       // JWT validation is confined to this try/catch; inner(request) is
       // called after it returns normally, so a downstream handler error
       // propagates as itself rather than being caught here and misreported
       // as an authentication failure.
-      final Map<String, dynamic>? claims;
+      final Map<String, dynamic> claims;
       try {
-        final headerPart = token.split('.').first;
-        final headerJson = utf8.decode(
-          base64Url.decode(base64Url.normalize(headerPart)),
-        );
-        final header = jsonDecode(headerJson) as Map<String, dynamic>;
-        final kid = header['kid'] as String?;
-
-        if (kid == null) {
-          return _unauthorised('JWT header missing kid');
-        }
-
-        final publicKey = await jwksClient.getPublicKey(kid);
-
-        final jwt = JWT.verify(
-          token,
-          publicKey,
-          issuer: 'https://$auth0Domain/',
-        );
-
-        // dart_jsonwebtoken does strict list equality for audience, but Auth0
-        // access tokens carry multiple audiences (API + /userinfo). Check
-        // manually that our audience is present in the aud claim.
-        final payload = jwt.payload as Map<String, dynamic>?;
-        final rawAud = payload?['aud'];
-        final audList = rawAud is List
-            ? rawAud.cast<String>()
-            : rawAud is String
-                ? [rawAud]
-                : <String>[];
-        if (!audList.contains(audience)) {
-          return _unauthorised('Invalid token: invalid audience');
-        }
-
-        claims = jwt.payload;
+        claims = await verifier(token);
       } on JWTExpiredException {
         return _unauthorised('Token has expired');
       } on JWTException catch (e) {
