@@ -18,6 +18,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/contact/lookup_abn_use_case.dart';
 
@@ -66,10 +67,7 @@ class AbnLookupHandler {
     }
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static const Map<String, String> _jsonHeaders = {
     HttpHeaders.contentTypeHeader: 'application/json',

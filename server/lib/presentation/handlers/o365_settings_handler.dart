@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/o365/generate_o365_certificate_use_case.dart';
 import '../../application/o365/get_o365_sync_settings_use_case.dart';
@@ -152,10 +153,7 @@ class O365SettingsHandler {
     }
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;

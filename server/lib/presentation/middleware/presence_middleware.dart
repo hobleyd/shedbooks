@@ -23,6 +23,7 @@ import 'package:shelf/shelf.dart';
 import '../../domain/entities/user_presence.dart';
 import '../../domain/enums/app_role.dart';
 import '../../infrastructure/repositories/postgres_user_presence_repository.dart';
+import '../request_identity.dart';
 
 /// Shelf middleware that upserts a [UserPresence] record after every
 /// successful authenticated request.
@@ -41,9 +42,8 @@ Middleware presenceMiddleware(Pool pool) {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final claims = request.context['auth.claims'] as Map<String, dynamic>?;
         if (claims != null) {
-          final entityId =
-              claims['https://shedbooks.com/entity_id'] as String? ?? '';
-          final userId = claims['sub'] as String? ?? '';
+          final entityId = resolveEntityId(request) ?? '';
+          final userId = resolveUserId(request) ?? '';
           if (entityId.isNotEmpty && userId.isNotEmpty) {
             unawaited(_upsert(repo, claims, request).catchError((_) {}));
           }
@@ -60,12 +60,9 @@ Future<void> _upsert(
   Map<String, dynamic> claims,
   Request request,
 ) async {
-  final entityId =
-      claims['https://shedbooks.com/entity_id'] as String? ?? '';
-  final userId = claims['sub'] as String? ?? '';
-  final userEmail = (claims['email'] as String?)?.isNotEmpty == true
-      ? claims['email'] as String
-      : (claims['https://shedbooks.com/email'] as String?) ?? '';
+  final entityId = resolveEntityId(request) ?? '';
+  final userId = resolveUserId(request) ?? '';
+  final userEmail = resolveEmail(request);
 
   final raw = claims['https://shedbooks.com/roles'];
   final roles = raw is List ? raw : <dynamic>[];

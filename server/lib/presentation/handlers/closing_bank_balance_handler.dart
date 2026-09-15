@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
 import '../../application/closing_bank_balance/list_closing_bank_balances_use_case.dart';
@@ -110,10 +111,7 @@ class ClosingBankBalanceHandler {
         body: jsonEncode(balance.toJson()), headers: _jsonHeaders);
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;

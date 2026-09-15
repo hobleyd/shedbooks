@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/bank_import/get_bank_imports_use_case.dart';
 import '../../application/bank_import/save_bank_imports_use_case.dart';
@@ -83,10 +84,7 @@ class BankImportsHandler {
     return Response(HttpStatus.noContent);
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;

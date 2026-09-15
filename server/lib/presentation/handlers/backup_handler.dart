@@ -22,6 +22,7 @@ import 'dart:typed_data';
 import 'package:logging/logging.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../infrastructure/encryption/backup_crypto.dart';
 
@@ -1001,10 +1002,7 @@ class BackupHandler {
   static bool _isAuthenticated(Request request) =>
       request.context['auth.claims'] != null;
 
-  static String? _getEntityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _getEntityId(Request request) => resolveEntityId(request);
 
   static Response _unauthorized() => Response.unauthorized(
         jsonEncode({'error': 'Authentication required'}),

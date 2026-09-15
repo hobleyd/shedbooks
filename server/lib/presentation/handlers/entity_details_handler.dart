@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/entity/get_entity_details_use_case.dart';
 import '../../application/entity/save_entity_details_use_case.dart';
@@ -118,10 +119,7 @@ class EntityDetailsHandler {
     }
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static AppRole _userRole(Request request) {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;

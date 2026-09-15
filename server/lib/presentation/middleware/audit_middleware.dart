@@ -23,6 +23,7 @@ import 'package:shelf/shelf.dart';
 import '../../domain/entities/audit_entry.dart';
 import '../../infrastructure/repositories/postgres_audit_repository.dart';
 import '../audit_changes.dart';
+import '../request_identity.dart';
 
 /// Shelf middleware that writes an [AuditEntry] after every auditable request.
 ///
@@ -90,14 +91,9 @@ Future<void> _record(
   int statusCode,
   Map<String, dynamic>? changes,
 ) async {
-  final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-  final entityId =
-      claims?['https://shedbooks.com/entity_id'] as String? ?? '';
-  final userId = claims?['sub'] as String? ?? '';
-  // email may be a plain claim or namespaced — accept both.
-  final userEmail = (claims?['email'] as String?)?.isNotEmpty == true
-      ? claims!['email'] as String
-      : (claims?['https://shedbooks.com/email'] as String?) ?? '';
+  final entityId = resolveEntityId(request) ?? '';
+  final userId = resolveUserId(request) ?? '';
+  final userEmail = resolveEmail(request);
 
   await repo.insert(AuditEntry(
     id: '',

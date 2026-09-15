@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/aba_sequence/get_next_aba_sequence_use_case.dart';
 import '../audit_changes.dart';
@@ -65,10 +66,7 @@ class AbaSequenceHandler {
     );
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

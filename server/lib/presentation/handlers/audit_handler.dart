@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/audit/list_audit_entries_use_case.dart';
 import '../../domain/entities/audit_entry.dart';
@@ -70,10 +71,7 @@ class AuditHandler {
         'createdAt': e.createdAt.toUtc().toIso8601String(),
       };
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

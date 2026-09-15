@@ -18,6 +18,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/contact/create_contact_use_case.dart';
 import '../../application/contact/delete_contact_use_case.dart';
@@ -267,10 +268,7 @@ class ContactHandler {
     }
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static AppRole _userRole(Request request) {
     final claims = request.context['auth.claims'] as Map<String, dynamic>?;

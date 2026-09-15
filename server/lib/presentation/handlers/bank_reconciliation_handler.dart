@@ -20,6 +20,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/bank_account/list_bank_accounts_use_case.dart';
 import '../../infrastructure/pdf/cba_statement_parser.dart';
@@ -91,10 +92,7 @@ class BankReconciliationHandler {
     return Response.ok(jsonEncode(data.toJson()), headers: _jsonHeaders);
   }
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static Response _orgRequired() => Response.unauthorized(
       jsonEncode({'error': 'Organization authentication required'}),

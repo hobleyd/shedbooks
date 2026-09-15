@@ -23,6 +23,7 @@ import 'package:shelf/shelf.dart';
 import '../../application/api_key/generate_api_key_use_case.dart';
 import '../../application/api_key/get_api_key_status_use_case.dart';
 import '../audit_changes.dart';
+import '../request_identity.dart';
 
 /// Shelf request handlers for the /api-key resource.
 ///
@@ -82,14 +83,11 @@ class ApiKeyHandler {
   // ── Utilities ──────────────────────────────────────────────────────────────
 
   static (String?, String?, String) _userContext(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    final entityId = claims?['https://shedbooks.com/entity_id'] as String?;
-    final userId = claims?['sub'] as String?;
-    final userEmail =
-        (claims?['email'] as String?)?.isNotEmpty == true
-            ? claims!['email'] as String
-            : (claims?['https://shedbooks.com/email'] as String?) ?? '';
-    return (entityId, userId, userEmail);
+    return (
+      resolveEntityId(request),
+      resolveUserId(request),
+      resolveEmail(request),
+    );
   }
 
   static AuditChanges? _auditChanges(Request r) =>

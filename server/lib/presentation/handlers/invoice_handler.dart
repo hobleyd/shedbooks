@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/entity/get_next_invoice_number_use_case.dart';
 import '../../application/invoice/create_invoice_use_case.dart';
@@ -352,10 +353,7 @@ class InvoiceHandler {
   static AuditChanges? _auditChanges(Request r) =>
       r.context['audit.changes'] as AuditChanges?;
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static Response _unauthorized() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

@@ -18,6 +18,7 @@
 import 'dart:convert';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/member/create_member_use_case.dart';
 import '../../application/member/delete_member_use_case.dart';
@@ -398,10 +399,7 @@ class CardDavHandler {
         'gymWaiver': m.gymWaiver?.toIso8601String().substring(0, 10),
       };
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static String _stripVcf(String uid) =>
       uid.endsWith('.vcf') ? uid.substring(0, uid.length - 4) : uid;

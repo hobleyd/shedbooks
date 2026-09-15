@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:shelf/shelf.dart';
+import '../request_identity.dart';
 
 import '../../application/member/create_member_use_case.dart';
 import '../../application/member/delete_member_use_case.dart';
@@ -352,10 +353,7 @@ class MemberHandler {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
-  static String? _entityId(Request request) {
-    final claims = request.context['auth.claims'] as Map<String, dynamic>?;
-    return claims?['https://shedbooks.com/entity_id'] as String?;
-  }
+  static String? _entityId(Request request) => resolveEntityId(request);
 
   static AuditChanges? _auditChanges(Request request) =>
       request.context['audit.changes'] as AuditChanges?;
