@@ -39,6 +39,10 @@ TAG="${TAG:-latest}"
 AUTH0_DOMAIN="${AUTH0_DOMAIN:?AUTH0_DOMAIN must be set (baked into the Flutter web build)}"
 AUTH0_CLIENT_ID="${AUTH0_CLIENT_ID:?AUTH0_CLIENT_ID must be set}"
 AUTH0_AUDIENCE="${AUTH0_AUDIENCE:?AUTH0_AUDIENCE must be set}"
+# Entra ID login is optional (additive alongside Auth0, see entra_login.tf)
+# — left unset, the client simply doesn't show the Microsoft sign-in button.
+ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-}"
+ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
 API_URL="${API_URL:-/api}"
 
 echo "ACR   : $ACR_LOGIN_SERVER"
@@ -62,6 +66,8 @@ docker build \
   --build-arg AUTH0_DOMAIN="$AUTH0_DOMAIN" \
   --build-arg AUTH0_CLIENT_ID="$AUTH0_CLIENT_ID" \
   --build-arg AUTH0_AUDIENCE="$AUTH0_AUDIENCE" \
+  --build-arg ENTRA_TENANT_ID="$ENTRA_TENANT_ID" \
+  --build-arg ENTRA_CLIENT_ID="$ENTRA_CLIENT_ID" \
   --build-arg API_URL="$API_URL" \
   -t "$ACR_LOGIN_SERVER/client:$TAG" \
   "$PROJECT_ROOT/client"

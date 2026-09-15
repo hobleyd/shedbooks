@@ -19,6 +19,8 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends imagemagick
 ARG AUTH0_DOMAIN
 ARG AUTH0_CLIENT_ID
 ARG AUTH0_AUDIENCE
+ARG ENTRA_TENANT_ID
+ARG ENTRA_CLIENT_ID
 ARG API_URL
 
 RUN flutter build web --release \
@@ -26,6 +28,8 @@ RUN flutter build web --release \
     --dart-define=AUTH0_DOMAIN=${AUTH0_DOMAIN} \
     --dart-define=AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID} \
     --dart-define=AUTH0_AUDIENCE=${AUTH0_AUDIENCE} \
+    --dart-define=ENTRA_TENANT_ID=${ENTRA_TENANT_ID} \
+    --dart-define=ENTRA_CLIENT_ID=${ENTRA_CLIENT_ID} \
     --dart-define=API_URL=${API_URL}
 
 FROM nginx:alpine

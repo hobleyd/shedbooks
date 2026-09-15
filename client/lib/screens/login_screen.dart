@@ -18,9 +18,13 @@
 import 'package:auth0_flutter/auth0_flutter_web.dart';
 import 'package:flutter/material.dart';
 
+import '../auth/msal_web.dart';
+
 const String _auth0Domain = String.fromEnvironment('AUTH0_DOMAIN');
 const String _auth0ClientId = String.fromEnvironment('AUTH0_CLIENT_ID');
 const String _auth0Audience = String.fromEnvironment('AUTH0_AUDIENCE');
+const String _entraTenantId = String.fromEnvironment('ENTRA_TENANT_ID');
+const String _entraClientId = String.fromEnvironment('ENTRA_CLIENT_ID');
 
 /// Displays the login screen with an Auth0 redirect sign-in button.
 class LoginScreen extends StatelessWidget {
@@ -53,12 +57,23 @@ class LoginScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 40),
                 FilledButton(
-                  onPressed: () => _signIn(),
+                  onPressed: () => _signInWithAuth0(),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     child: Text('Sign in'),
                   ),
                 ),
+                if (_entraClientId.isNotEmpty && _entraTenantId.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () => _signInWithMicrosoft(),
+                    child: const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Text('Sign in with Microsoft'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -67,7 +82,7 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  void _signIn() {
+  void _signInWithAuth0() {
     final auth0 = Auth0Web(_auth0Domain, _auth0ClientId);
     final origin = '${Uri.base.scheme}://${Uri.base.host}'
         '${Uri.base.hasPort ? ":${Uri.base.port}" : ""}';
@@ -76,5 +91,17 @@ class LoginScreen extends StatelessWidget {
       audience: _auth0Audience,
       scopes: {'openid', 'profile', 'email'},
     );
+  }
+
+  Future<void> _signInWithMicrosoft() async {
+    final origin = '${Uri.base.scheme}://${Uri.base.host}'
+        '${Uri.base.hasPort ? ":${Uri.base.port}" : ""}/';
+    final msal = MsalWeb(
+      clientId: _entraClientId,
+      tenantId: _entraTenantId,
+      redirectUri: origin,
+    );
+    await msal.initialize();
+    await msal.loginRedirect();
   }
 }

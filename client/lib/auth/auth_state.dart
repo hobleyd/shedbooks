@@ -17,27 +17,52 @@
 
 import 'dart:convert';
 
-import 'package:auth0_flutter/auth0_flutter.dart';
 import 'package:flutter/foundation.dart';
 
 import 'app_role.dart';
 
+/// Which identity provider issued the current session — needed only to pick
+/// the matching logout flow (each SDK owns its own redirect-based sign-out).
+enum AuthIssuer { auth0, entra }
+
+/// Display-only profile fields, normalised across issuers so the rest of
+/// the app never needs to know which one authenticated the user.
+class AuthUser {
+  final String? name;
+  final String? email;
+
+  const AuthUser({this.name, this.email});
+}
+
 /// Holds the current authentication state and notifies listeners on change.
+///
+/// Deliberately independent of any single auth SDK's own types (previously
+/// held auth0_flutter's `Credentials` directly) — both Auth0 and Entra ID
+/// logins normalise into accessToken/user/issuer here, so login_screen.dart
+/// and main.dart are the only places that touch either SDK directly.
 class AuthState extends ChangeNotifier {
-  Credentials? _credentials;
+  String? _accessToken;
+  AuthUser? _user;
+  AuthIssuer? _issuer;
 
-  bool get isAuthenticated => _credentials != null;
+  bool get isAuthenticated => _accessToken != null;
 
-  String? get accessToken => _credentials?.accessToken;
+  String? get accessToken => _accessToken;
 
-  UserProfile? get user => _credentials?.user;
+  AuthUser? get user => _user;
+
+  /// Which provider issued the current session — null when signed out.
+  AuthIssuer? get issuer => _issuer;
 
   /// The user's highest-privilege role decoded from the access token.
   ///
   /// Defaults to [AppRole.viewer] when no role claim is present, ensuring
-  /// no privilege is granted by omission.
+  /// no privilege is granted by omission. Checks both the Auth0 namespaced
+  /// claim and Entra's own unnamespaced `roles` claim (App Roles) — unlike
+  /// the server, the client reads the raw token straight from whichever SDK
+  /// issued it, so it sees each issuer's native shape, not a normalised one.
   AppRole get role {
-    final token = _credentials?.accessToken;
+    final token = _accessToken;
     if (token == null) return AppRole.viewer;
     try {
       final parts = token.split('.');
@@ -45,7 +70,7 @@ class AuthState extends ChangeNotifier {
       final payload = jsonDecode(
         utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
       ) as Map<String, dynamic>;
-      final raw = payload['https://shedbooks.com/roles'];
+      final raw = payload['https://shedbooks.com/roles'] ?? payload['roles'];
       final roles = raw is List ? raw : <dynamic>[];
       return AppRole.fromList(roles);
     } catch (_) {
@@ -63,15 +88,23 @@ class AuthState extends ChangeNotifier {
   /// screens that contributors cannot access).
   bool get isContributor => role == AppRole.contributor;
 
-  /// Updates credentials and notifies listeners.
-  void setCredentials(Credentials credentials) {
-    _credentials = credentials;
+  /// Updates the session and notifies listeners.
+  void setSession({
+    required String accessToken,
+    required AuthUser user,
+    required AuthIssuer issuer,
+  }) {
+    _accessToken = accessToken;
+    _user = user;
+    _issuer = issuer;
     notifyListeners();
   }
 
-  /// Clears credentials and notifies listeners.
+  /// Clears the session and notifies listeners.
   void clearCredentials() {
-    _credentials = null;
+    _accessToken = null;
+    _user = null;
+    _issuer = null;
     notifyListeners();
   }
 }
