@@ -15,7 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
-import 'package:auth0_flutter/auth0_flutter_web.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -24,8 +23,6 @@ import '../auth/auth_state.dart';
 import '../auth/msal_web.dart';
 import '../widgets/app_sidebar.dart';
 
-const String _auth0Domain = String.fromEnvironment('AUTH0_DOMAIN');
-const String _auth0ClientId = String.fromEnvironment('AUTH0_CLIENT_ID');
 const String _entraTenantId = String.fromEnvironment('ENTRA_TENANT_ID');
 const String _entraClientId = String.fromEnvironment('ENTRA_CLIENT_ID');
 
@@ -58,21 +55,15 @@ class AppShell extends StatelessWidget {
   Future<void> _signOut(BuildContext context, AuthState authState) async {
     final origin = '${Uri.base.scheme}://${Uri.base.host}'
         '${Uri.base.hasPort ? ":${Uri.base.port}" : ""}';
-    final issuer = authState.issuer;
     authState.clearCredentials();
 
-    if (issuer == AuthIssuer.entra) {
-      final msal = MsalWeb(
-        clientId: _entraClientId,
-        tenantId: _entraTenantId,
-        redirectUri: '$origin/',
-      );
-      await msal.initialize();
-      await msal.logoutRedirect(origin);
-    } else {
-      final auth0 = Auth0Web(_auth0Domain, _auth0ClientId);
-      await auth0.logout(returnToUrl: origin);
-    }
+    final msal = MsalWeb(
+      clientId: _entraClientId,
+      tenantId: _entraTenantId,
+      redirectUri: '$origin/',
+    );
+    await msal.initialize();
+    await msal.logoutRedirect(origin);
     if (context.mounted) context.go('/');
   }
 }

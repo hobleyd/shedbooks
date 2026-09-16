@@ -22,6 +22,7 @@ import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
 import 'package:shedbooks_server/domain/entities/user_api_key.dart';
+import 'package:shedbooks_server/domain/repositories/i_entity_details_repository.dart';
 import 'package:shedbooks_server/domain/repositories/i_user_api_key_repository.dart';
 import 'package:shedbooks_server/infrastructure/auth/carddav_auth_middleware.dart';
 import 'package:shedbooks_server/infrastructure/auth/jwks_client.dart';
@@ -29,6 +30,9 @@ import 'package:shedbooks_server/infrastructure/auth/multi_issuer_jwt.dart';
 import 'package:shedbooks_server/infrastructure/encryption/sha256_hex.dart';
 
 class MockJwksClient extends Mock implements JwksClient {}
+
+class MockEntityDetailsRepository extends Mock
+    implements IEntityDetailsRepository {}
 
 class MockUserApiKeyRepository extends Mock implements IUserApiKeyRepository {}
 
@@ -43,21 +47,24 @@ final _okHandler = (Request req) => Response.ok('ok');
 
 void main() {
   late MockJwksClient mockJwksClient;
+  late MockEntityDetailsRepository mockEntityDetailsRepository;
   late Middleware middleware;
   late Map<String, ClaimsVerifier> verifiersByIssuer;
 
-  const auth0Domain = 'test.auth0.com';
-  const audience = 'https://shedbooks.com';
+  const entraTenantId = 'test-tenant-id';
+  const entraClientId = 'test-client-id';
+  const entraIssuer = 'https://login.microsoftonline.com/$entraTenantId/v2.0';
 
   setUp(() {
     mockJwksClient = MockJwksClient();
+    mockEntityDetailsRepository = MockEntityDetailsRepository();
     verifiersByIssuer = {
-      'https://$auth0Domain/': (token) => verifyAuth0Jwt(
-            token,
-            auth0Domain: auth0Domain,
-            audience: audience,
-            jwksClient: mockJwksClient,
-          ),
+      entraIssuer: EntraJwtVerifier(
+        tenantId: entraTenantId,
+        clientId: entraClientId,
+        jwksClient: mockJwksClient,
+        entityDetailsRepository: mockEntityDetailsRepository,
+      ),
     };
     middleware = cardDavAuthMiddleware(
       verifiersByIssuer: verifiersByIssuer,
@@ -157,7 +164,7 @@ void main() {
       final header =
           base64Url.encode(utf8.encode('{"alg":"RS256","kid":"test-kid"}'));
       final payload = base64Url
-          .encode(utf8.encode('{"sub":"1","iss":"https://$auth0Domain/"}'));
+          .encode(utf8.encode('{"sub":"1","iss":"$entraIssuer"}'));
       const sig = 'fakesig';
       final fakeJwt = '$header.$payload.$sig';
 
@@ -194,7 +201,7 @@ void main() {
       final header =
           base64Url.encode(utf8.encode('{"alg":"RS256"}'));
       final payload = base64Url
-          .encode(utf8.encode('{"sub":"1","iss":"https://$auth0Domain/"}'));
+          .encode(utf8.encode('{"sub":"1","iss":"$entraIssuer"}'));
       final fakeJwt = '$header.$payload.fakesig';
 
       final req = Request(

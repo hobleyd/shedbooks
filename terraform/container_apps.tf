@@ -166,17 +166,11 @@ resource "azurerm_container_app" "server" {
         name  = "MIGRATIONS_DIR"
         value = "/app/migrations"
       }
-      env {
-        name  = "AUTH0_DOMAIN"
-        value = var.auth0_domain
-      }
-      env {
-        name  = "AUTH0_AUDIENCE"
-        value = var.auth0_audience
-      }
-      # Entra ID is accepted alongside Auth0 (see entra_login.tf) — the
-      # server treats these as optional (server/bin/server.dart), so this
-      # is additive: Auth0 keeps working unchanged either way.
+      # Entra ID (see entra_login.tf) is the sole login issuer — required
+      # by server/bin/server.dart. Auth0 was accepted alongside it during
+      # the migration between them; now that everyone has cut over, its
+      # config/env vars have been fully removed (the Auth0 tenant itself is
+      # untouched and left as a break-glass, just no longer referenced here).
       env {
         name  = "ENTRA_TENANT_ID"
         value = data.azuread_client_config.current.tenant_id

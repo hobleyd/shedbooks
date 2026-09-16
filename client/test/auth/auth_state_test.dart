@@ -41,36 +41,22 @@ void main() {
       expect(authState.role, equals(AppRole.viewer));
     });
 
-    test('reads Auth0\'s namespaced roles claim', () {
+    test('reads the roles claim', () {
       final authState = AuthState();
       authState.setSession(
         accessToken: _fakeJwt({
-          'https://shedbooks.com/roles': ['administrator']
+          'roles': ['administrator']
         }),
         user: const AuthUser(),
-        issuer: AuthIssuer.auth0,
       );
       expect(authState.role, equals(AppRole.administrator));
     });
 
-    test('reads Entra\'s unnamespaced roles claim', () {
-      final authState = AuthState();
-      authState.setSession(
-        accessToken: _fakeJwt({
-          'roles': ['contributor']
-        }),
-        user: const AuthUser(),
-        issuer: AuthIssuer.entra,
-      );
-      expect(authState.role, equals(AppRole.contributor));
-    });
-
-    test('defaults to viewer when neither roles claim is present', () {
+    test('defaults to viewer when no roles claim is present', () {
       final authState = AuthState();
       authState.setSession(
         accessToken: _fakeJwt({'sub': '1'}),
         user: const AuthUser(),
-        issuer: AuthIssuer.entra,
       );
       expect(authState.role, equals(AppRole.viewer));
     });
@@ -80,27 +66,24 @@ void main() {
       authState.setSession(
         accessToken: 'not-a-jwt',
         user: const AuthUser(),
-        issuer: AuthIssuer.auth0,
       );
       expect(authState.role, equals(AppRole.viewer));
     });
   });
 
   group('AuthState session lifecycle', () {
-    test('setSession populates isAuthenticated/user/issuer', () {
+    test('setSession populates isAuthenticated/user', () {
       final authState = AuthState();
       authState.setSession(
         accessToken: _fakeJwt({
           'roles': ['viewer']
         }),
         user: const AuthUser(name: 'David Hobley', email: 'david@example.com'),
-        issuer: AuthIssuer.entra,
       );
 
       expect(authState.isAuthenticated, isTrue);
       expect(authState.user?.name, equals('David Hobley'));
       expect(authState.user?.email, equals('david@example.com'));
-      expect(authState.issuer, equals(AuthIssuer.entra));
     });
 
     test('clearCredentials resets everything', () {
@@ -110,7 +93,6 @@ void main() {
           'roles': ['administrator']
         }),
         user: const AuthUser(name: 'David Hobley'),
-        issuer: AuthIssuer.auth0,
       );
 
       authState.clearCredentials();
@@ -118,7 +100,6 @@ void main() {
       expect(authState.isAuthenticated, isFalse);
       expect(authState.accessToken, isNull);
       expect(authState.user, isNull);
-      expect(authState.issuer, isNull);
       expect(authState.role, equals(AppRole.viewer));
     });
 
@@ -129,7 +110,6 @@ void main() {
           'roles': ['contributor']
         }),
         user: const AuthUser(),
-        issuer: AuthIssuer.entra,
       );
 
       expect(authState.canEdit, isTrue);

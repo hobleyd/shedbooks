@@ -45,9 +45,9 @@ void main() {
     test('returns the iss claim from a well-formed token', () {
       final token = _fakeJwt(
         {'alg': 'RS256', 'kid': 'k1'},
-        {'iss': 'https://example.auth0.com/', 'sub': '1'},
+        {'iss': 'https://example-issuer.test/', 'sub': '1'},
       );
-      expect(peekIssuer(token), equals('https://example.auth0.com/'));
+      expect(peekIssuer(token), equals('https://example-issuer.test/'));
     });
 
     test('returns null when the token has fewer than 3 parts', () {

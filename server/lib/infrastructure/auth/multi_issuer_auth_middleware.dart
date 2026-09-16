@@ -23,8 +23,11 @@ import 'package:shelf/shelf.dart';
 
 import 'multi_issuer_jwt.dart';
 
-/// Shelf middleware that accepts Bearer JWTs from any of several issuers —
-/// e.g. Auth0 and Entra ID concurrently during the migration between them.
+/// Shelf middleware that accepts Bearer JWTs from any of one or more
+/// configured issuers — this app used it to accept Auth0 and Entra ID
+/// concurrently during the migration between them; Entra is now the only
+/// entry in the map, but the dispatch mechanism is kept as-is since it's
+/// exactly what a future second issuer would need again.
 ///
 /// Dispatch is by the token's own (unverified) `iss` claim; the token is
 /// only ever trusted once the [ClaimsVerifier] registered for that issuer
@@ -32,8 +35,7 @@ import 'multi_issuer_jwt.dart';
 /// naming an issuer not present in the map is rejected outright.
 ///
 /// On success, the verified/normalised claims are attached to the request
-/// context under the key 'auth.claims', exactly as [auth0Middleware] alone
-/// used to.
+/// context under the key 'auth.claims'.
 Middleware multiIssuerAuthMiddleware(
   Map<String, ClaimsVerifier> verifiersByIssuer,
 ) {

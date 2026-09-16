@@ -19,7 +19,7 @@
 ///
 /// Stored per entity so CSV imports can auto-match previously confirmed mappings.
 class BudgetGlMapping {
-  /// Auth0 org ID of the owning entity.
+  /// Organisation (entity) identifier of the owning entity.
   final String entityId;
 
   /// Account code from the external/legacy system.

@@ -39,10 +39,10 @@
 #   TF_STATE_CONTAINER        — Blob container name for tfstate (e.g. tfstate)
 #   RESOURCE_GROUP_NAME        — Resource group Terraform manages (e.g. rg-shedbooks-prod)
 #   AZURE_LOCATION            — Azure region, e.g. australiaeast
-#   AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_AUDIENCE — Auth0 config (baked into the client build + server env)
-#   ENTRA_TENANT_ID, ENTRA_CLIENT_ID — Entra ID login config, optional (baked into the client build only —
+#   ENTRA_TENANT_ID, ENTRA_CLIENT_ID — Entra ID login config, required (baked into the client build —
 #                             the server reads the same values from Terraform outputs, see container_apps.tf).
-#                             Leave unset/blank and the client simply doesn't show the Microsoft sign-in button.
+#                             The "Shedbooks Login" App Registration itself is created/managed by
+#                             terraform/entra_login.tf; these two values are just its known tenant_id/client_id.
 #   CORS_ORIGIN               — Allowed CORS origin (the client app's public origin)
 #   IMAGE_TAG                 — Image tag to use on PR plans (e.g. latest); ignored on push/dispatch, which always use the commit SHA
 
@@ -112,9 +112,6 @@ jobs:
         env:
           ACR_NAME:         ${{ vars.ACR_NAME }}
           TAG:              ${{ github.sha }}
-          AUTH0_DOMAIN:     ${{ vars.AUTH0_DOMAIN }}
-          AUTH0_CLIENT_ID:  ${{ vars.AUTH0_CLIENT_ID }}
-          AUTH0_AUDIENCE:   ${{ vars.AUTH0_AUDIENCE }}
           ENTRA_TENANT_ID:  ${{ vars.ENTRA_TENANT_ID }}
           ENTRA_CLIENT_ID:  ${{ vars.ENTRA_CLIENT_ID }}
         run: ./scripts/build-and-push.sh
@@ -144,9 +141,6 @@ jobs:
       TF_VAR_image_tag:                 ${{ github.event_name == 'pull_request' && (vars.IMAGE_TAG || 'latest') || github.sha }}
       TF_VAR_postgres_admin_password:  ${{ secrets.DB_PASSWORD }}
       TF_VAR_encryption_key:            ${{ secrets.ENCRYPTION_KEY }}
-      TF_VAR_auth0_domain:              ${{ vars.AUTH0_DOMAIN }}
-      TF_VAR_auth0_client_id:           ${{ vars.AUTH0_CLIENT_ID }}
-      TF_VAR_auth0_audience:            ${{ vars.AUTH0_AUDIENCE }}
       TF_VAR_cors_origin:               ${{ vars.CORS_ORIGIN }}
       TF_VAR_abr_guid:                   ${{ secrets.ABR_GUID }}
       # Read directly by the azurerm provider/backend (see terraform/providers.tf).

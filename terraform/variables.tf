@@ -25,7 +25,7 @@
 # ── General ───────────────────────────────────────────────────────────────────
 
 variable "location" {
-  description = "Azure region. Kept in Australia to keep financial/member data in-country (GST/ABR integration, .au.auth0.com tenant)."
+  description = "Azure region. Kept in Australia to keep financial/member data in-country (GST/ABR integration, Entra tenant)."
   type        = string
   default     = "australiaeast"
 }
@@ -152,21 +152,6 @@ variable "client_memory" {
 # ── Application secrets / config ─────────────────────────────────────────────
 # These become Container Apps secrets/env vars on the server app — the same
 # values that used to populate /opt/shedbooks/.env via cloud-init.
-
-variable "auth0_domain" {
-  description = "Auth0 tenant domain, e.g. sharpblue.au.auth0.com"
-  type        = string
-}
-
-variable "auth0_client_id" {
-  description = "Auth0 application client ID (baked into the Flutter web build)"
-  type        = string
-}
-
-variable "auth0_audience" {
-  description = "Auth0 API audience identifier"
-  type        = string
-}
 
 variable "cors_origin" {
   description = "Allowed CORS origin for the server API — the client app's public origin (default ACA FQDN, or the custom domain once bound)."

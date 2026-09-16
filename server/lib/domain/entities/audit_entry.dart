@@ -20,10 +20,10 @@ class AuditEntry {
   /// Unique identifier (UUID v4).
   final String id;
 
-  /// Auth0 organisation ID of the acting entity.
+  /// Organisation (entity) identifier of the acting entity.
   final String entityId;
 
-  /// Auth0 sub claim of the acting user.
+  /// The acting user's identifier (Entra `oid` claim).
   final String userId;
 
   /// Email of the acting user (from JWT email claim, may be empty).

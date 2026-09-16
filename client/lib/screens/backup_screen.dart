@@ -138,8 +138,8 @@ class _BackupScreenState extends State<BackupScreen> {
         // Every screen may be holding retained (StatefulShellRoute
         // indexedStack) or cached state fetched before the restore; a full
         // reload is the only reliable way to guarantee it reflects the
-        // newly-restored data. Auth0's session cookie survives this, so the
-        // user stays signed in.
+        // newly-restored data. MSAL's cached session (localStorage) survives
+        // this, so the user stays signed in.
         await Future.delayed(const Duration(milliseconds: 800));
         html.window.location.reload();
       } else {

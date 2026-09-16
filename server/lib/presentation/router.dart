@@ -176,15 +176,12 @@ import 'middleware/role_guard.dart';
 
 /// Builds and returns the application [Handler] with all routes wired up.
 Handler buildRouter({
-  required String auth0Domain,
-  required String audience,
+  required String entraTenantId,
+  required String entraClientId,
   required String corsOrigin,
   required FieldEncryptor fieldEncryptor,
   String abrGuid = '',
-  String? entraTenantId,
-  String? entraClientId,
 }) {
-  final jwksClient = JwksClient(auth0Domain);
   final pool = DatabaseConnection.pool;
 
   final generalLedgerRepository = PostgresGeneralLedgerRepository(pool);
@@ -413,30 +410,22 @@ Handler buildRouter({
     generate: GenerateApiKeyUseCase(apiKeyRepository),
   );
 
-  // Auth0 is always accepted; Entra ID is accepted alongside it once
-  // ENTRA_TENANT_ID/ENTRA_CLIENT_ID are configured (see server.dart) — both
-  // issuers stay valid throughout the Auth0 -> Entra migration so login
-  // never has a window where it depends on a single provider.
+  // Auth0 was accepted alongside Entra during the migration between them —
+  // now that every user has cut over, Entra is the sole issuer. Kept as a
+  // map (rather than a single hardcoded verifier) since that's exactly
+  // what a future second issuer would need again.
   final verifiersByIssuer = <String, ClaimsVerifier>{
-    'https://$auth0Domain/': (token) => verifyAuth0Jwt(
-          token,
-          auth0Domain: auth0Domain,
-          audience: audience,
-          jwksClient: jwksClient,
+    'https://login.microsoftonline.com/$entraTenantId/v2.0': EntraJwtVerifier(
+      tenantId: entraTenantId,
+      clientId: entraClientId,
+      jwksClient: JwksClient(
+        Uri.https(
+          'login.microsoftonline.com',
+          '/$entraTenantId/discovery/v2.0/keys',
         ),
-    if (entraTenantId != null && entraClientId != null)
-      'https://login.microsoftonline.com/$entraTenantId/v2.0':
-          EntraJwtVerifier(
-        tenantId: entraTenantId,
-        clientId: entraClientId,
-        jwksClient: JwksClient.forUri(
-          Uri.https(
-            'login.microsoftonline.com',
-            '/$entraTenantId/discovery/v2.0/keys',
-          ),
-        ),
-        entityDetailsRepository: entityDetailsRepository,
       ),
+      entityDetailsRepository: entityDetailsRepository,
+    ),
   };
 
   final authMiddleware = multiIssuerAuthMiddleware(verifiersByIssuer);

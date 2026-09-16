@@ -58,9 +58,13 @@ output "entra_login_client_id" {
 output "next_steps" {
   description = "Checklist for things this apply does not automate"
   value       = <<-EOT
-    1. Update Auth0 (Application → Settings) for the new origin:
-         Allowed Callback URLs / Logout URLs / Web Origins → https://${azurerm_container_app.client.ingress[0].fqdn}
-         (repeat once a custom domain is bound, step 2 below)
+    1. Update the "Shedbooks Login" Entra App Registration's redirect URIs
+       for the new origin (Entra admin center → App registrations →
+       Shedbooks Login → Authentication → Single-page application) →
+       https://${azurerm_container_app.client.ingress[0].fqdn}/
+         (repeat once a custom domain is bound, step 2 below — entra_login.tf
+         already includes var.cors_origin, so re-applying after updating that
+         picks this up automatically)
 
     2. (Optional) Bind a custom domain — Terraform doesn't manage this;
        Azure's managed-certificate binding flow is still evolving in the

@@ -46,51 +46,18 @@ String? peekIssuer(String token) {
   }
 }
 
-/// Verifies an Auth0-issued JWT and returns its raw claims. Auth0's claim
-/// shape (`https://shedbooks.com/entity_id`, `sub`, `email`,
-/// `https://shedbooks.com/roles`) is already this app's canonical shape, so
-/// no normalisation is needed — unlike [EntraJwtVerifier].
-Future<Map<String, dynamic>> verifyAuth0Jwt(
-  String token, {
-  required String auth0Domain,
-  required String audience,
-  required JwksClient jwksClient,
-}) async {
-  final headerPart = token.split('.').first;
-  final headerJson = utf8.decode(
-    base64Url.decode(base64Url.normalize(headerPart)),
-  );
-  final header = jsonDecode(headerJson) as Map<String, dynamic>;
-  final kid = header['kid'] as String?;
-  if (kid == null) {
-    throw JWTInvalidException('JWT header missing kid');
-  }
-
-  final publicKey = await jwksClient.getPublicKey(kid);
-  final jwt = JWT.verify(token, publicKey, issuer: 'https://$auth0Domain/');
-
-  // dart_jsonwebtoken does strict list equality for audience, but Auth0
-  // access tokens carry multiple audiences (API + /userinfo). Check
-  // manually that our audience is present in the aud claim.
-  final payload = jwt.payload as Map<String, dynamic>;
-  final rawAud = payload['aud'];
-  final audList = rawAud is List
-      ? rawAud.cast<String>()
-      : rawAud is String
-          ? [rawAud]
-          : <String>[];
-  if (!audList.contains(audience)) {
-    throw JWTInvalidException('invalid audience');
-  }
-
-  return payload;
-}
-
 /// Verifies a Microsoft Entra ID (v2.0) JWT for a single expected tenant
-/// and normalises it into the same claim keys [verifyAuth0Jwt] produces, so
-/// every downstream consumer (`resolveEntityId`, `resolveUserId`,
-/// `resolveEmail`, `roleFromRequest`) needs no knowledge of which issuer
-/// authenticated the caller.
+/// and normalises it into the app's canonical claim keys
+/// (`https://shedbooks.com/entity_id`, `sub`, `email`,
+/// `https://shedbooks.com/roles`), so every downstream consumer
+/// (`resolveEntityId`, `resolveUserId`, `resolveEmail`, `roleFromRequest`)
+/// needs no knowledge of which issuer authenticated the caller. Entra is
+/// currently the only issuer this app accepts — Auth0 support (which used
+/// to share this file, keyed by issuer alongside Entra during the
+/// migration between them) has been fully removed now that all users have
+/// cut over. [ClaimsVerifier]/[peekIssuer] are kept as the dispatch
+/// mechanism regardless, since nothing about them was Auth0-specific and
+/// they're exactly what a future second issuer would need again.
 ///
 /// Verified against a *single* tenant deliberately (single-tenant App
 /// Registration + an explicit `tid` check, not just issuer string matching)
@@ -166,8 +133,8 @@ class EntraJwtVerifier {
   }
 }
 
-/// Normalises already-verified Entra claims into the same claim keys
-/// [verifyAuth0Jwt] produces. Split out from [EntraJwtVerifier.call] so the
+/// Normalises already-verified Entra claims into the app's canonical claim
+/// keys. Split out from [EntraJwtVerifier.call] so the
 /// mapping — the part that decides which tenant's data and which identity a
 /// caller ends up as — can be unit tested directly against a captured token
 /// payload, without needing a real RS256 signature to reach it.

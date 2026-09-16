@@ -17,10 +17,10 @@
 
 /// Tracks when a user most recently accessed the application.
 class UserPresence {
-  /// Auth0 organisation ID.
+  /// Organisation (entity) identifier.
   final String entityId;
 
-  /// Auth0 sub claim (unique user identifier).
+  /// Unique user identifier (Entra `oid` claim).
   final String userId;
 
   /// User email from JWT; may be empty for service accounts.

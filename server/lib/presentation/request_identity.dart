@@ -19,9 +19,9 @@ import 'package:shelf/shelf.dart';
 
 // Single source of truth for reading identity fields off the decoded JWT
 // claims attached to `request.context['auth.claims']` by the auth
-// middleware. Every auth issuer (Auth0 today, Entra ID once added) is
-// normalised to the same claim keys before it reaches here, so this file
-// is the only place that needs to know those key names.
+// middleware. The issuer's own claim shape is normalised to these keys
+// before it reaches here (see multi_issuer_jwt.dart), so this file is the
+// only place that needs to know those key names.
 
 /// The authenticated caller's entity (tenant) id, or null if absent.
 String? resolveEntityId(Request request) {

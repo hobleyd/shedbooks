@@ -21,13 +21,12 @@ import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:http/http.dart' as http;
 import 'package:pointycastle/pointycastle.dart' as pc;
 
-/// Fetches and caches JSON Web Keys from one or more issuers' JWKS
-/// endpoints — e.g. Auth0's `/.well-known/jwks.json` and Entra ID's
-/// `/discovery/v2.0/keys`. Each [JwksClient] instance is bound to a single
-/// JWKS URI; callers that need to accept multiple issuers (Auth0 and Entra
-/// concurrently) hold one instance per issuer, keyed by issuer in the
-/// dispatch layer above this class — this class itself stays single-issuer
-/// so it has no knowledge of *how* issuers are told apart.
+/// Fetches and caches JSON Web Keys from an issuer's JWKS endpoint (e.g.
+/// Entra ID's `/discovery/v2.0/keys`). Each [JwksClient] instance is bound
+/// to a single JWKS URI; a caller that needs to accept multiple issuers
+/// holds one instance per issuer, keyed by issuer in the dispatch layer
+/// above this class — this class itself stays single-issuer so it has no
+/// knowledge of *how* issuers are told apart.
 class JwksClient {
   final Uri _jwksUri;
   final http.Client _httpClient;
@@ -36,15 +35,8 @@ class JwksClient {
   final Map<String, RSAPublicKey> _keyCache = {};
   DateTime? _cacheExpiry;
 
-  JwksClient(String auth0Domain, [http.Client? httpClient])
-      : _jwksUri = Uri.https(auth0Domain, '/.well-known/jwks.json'),
-        _httpClient = httpClient ?? http.Client();
-
-  /// Creates a client fetching keys from an arbitrary JWKS [uri] — used for
-  /// issuers (e.g. Entra ID) whose JWKS endpoint isn't Auth0's fixed
-  /// `/.well-known/jwks.json` path under a domain.
-  JwksClient.forUri(Uri uri, [http.Client? httpClient])
-      : _jwksUri = uri,
+  JwksClient(Uri jwksUri, [http.Client? httpClient])
+      : _jwksUri = jwksUri,
         _httpClient = httpClient ?? http.Client();
 
   /// Returns the RSA public key matching [kid].

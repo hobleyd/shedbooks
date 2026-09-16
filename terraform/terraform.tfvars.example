@@ -17,10 +17,9 @@ image_tag = "latest"
 postgres_admin_username = "shedbooks"
 postgres_admin_password = "CHANGE_ME_USE_A_LONG_RANDOM_PASSWORD"
 
-# Auth0
-auth0_domain     = "CHANGE_ME.auth0.com"
-auth0_client_id   = "CHANGE_ME"
-auth0_audience    = "https://CHANGE_ME"
+# Entra ID login config is not set here — the "Shedbooks Login" App
+# Registration (client_id, tenant_id) is created and managed entirely by
+# entra_login.tf; no separate tfvars entry is needed.
 
 # CORS_ORIGIN should match the client app's actual origin — after the first
 # apply, set this to the client_fqdn output (or your bound custom domain).

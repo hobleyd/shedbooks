@@ -62,10 +62,9 @@ class MsalResult {
 }
 
 /// Thin dart:js_interop wrapper around Microsoft's msal-browser SDK (loaded
-/// via CDN in web/index.html), mirroring the shape auth0_flutter_web's
-/// Auth0Web already presents to the rest of the app: a redirect-based
-/// login, an [onLoad] that both completes a pending redirect and silently
-/// restores an existing session, and a redirect-based logout.
+/// via CDN in web/index.html): a redirect-based login, an [onLoad] that
+/// both completes a pending redirect and silently restores an existing
+/// session, and a redirect-based logout.
 class MsalWeb {
   final String clientId;
   final String tenantId;
@@ -98,8 +97,7 @@ class MsalWeb {
 
   /// Completes a pending redirect response if present, otherwise attempts a
   /// silent token refresh for a previously-cached account. Returns null if
-  /// neither applies — there is no Entra session to restore, which is the
-  /// common case (not signed in, or signed in via Auth0 instead).
+  /// neither applies — there is no session to restore, i.e. not signed in.
   Future<MsalResult?> onLoad() async {
     final redirectResult = await _app.handleRedirectPromise().toDart;
     if (redirectResult != null) {
@@ -122,8 +120,7 @@ class MsalWeb {
       return _toResult(silentResult as JSObject);
     } catch (_) {
       // Silent refresh can fail (expired session, revoked consent, etc.) —
-      // treat as "not signed in", matching Auth0Web.onLoad()'s own
-      // catch-and-ignore in main.dart for the equivalent case.
+      // treat as "not signed in" rather than surfacing an error.
       return null;
     }
   }

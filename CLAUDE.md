@@ -4,14 +4,14 @@
 This solution implements a **Flutter Clean Architecture API** with a **Flutter web frontend**.
 The backend follows a **Contract-First** design using **OpenAPI** (for REST endpoints).
 
-Authentication is handled through **Auth0**.
+Authentication is handled through **Microsoft Entra ID**.
 
 ## Technology Stack
 - Flutter (web frontend + Dart/Shelf backend server)
 - PostgreSQL database (postgres Dart package v3.3.0 — use `Pool`, `Sql.named()`, `TxSession`, `runTx`)
 - Docker Compose for local dev and production deployment
 - nginx for TLS termination — proxies `/api/` → Dart server on port 8080; client uses `API_URL=/api`
-- Auth0 for authentication (JWT validation via `dart_jsonwebtoken`)
+- Microsoft Entra ID for authentication (JWT validation via `dart_jsonwebtoken`; client login via `msal-browser`, wrapped in `client/lib/auth/msal_web.dart`)
 
 ## Coding Standards
 - **Principles**:SOLID, DRY (Don't Repeat Yourself), KISS (Keep It Simple, Stupid), YAGNI (You Aren't Gonna Need It), SoC (Separation of Concerns)
@@ -44,10 +44,21 @@ Authentication is handled through **Auth0**.
 
 ## Multi-tenancy
 - Every table has an `entity_id` column. All queries must be scoped to the authenticated entity.
-- Auth0 organisation ID is delivered as a custom JWT claim: `https://shedbooks.com/entity_id`
-- Auth0 user email is read from `claims['email']` or `claims['https://shedbooks.com/email']`.  
-  Email is **not** in the access token by default — add it via an Auth0 Action:  
-  `api.accessToken.setCustomClaim('email', event.user.email ?? '');`
+- The server never trusts a raw Entra claim directly — `EntraJwtVerifier`
+  (`server/lib/infrastructure/auth/multi_issuer_jwt.dart`) verifies the token,
+  resolves `entity_id` from the token's `tid` claim via
+  `entity_details.entra_tenant_id` (migration 059), and normalises everything
+  into this app's canonical claim keys before it reaches
+  `request.context['auth.claims']`: `https://shedbooks.com/entity_id`, `sub`
+  (Entra's `oid`, not its per-app pairwise `sub`), `email`, and
+  `https://shedbooks.com/roles`. Handlers/middleware read those canonical
+  keys via `server/lib/presentation/request_identity.dart` — never Entra's
+  own claim names directly.
+- Entra access tokens don't always carry an `email` claim — `resolveEntraEmail`
+  falls back through `preferred_username` then `upn`.
+- The client (`AuthState.role` in `client/lib/auth/auth_state.dart`) reads the
+  raw token straight from MSAL, so it sees Entra's *native* unnamespaced
+  `roles` claim directly — no normalisation happens client-side.
 
 ## Database Migrations
 - Migration files live in `server/lib/infrastructure/database/migrations/` named `NNN_description.sql`.
@@ -103,7 +114,7 @@ Asset numbers use a separate but token-compatible format: `entity_details.asset_
 
 ## Roles and Permissions
 
-Three roles managed in Auth0 RBAC and enforced on both server and client:
+Three roles managed as Entra ID App Roles and enforced on both server and client:
 
 | Role | Read | Write general | Write admin resources |
 |------|------|---------------|----------------------|
@@ -127,16 +138,26 @@ applied per-route in `router.dart`.
 (admin only) gate buttons/fields in each screen. Router redirects contributors away from
 restricted paths. Sidebar hides restricted admin nav items for contributors.
 
-**Auth0 setup**:
-1. Create roles `viewer`, `contributor`, `administrator` in Auth0 dashboard → User Management → Roles.
-2. Assign roles to users within their Organisation.
-3. Update the Auth0 Action (see below) to include roles in the access token.
-
-## Key Custom Claims (Auth0 Action)
-```javascript
-const ns = 'https://shedbooks.com/';
-api.accessToken.setCustomClaim(ns + 'entity_id', event.organization?.id ?? '');
-api.accessToken.setCustomClaim('email', event.user.email ?? '');
-api.accessToken.setCustomClaim(ns + 'roles', event.authorization?.roles ?? []);
-```
+**Entra ID setup** — entirely code-managed by `terraform/entra_login.tf` (a dedicated
+"Shedbooks Login" App Registration, deliberately separate from the app-only,
+certificate-authenticated registration used for O365/Exchange sync — mixing
+interactive user login with a client-credentials flow in one registration
+would be hard to reason about securely):
+1. App Roles `viewer`, `contributor`, `administrator` are declared directly on
+   the App Registration (`app_role` blocks) — values match `AppRole` exactly,
+   so no string-mapping layer is needed on either client or server.
+2. Per-user role assignment is `azuread_app_role_assignment`, keyed by each
+   person's Entra object id — not a dashboard click-through.
+3. The client requests the app's own API scope
+   (`"<clientId>/access_as_user"`, declared via `api.oauth2_permission_scope`)
+   so the returned *access* token (not just an ID token) carries the caller's
+   assigned role — `requested_access_token_version = 2` is what makes this a
+   v2.0-shaped token (`iss` ending `/v2.0`, `preferred_username` instead of
+   the v1.0-only `upn`).
+4. `entity_details.entra_tenant_id` (the Entra tenant GUID, i.e. the token's
+   `tid` claim) must be set per entity for login to resolve — deliberately a
+   separate column/value from `o365_sync_settings.tenant_id` (that one is the
+   tenant's *default domain*, required by Exchange Online's cert-based auth,
+   not the GUID — same real-world tenant, different id format, different
+   feature, not interchangeable).
 

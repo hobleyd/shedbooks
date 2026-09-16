@@ -22,10 +22,10 @@ class UserApiKey {
   /// Database row UUID.
   final String id;
 
-  /// Auth0 organisation ID.
+  /// Organisation (entity) identifier.
   final String entityId;
 
-  /// Auth0 sub claim (unique user identifier).
+  /// Unique user identifier (Entra `oid` claim).
   final String userId;
 
   /// User email at the time the key was generated.

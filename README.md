@@ -1,6 +1,6 @@
 # ShedBooks
 
-A bookkeeping backend built with Dart, served from a Docker container and backed by PostgreSQL. Authentication is handled via Auth0 (RS256 JWTs). The API follows a contract-first design — the canonical spec lives at [`server/openapi/api.yaml`](server/openapi/api.yaml).
+A bookkeeping backend built with Dart, served from a Docker container and backed by PostgreSQL. Authentication is handled via Microsoft Entra ID (RS256 JWTs). The API follows a contract-first design — the canonical spec lives at [`server/openapi/api.yaml`](server/openapi/api.yaml).
 
 ---
 
@@ -37,7 +37,7 @@ Presentation  ←  Application  ←  Domain
 |---|---|
 | **Domain** | Entities, enums, repository interfaces, domain exceptions |
 | **Application** | Use cases — one class per operation, all business rules live here |
-| **Infrastructure** | PostgreSQL repositories, Auth0 JWT middleware, JWKS client |
+| **Infrastructure** | PostgreSQL repositories, Entra ID JWT middleware, JWKS client |
 | **Presentation** | Shelf HTTP handlers, DTOs, routing, CORS, error handling |
 
 Dependencies only point inward. Infrastructure implements domain interfaces; application use cases depend only on those interfaces, never on concrete implementations.
@@ -52,7 +52,7 @@ Dependencies only point inward. Infrastructure implements domain interfaces; app
 | HTTP server | [shelf](https://pub.dev/packages/shelf) + [shelf_router](https://pub.dev/packages/shelf_router) |
 | Database | PostgreSQL 16 |
 | DB driver | [postgres](https://pub.dev/packages/postgres) v3 |
-| Authentication | Auth0 (RS256 JWT via JWKS) |
+| Authentication | Microsoft Entra ID (RS256 JWT via JWKS) |
 | Containerisation | Docker + Docker Compose |
 | Testing | [test](https://pub.dev/packages/test) + [mocktail](https://pub.dev/packages/mocktail) |
 
@@ -80,7 +80,7 @@ shedbooks/
     │   │   ├── gst_rate/                      # GST rate use cases
     │   │   └── transaction/                   # Transaction use cases
     │   ├── infrastructure/
-    │   │   ├── auth/                          # Auth0 middleware + JWKS client
+    │   │   ├── auth/                          # Entra ID JWT verification + JWKS client
     │   │   ├── database/
     │   │   │   ├── database_connection.dart   # Connection pool
     │   │   │   └── migrations/                # Numbered SQL migrations
@@ -102,7 +102,7 @@ shedbooks/
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 - [Dart SDK](https://dart.dev/get-dart) ≥ 3.3 (for local development / running tests)
-- An Auth0 tenant with an API configured
+- A Microsoft Entra ID tenant with an App Registration configured for login (see `terraform/entra_login.tf`)
 
 ### Running with Docker Compose
 
@@ -135,8 +135,8 @@ dart run bin/server.dart
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `AUTH0_DOMAIN` | Yes | — | Auth0 tenant domain, e.g. `your-tenant.au.auth0.com` |
-| `AUTH0_AUDIENCE` | Yes | — | Auth0 API audience, e.g. `https://api.shedbooks.com` |
+| `ENTRA_TENANT_ID` | Yes | — | Entra ID tenant GUID |
+| `ENTRA_CLIENT_ID` | Yes | — | Client ID of the "Shedbooks Login" App Registration |
 | `DB_HOST` | Yes | — | PostgreSQL host |
 | `DB_PORT` | No | `5432` | PostgreSQL port |
 | `DB_NAME` | Yes | — | Database name |
@@ -179,13 +179,13 @@ Migrations are plain SQL files in `server/lib/infrastructure/database/migrations
 
 ### Authentication
 
-All endpoints (except `GET /health`) require a valid Auth0 Bearer token.
+All endpoints (except `GET /health`) require a valid Entra ID Bearer token.
 
 ```
 Authorization: Bearer <access_token>
 ```
 
-The server fetches the JWKS from `https://{AUTH0_DOMAIN}/.well-known/jwks.json`, caches keys for one hour, and validates the `iss` and `aud` claims on every request.
+The server fetches the JWKS from `https://login.microsoftonline.com/{ENTRA_TENANT_ID}/discovery/v2.0/keys`, caches keys for one hour, and validates the `iss`, `aud`, and `tid` claims on every request.
 
 ---
 

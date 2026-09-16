@@ -26,7 +26,7 @@ class Member {
   /// Unique identifier (UUID v4).
   final String id;
 
-  /// Organisation identifier from Auth0.
+  /// Organisation (entity) identifier.
   final String entityId;
 
   /// Given name(s).

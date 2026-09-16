@@ -20,7 +20,7 @@ class LockedMonth {
   /// Unique identifier (UUID v4).
   final String id;
 
-  /// The Auth0 organisation ID that owns this lock.
+  /// The organisation (entity) identifier that owns this lock.
   final String entityId;
 
   /// The bank account this lock applies to.

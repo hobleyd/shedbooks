@@ -17,7 +17,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Auth0 JWT token
+      description: Microsoft Entra ID JWT access token
 
   schemas:
     GeneralLedger:

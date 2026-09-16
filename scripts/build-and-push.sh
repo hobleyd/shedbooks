@@ -17,10 +17,10 @@
 # along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 # Build Docker images for linux/amd64 (Azure Container Apps) and push to ACR.
-# Auth0 build args are baked into the client image at build time.
+# Entra ID login build args are baked into the client image at build time.
 #
 # Usage:
-#   AUTH0_DOMAIN=x AUTH0_CLIENT_ID=y AUTH0_AUDIENCE=z ACR_NAME=acrshedbooks ./scripts/build-and-push.sh
+#   ENTRA_TENANT_ID=x ENTRA_CLIENT_ID=y ACR_NAME=acrshedbooks ./scripts/build-and-push.sh
 #   TAG=v1.2.3 ACR_NAME=acrshedbooks ./scripts/build-and-push.sh   # tag other than 'latest'
 #
 # The server image is not rebuilt here — db/Dockerfile's custom Postgres
@@ -36,13 +36,8 @@ ACR_NAME="${ACR_NAME:?Set ACR_NAME to the Azure Container Registry name (e.g. ac
 ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
 TAG="${TAG:-latest}"
 
-AUTH0_DOMAIN="${AUTH0_DOMAIN:?AUTH0_DOMAIN must be set (baked into the Flutter web build)}"
-AUTH0_CLIENT_ID="${AUTH0_CLIENT_ID:?AUTH0_CLIENT_ID must be set}"
-AUTH0_AUDIENCE="${AUTH0_AUDIENCE:?AUTH0_AUDIENCE must be set}"
-# Entra ID login is optional (additive alongside Auth0, see entra_login.tf)
-# — left unset, the client simply doesn't show the Microsoft sign-in button.
-ENTRA_TENANT_ID="${ENTRA_TENANT_ID:-}"
-ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:-}"
+ENTRA_TENANT_ID="${ENTRA_TENANT_ID:?ENTRA_TENANT_ID must be set (baked into the Flutter web build)}"
+ENTRA_CLIENT_ID="${ENTRA_CLIENT_ID:?ENTRA_CLIENT_ID must be set}"
 API_URL="${API_URL:-/api}"
 
 echo "ACR   : $ACR_LOGIN_SERVER"
@@ -63,9 +58,6 @@ docker build \
 echo "→ Building client image (linux/amd64)..."
 docker build \
   --platform linux/amd64 \
-  --build-arg AUTH0_DOMAIN="$AUTH0_DOMAIN" \
-  --build-arg AUTH0_CLIENT_ID="$AUTH0_CLIENT_ID" \
-  --build-arg AUTH0_AUDIENCE="$AUTH0_AUDIENCE" \
   --build-arg ENTRA_TENANT_ID="$ENTRA_TENANT_ID" \
   --build-arg ENTRA_CLIENT_ID="$ENTRA_CLIENT_ID" \
   --build-arg API_URL="$API_URL" \

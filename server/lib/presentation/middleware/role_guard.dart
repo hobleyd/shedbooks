@@ -23,9 +23,11 @@ import '../../domain/enums/app_role.dart';
 
 /// Extracts the authenticated user's role from the request context.
 ///
-/// Roles are read from the `https://shedbooks.com/roles` JWT claim populated
-/// by the Auth0 Action.  Defaults to [AppRole.viewer] when the claim is
-/// absent so that no privilege is granted by omission.
+/// Roles are read from the `https://shedbooks.com/roles` claim — normalised
+/// into this key from Entra's own App Roles claim by [EntraJwtVerifier]
+/// before it ever reaches here (see multi_issuer_jwt.dart). Defaults to
+/// [AppRole.viewer] when the claim is absent so that no privilege is
+/// granted by omission.
 AppRole roleFromRequest(Request request) {
   final claims = request.context['auth.claims'] as Map<String, dynamic>?;
   final raw = claims?['https://shedbooks.com/roles'];

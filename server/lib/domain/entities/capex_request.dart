@@ -25,7 +25,7 @@ class CapexRequest {
   /// Unique identifier (UUID v4).
   final String id;
 
-  /// Organisation identifier from Auth0.
+  /// Organisation (entity) identifier.
   final String entityId;
 
   /// Human-readable request number — the business key (e.g. "CER 26-012").

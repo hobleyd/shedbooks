@@ -23,7 +23,7 @@
 /// via certificate-based app-only auth against [tenantId]/[clientId], using
 /// [certificatePfxBase64]/[certificatePassword] — not a client secret.
 class O365SyncSettings {
-  /// Organisation identifier from Auth0.
+  /// Organisation (entity) identifier.
   final String entityId;
 
   /// Tenant's default domain (`<tenant>.onmicrosoft.com`, or a verified

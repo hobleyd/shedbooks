@@ -18,7 +18,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-/// HTTP client that attaches the Auth0 access token to every request.
+/// HTTP client that attaches the access token to every request.
 class ApiClient {
   final String _baseUrl;
   final String? Function() _getToken;

@@ -15,18 +15,15 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
-import 'package:auth0_flutter/auth0_flutter_web.dart';
 import 'package:flutter/material.dart';
 
 import '../auth/msal_web.dart';
 
-const String _auth0Domain = String.fromEnvironment('AUTH0_DOMAIN');
-const String _auth0ClientId = String.fromEnvironment('AUTH0_CLIENT_ID');
-const String _auth0Audience = String.fromEnvironment('AUTH0_AUDIENCE');
 const String _entraTenantId = String.fromEnvironment('ENTRA_TENANT_ID');
 const String _entraClientId = String.fromEnvironment('ENTRA_CLIENT_ID');
 
-/// Displays the login screen with an Auth0 redirect sign-in button.
+/// Displays the login screen with a Microsoft (Entra ID) redirect sign-in
+/// button.
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
@@ -57,39 +54,17 @@ class LoginScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 40),
                 FilledButton(
-                  onPressed: () => _signInWithAuth0(),
+                  onPressed: () => _signInWithMicrosoft(),
                   child: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Text('Sign in'),
+                    child: Text('Sign in with Microsoft'),
                   ),
                 ),
-                if (_entraClientId.isNotEmpty && _entraTenantId.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: () => _signInWithMicrosoft(),
-                    child: const Padding(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: Text('Sign in with Microsoft'),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
         ),
       ),
-    );
-  }
-
-  void _signInWithAuth0() {
-    final auth0 = Auth0Web(_auth0Domain, _auth0ClientId);
-    final origin = '${Uri.base.scheme}://${Uri.base.host}'
-        '${Uri.base.hasPort ? ":${Uri.base.port}" : ""}';
-    auth0.loginWithRedirect(
-      redirectUrl: origin,
-      audience: _auth0Audience,
-      scopes: {'openid', 'profile', 'email'},
     );
   }
 

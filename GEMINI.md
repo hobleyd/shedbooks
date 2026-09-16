@@ -1,6 +1,6 @@
 # ShedBooks Project Overview
 
-ShedBooks is a bookkeeping system consisting of a Dart backend and a Flutter web client. It follows Clean Architecture principles on the backend and uses Auth0 for authentication.
+ShedBooks is a bookkeeping system consisting of a Dart backend and a Flutter web client. It follows Clean Architecture principles on the backend and uses Microsoft Entra ID for authentication.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ ShedBooks is a bookkeeping system consisting of a Dart backend and a Flutter web
 The backend follows **Clean Architecture** with four distinct layers:
 - **Domain:** Entities, enums, repository interfaces, and domain exceptions.
 - **Application:** Use cases — one class per operation, containing all business rules.
-- **Infrastructure:** Concrete implementations of repositories (PostgreSQL), Auth0 JWT middleware, and database connection management.
+- **Infrastructure:** Concrete implementations of repositories (PostgreSQL), Entra ID JWT verification, and database connection management.
 - **Presentation:** Shelf HTTP handlers, DTOs, routing, and error handling.
 
 ### Frontend (client/)
@@ -16,7 +16,7 @@ A **Flutter Web** application that:
 - Uses `Provider` for state management.
 - Uses `GoRouter` for routing.
 - Communicates with the backend via a centralized `ApiClient`.
-- Handles authentication through `auth0_flutter`.
+- Handles authentication through `msal-browser` (wrapped in `client/lib/auth/msal_web.dart`).
 
 ## Technology Stack
 
@@ -24,7 +24,7 @@ A **Flutter Web** application that:
 - **Backend Framework:** [shelf](https://pub.dev/packages/shelf) & [shelf_router](https://pub.dev/packages/shelf_router)
 - **Frontend Framework:** Flutter (Web)
 - **Database:** PostgreSQL 16
-- **Authentication:** Auth0 (RS256 JWT via JWKS)
+- **Authentication:** Microsoft Entra ID (RS256 JWT via JWKS)
 - **Containerization:** Docker & Docker Compose
 - **Testing:** [test](https://pub.dev/packages/test) & [mocktail](https://pub.dev/packages/mocktail)
 
@@ -36,7 +36,7 @@ A **Flutter Web** application that:
 - Flutter SDK
 
 ### Development Environment Setup
-1. Copy `.env.example` to `.env` and fill in the required Auth0 and Database credentials.
+1. Copy `.env.example` to `.env` and fill in the required Entra ID and Database credentials.
 2. **Backend:**
    ```bash
    cd server
