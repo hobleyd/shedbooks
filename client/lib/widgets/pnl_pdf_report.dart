@@ -18,13 +18,47 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/pnl_data.dart';
+import '../models/transaction_entry.dart';
 
 class PnlPdfReport {
+  /// Builds the P&L report content.
+  ///
+  /// When [selectedGlIds] is non-empty, only the GL lines whose id is in the
+  /// set are included — everything else is left out — and each included
+  /// line is expanded to show its individual transactions. When
+  /// [selectedGlIds] is empty the report is generated as normal: every line
+  /// is shown, as a summary only.
   static List<pw.Widget> build({
     required PnLData data,
     required String periodEndedLabel,
     required String Function(int) formatCents,
+    Set<String> selectedGlIds = const {},
   }) {
+    final bool filtering = selectedGlIds.isNotEmpty;
+
+    final List<GlLine> incomeLines = filtering
+        ? data.incomeLines.where((l) => selectedGlIds.contains(l.gl.id)).toList()
+        : data.incomeLines;
+    final List<GlLine> expenseLines = filtering
+        ? data.expenseLines.where((l) => selectedGlIds.contains(l.gl.id)).toList()
+        : data.expenseLines;
+
+    final int totalIncome =
+        filtering ? incomeLines.fold(0, (s, l) => s + l.totalCents) : data.totalIncome;
+    final int totalExpenses =
+        filtering ? expenseLines.fold(0, (s, l) => s + l.totalCents) : data.totalExpenses;
+    final int netProfit = filtering ? totalIncome - totalExpenses : data.netProfit;
+    final int transactionCount = filtering
+        ? incomeLines.fold(0, (s, l) => s + l.transactions.length) +
+            expenseLines.fold(0, (s, l) => s + l.transactions.length)
+        : data.periodTransactions.length;
+
+    final String noIncomeMessage =
+        filtering ? 'No selected income records for this period' : 'No income recorded for this period';
+    final String noExpensesMessage = filtering
+        ? 'No selected expense records for this period'
+        : 'No expenses recorded for this period';
+
     return [
       pw.Text('Profit & Loss Report',
           style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
@@ -37,39 +71,41 @@ class PnlPdfReport {
       // Income
       _pdfSectionHeader('Income'),
       pw.Divider(thickness: 0.3),
-      if (data.incomeLines.isEmpty)
+      if (incomeLines.isEmpty)
         pw.Padding(
           padding: const pw.EdgeInsets.symmetric(vertical: 2),
-          child: pw.Text('No income recorded for this period',
+          child: pw.Text(noIncomeMessage,
               style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
         )
       else ...[
-        ...data.incomeLines.map((l) => _pdfGlRow(l, isExpense: false, formatCents: formatCents)),
-        _pdfSubtotalRow('Total Income', data.totalIncome, isExpense: false, formatCents: formatCents),
+        ...incomeLines.map((l) => _pdfGlRow(l,
+            isExpense: false, formatCents: formatCents, showDetails: filtering)),
+        _pdfSubtotalRow('Total Income', totalIncome, isExpense: false, formatCents: formatCents),
       ],
       pw.SizedBox(height: 10),
 
       // Expenses
       _pdfSectionHeader('Expenses'),
       pw.Divider(thickness: 0.3),
-      if (data.expenseLines.isEmpty)
+      if (expenseLines.isEmpty)
         pw.Padding(
           padding: const pw.EdgeInsets.symmetric(vertical: 2),
-          child: pw.Text('No expenses recorded for this period',
+          child: pw.Text(noExpensesMessage,
               style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
         )
       else ...[
-        ...data.expenseLines.map((l) => _pdfGlRow(l, isExpense: true, formatCents: formatCents)),
-        _pdfSubtotalRow('Total Expenses', data.totalExpenses, isExpense: true, formatCents: formatCents),
+        ...expenseLines.map((l) => _pdfGlRow(l,
+            isExpense: true, formatCents: formatCents, showDetails: filtering)),
+        _pdfSubtotalRow('Total Expenses', totalExpenses, isExpense: true, formatCents: formatCents),
       ],
       pw.SizedBox(height: 4),
       pw.Divider(thickness: 1.5),
 
       // Net
-      _pdfNetRow(data.netProfit, formatCents: formatCents),
+      _pdfNetRow(netProfit, formatCents: formatCents),
       pw.SizedBox(height: 12),
       pw.Text(
-        '${data.periodTransactions.length} transaction${data.periodTransactions.length == 1 ? '' : 's'}',
+        '$transactionCount transaction${transactionCount == 1 ? '' : 's'}',
         style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey500),
       ),
     ];
@@ -99,7 +135,8 @@ class PnlPdfReport {
     );
   }
 
-  static pw.Widget _pdfGlRow(GlLine line, {required bool isExpense, required String Function(int) formatCents}) {
+  static pw.Widget _pdfGlRow(GlLine line,
+      {required bool isExpense, required String Function(int) formatCents, bool showDetails = false}) {
     final amountText =
         isExpense ? '(${formatCents(line.totalCents)})' : formatCents(line.totalCents);
     return pw.Column(
@@ -123,9 +160,80 @@ class PnlPdfReport {
             ],
           ),
         ),
+        if (showDetails) _pdfTransactionDetails(line.transactions, isExpense: isExpense, formatCents: formatCents),
         pw.Divider(thickness: 0.1, color: PdfColors.grey300),
       ],
     );
+  }
+
+  static pw.Widget _pdfTransactionDetails(List<TransactionEntry> transactions,
+      {required bool isExpense, required String Function(int) formatCents}) {
+    final List<TransactionEntry> sorted = List<TransactionEntry>.from(transactions)
+      ..sort((a, b) => a.transactionDate.compareTo(b.transactionDate));
+
+    return pw.Padding(
+      padding: const pw.EdgeInsets.fromLTRB(60, 1, 0, 3),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Row(
+            children: [
+              pw.SizedBox(
+                  width: 48,
+                  child: pw.Text('Date',
+                      style: pw.TextStyle(fontSize: 6, color: PdfColors.grey500))),
+              pw.SizedBox(
+                  width: 56,
+                  child: pw.Text('Receipt',
+                      style: pw.TextStyle(fontSize: 6, color: PdfColors.grey500))),
+              pw.Expanded(
+                  child: pw.Text('Description',
+                      style: pw.TextStyle(fontSize: 6, color: PdfColors.grey500))),
+              pw.SizedBox(
+                  width: 60,
+                  child: pw.Text('Amount',
+                      style: pw.TextStyle(fontSize: 6, color: PdfColors.grey500),
+                      textAlign: pw.TextAlign.right)),
+            ],
+          ),
+          ...sorted.map((t) => _pdfTransactionRow(t, isExpense: isExpense, formatCents: formatCents)),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _pdfTransactionRow(TransactionEntry t,
+      {required bool isExpense, required String Function(int) formatCents}) {
+    final amountText = isExpense ? '(${formatCents(t.totalAmount)})' : formatCents(t.totalAmount);
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 0.5),
+      child: pw.Row(
+        children: [
+          pw.SizedBox(
+              width: 48,
+              child: pw.Text(_formatIsoDate(t.transactionDate),
+                  style: const pw.TextStyle(fontSize: 6.5))),
+          pw.SizedBox(
+              width: 56,
+              child: pw.Text(t.receiptNumber, style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700))),
+          pw.Expanded(
+              child: pw.Text(t.description.isEmpty ? '—' : t.description,
+                  style: const pw.TextStyle(fontSize: 6.5))),
+          pw.SizedBox(
+              width: 60,
+              child: pw.Text(amountText,
+                  style: pw.TextStyle(
+                      fontSize: 6.5, color: isExpense ? PdfColors.red700 : PdfColors.black),
+                  textAlign: pw.TextAlign.right)),
+        ],
+      ),
+    );
+  }
+
+  static String _formatIsoDate(String iso) {
+    final parts = iso.split('-');
+    if (parts.length != 3) return iso;
+    return '${parts[2]}/${parts[1]}/${parts[0]}';
   }
 
   static pw.Widget _pdfSubtotalRow(String label, int cents, {required bool isExpense, required String Function(int) formatCents}) {

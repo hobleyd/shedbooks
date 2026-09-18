@@ -55,6 +55,10 @@ class _PlReportScreenState extends State<PlReportScreen> {
   late int _month;
   late int _quarter;
 
+  /// GL account ids selected via the "PDF?" column. Empty means no filter —
+  /// the generated PDF includes every line, as normal.
+  final Set<String> _selectedGlIds = {};
+
   static const _monthNames = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
@@ -133,6 +137,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
           case _PeriodType.year:
             _year--;
         }
+        _selectedGlIds.clear();
       });
 
   void _next() {
@@ -146,6 +151,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
         case _PeriodType.year:
           _year++;
       }
+      _selectedGlIds.clear();
     });
   }
 
@@ -156,6 +162,17 @@ class _PlReportScreenState extends State<PlReportScreen> {
       _year = now.year;
       _month = now.month;
       _quarter = (now.month - 1) ~/ 3 + 1;
+      _selectedGlIds.clear();
+    });
+  }
+
+  void _toggleGlSelected(String glId) {
+    setState(() {
+      if (_selectedGlIds.contains(glId)) {
+        _selectedGlIds.remove(glId);
+      } else {
+        _selectedGlIds.add(glId);
+      }
     });
   }
 
@@ -246,6 +263,7 @@ class _PlReportScreenState extends State<PlReportScreen> {
           data: data,
           periodEndedLabel: _periodEndedLabel,
           formatCents: Formatters.formatCents,
+          selectedGlIds: _selectedGlIds,
         ),
       ],
     ));
@@ -358,6 +376,8 @@ class _PlReportScreenState extends State<PlReportScreen> {
       child: PnlReportWidget(
         data: data,
         periodEndedLabel: _periodEndedLabel,
+        selectedGlIds: _selectedGlIds,
+        onToggleSelected: _toggleGlSelected,
       ),
     );
   }

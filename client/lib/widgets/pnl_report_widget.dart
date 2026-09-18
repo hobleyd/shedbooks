@@ -23,10 +23,19 @@ class PnlReportWidget extends StatefulWidget {
   final PnLData data;
   final String periodEndedLabel;
 
+  /// GL account ids selected for inclusion in the PDF export (via the
+  /// "PDF?" column). Empty means no filter — the PDF exports as normal.
+  final Set<String> selectedGlIds;
+
+  /// Called when the "PDF?" checkbox for a GL row is toggled.
+  final void Function(String glId) onToggleSelected;
+
   const PnlReportWidget({
     super.key,
     required this.data,
     required this.periodEndedLabel,
+    required this.selectedGlIds,
+    required this.onToggleSelected,
   });
 
   @override
@@ -69,6 +78,7 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
   Widget build(BuildContext context) {
     const double labelColWidth = 80.0;
     const double amountWidth = 140.0;
+    const double pdfColWidth = 48.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,38 +93,38 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
         const SizedBox(height: 16),
 
         // ── Income ──────────────────────────────────────────────────────
-        _buildSectionHeader(context, 'Income', labelColWidth, amountWidth),
+        _buildSectionHeader(context, 'Income', labelColWidth, amountWidth, pdfColWidth),
         const Divider(height: 1),
         if (widget.data.incomeLines.isEmpty)
           _buildEmptyRow(context, 'No income recorded for this period')
         else ...[
-          ...widget.data.incomeLines.map((GlLine l) =>
-              _buildGlRow(context, l, labelColWidth, amountWidth, isExpense: false)),
+          ...widget.data.incomeLines.map((GlLine l) => _buildGlRow(
+              context, l, labelColWidth, amountWidth, pdfColWidth, isExpense: false)),
           _buildSubtotalRow(
               context, 'Total Income', widget.data.totalIncome, labelColWidth, amountWidth,
-              isExpense: false),
+              pdfColWidth, isExpense: false),
         ],
 
         const SizedBox(height: 20),
 
         // ── Expenses ─────────────────────────────────────────────────────
-        _buildSectionHeader(context, 'Expenses', labelColWidth, amountWidth),
+        _buildSectionHeader(context, 'Expenses', labelColWidth, amountWidth, pdfColWidth),
         const Divider(height: 1),
         if (widget.data.expenseLines.isEmpty)
           _buildEmptyRow(context, 'No expenses recorded for this period')
         else ...[
-          ...widget.data.expenseLines.map((GlLine l) =>
-              _buildGlRow(context, l, labelColWidth, amountWidth, isExpense: true)),
+          ...widget.data.expenseLines.map((GlLine l) => _buildGlRow(
+              context, l, labelColWidth, amountWidth, pdfColWidth, isExpense: true)),
           _buildSubtotalRow(
               context, 'Total Expenses', widget.data.totalExpenses, labelColWidth, amountWidth,
-              isExpense: true),
+              pdfColWidth, isExpense: true),
         ],
 
         const SizedBox(height: 8),
         const Divider(height: 1, thickness: 2),
 
         // ── Net ───────────────────────────────────────────────────────────
-        _buildNetRow(context, widget.data.netProfit, labelColWidth, amountWidth),
+        _buildNetRow(context, widget.data.netProfit, labelColWidth, amountWidth, pdfColWidth),
 
         const SizedBox(height: 24),
         Text(
@@ -128,8 +138,8 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
     );
   }
 
-  Widget _buildSectionHeader(
-      BuildContext context, String title, double labelColWidth, double amountWidth) {
+  Widget _buildSectionHeader(BuildContext context, String title, double labelColWidth,
+      double amountWidth, double pdfColWidth) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
@@ -153,67 +163,91 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(fontSize: 11),
                 textAlign: TextAlign.right),
           ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: pdfColWidth,
+            child: Text('PDF?',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Colors.black45, fontSize: 10),
+                textAlign: TextAlign.center),
+          ),
+          const SizedBox(width: 20),
         ],
       ),
     );
   }
 
   Widget _buildGlRow(BuildContext context, GlLine line, double labelColWidth,
-      double amountWidth, {required bool isExpense}) {
+      double amountWidth, double pdfColWidth, {required bool isExpense}) {
     final bool isExpanded = _expandedGlIds.contains(line.gl.id);
+    final bool isSelected = widget.selectedGlIds.contains(line.gl.id);
 
     return Column(
       children: [
-        InkWell(
-          onTap: () => _toggleGl(line.gl.id),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: labelColWidth,
-                  child: Text(
-                    line.gl.label,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.black54, fontSize: 11),
-                    overflow: TextOverflow.ellipsis,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: () => _toggleGl(line.gl.id),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: labelColWidth,
+                        child: Text(
+                          line.gl.label,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: Colors.black54, fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          line.gl.description,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
+                        ),
+                      ),
+                      SizedBox(
+                        width: amountWidth,
+                        child: Text(
+                          isExpense
+                              ? '(${_formatCents(line.totalCents)})'
+                              : _formatCents(line.totalCents),
+                          style: TextStyle(
+                            color: isExpense ? Colors.red.shade700 : Colors.black87,
+                            fontSize: 13,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      AnimatedRotation(
+                        turns: isExpanded ? 0.25 : 0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: Colors.black38,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Expanded(
-                  child: Text(
-                    line.gl.description,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
-                  ),
-                ),
-                SizedBox(
-                  width: amountWidth,
-                  child: Text(
-                    isExpense
-                        ? '(${_formatCents(line.totalCents)})'
-                        : _formatCents(line.totalCents),
-                    style: TextStyle(
-                      color: isExpense ? Colors.red.shade700 : Colors.black87,
-                      fontSize: 13,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                    textAlign: TextAlign.right,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                AnimatedRotation(
-                  turns: isExpanded ? 0.25 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    Icons.chevron_right,
-                    size: 16,
-                    color: Colors.black38,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            SizedBox(
+              width: pdfColWidth,
+              child: Checkbox(
+                value: isSelected,
+                onChanged: (_) => widget.onToggleSelected(line.gl.id),
+              ),
+            ),
+          ],
         ),
         if (isExpanded) _buildTransactionPanel(context, line, isExpense),
         const Divider(height: 1, thickness: 0.5),
@@ -316,8 +350,8 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
     );
   }
 
-  Widget _buildSubtotalRow(BuildContext context, String label, int cents,
-      double labelColWidth, double amountWidth, {required bool isExpense}) {
+  Widget _buildSubtotalRow(BuildContext context, String label, int cents, double labelColWidth,
+      double amountWidth, double pdfColWidth, {required bool isExpense}) {
     return Container(
       color: Theme.of(context)
           .colorScheme
@@ -352,6 +386,8 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
                 textAlign: TextAlign.right,
               ),
             ),
+            const SizedBox(width: 4),
+            SizedBox(width: pdfColWidth),
             // spacer to align with the chevron column
             const SizedBox(width: 20),
           ],
@@ -360,8 +396,8 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
     );
   }
 
-  Widget _buildNetRow(
-      BuildContext context, int net, double labelColWidth, double amountWidth) {
+  Widget _buildNetRow(BuildContext context, int net, double labelColWidth, double amountWidth,
+      double pdfColWidth) {
     final bool isProfit = net >= 0;
     final Color color = isProfit ? Colors.black87 : Colors.red.shade700;
     final String label = isProfit ? 'Net Profit' : 'Net Loss';
@@ -397,6 +433,9 @@ class _PnlReportWidgetState extends State<PnlReportWidget> {
               textAlign: TextAlign.right,
             ),
           ),
+          const SizedBox(width: 4),
+          SizedBox(width: pdfColWidth),
+          const SizedBox(width: 20),
         ],
       ),
     );
