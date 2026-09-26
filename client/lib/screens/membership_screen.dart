@@ -1737,14 +1737,20 @@ class _MemberTableState extends State<_MemberTable> {
                               minWidth: 32, minHeight: 32),
                         )
                       else if (widget.isAdmin && row.o365MailboxUpn != null)
-                        Tooltip(
-                          message: 'O365 mailbox: ${row.o365MailboxUpn}',
-                          child: Icon(Icons.mail,
-                              size: 18,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant
-                                  .withAlpha(150)),
+                        SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: Tooltip(
+                            message: 'O365 mailbox: ${row.o365MailboxUpn}',
+                            child: Center(
+                              child: Icon(Icons.mail,
+                                  size: 18,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant
+                                      .withAlpha(150)),
+                            ),
+                          ),
                         ),
                     ],
                   ),
