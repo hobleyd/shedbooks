@@ -45,26 +45,38 @@ class AuthState extends ChangeNotifier {
 
   AuthUser? get user => _user;
 
+  /// Decodes and returns the access token's JWT payload, or null if there
+  /// is no token or it isn't shaped like a JWT.
+  Map<String, dynamic>? get _payload {
+    final token = _accessToken;
+    if (token == null) return null;
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      return jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      ) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// The user's highest-privilege role decoded from the access token.
   ///
   /// Defaults to [AppRole.viewer] when no role claim is present, ensuring
   /// no privilege is granted by omission.
   AppRole get role {
-    final token = _accessToken;
-    if (token == null) return AppRole.viewer;
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return AppRole.viewer;
-      final payload = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
-      ) as Map<String, dynamic>;
-      final raw = payload['roles'];
-      final roles = raw is List ? raw : <dynamic>[];
-      return AppRole.fromList(roles);
-    } catch (_) {
-      return AppRole.viewer;
-    }
+    final raw = _payload?['roles'];
+    final roles = raw is List ? raw : <dynamic>[];
+    return AppRole.fromList(roles);
   }
+
+  /// Entra's own `oid` claim — the same object id server-side code reads as
+  /// `sub` (see request_identity.dart's `resolveUserId`) and
+  /// `UserPresence.userId`. Used to compare "is this me" against a Users
+  /// screen row without relying on email, which can differ between the
+  /// server's resolved claim and MSAL's account object for the same person.
+  String? get userId => _payload?['oid'] as String?;
 
   /// True for [AppRole.contributor] and [AppRole.administrator].
   bool get canEdit => role.atLeast(AppRole.contributor);

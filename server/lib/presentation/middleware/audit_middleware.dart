@@ -177,7 +177,7 @@ String? _recordId(String path) {
     'confirm-import', 'gl-mappings', 'import', 'members',
     'next-number', 'mark-paid', 'decision', 'generate', 'sync-o365',
     'generate-certificate', 'sections', 'available-licenses',
-    'create-mailbox', 'executed-date',
+    'create-mailbox', 'executed-date', 'app-role', 'role',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

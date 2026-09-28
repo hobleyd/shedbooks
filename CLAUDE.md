@@ -146,8 +146,31 @@ would be hard to reason about securely):
 1. App Roles `viewer`, `contributor`, `administrator` are declared directly on
    the App Registration (`app_role` blocks) — values match `AppRole` exactly,
    so no string-mapping layer is needed on either client or server.
-2. Per-user role assignment is `azuread_app_role_assignment`, keyed by each
-   person's Entra object id — not a dashboard click-through.
+2. Per-user role assignment is now dashboard-managed (superseding the
+   original `azuread_app_role_assignment` Terraform block, which was
+   deliberately not-a-dashboard-click-through until this changed):
+   - **Membership screen**: an admin-only icon on each member row (visible
+     once the member has an O365 mailbox — see "Create O365 mailbox" below)
+     grants/changes/revokes their Shedbooks role. Cached on
+     `members.shedbooks_app_role` (migration 060).
+   - **Users screen**: an admin-only edit control next to each previously-
+     signed-in user's role does the same, keyed by their Entra object id
+     (`user_presence.user_id`).
+   - Both call Microsoft Graph via `manage_app_role_assignment.ps1`, reusing
+     the O365 sync app registration's certificate credentials — that
+     registration must additionally hold the Graph application permission
+     `AppRoleAssignment.ReadWrite.All` with admin consent (granted manually
+     in Entra admin center, like `Organization.Read.All`/`User.ReadWrite.All`
+     were for mailbox creation — see that script's header). The resource
+     service principal id is passed in as `ENTRA_LOGIN_SP_OBJECT_ID`
+     (`terraform/entra_login.tf`'s `entra_login_service_principal_object_id`
+     output), not looked up at runtime.
+   - Neither path lets an administrator change their own role
+     (`SelfRoleChangeException`) — self-lockout would leave no one able to
+     restore access from within the app.
+   - A role change takes effect for the affected user the next time they
+     sign in / acquire a fresh access token, not immediately — Entra bakes
+     `roles` into the token at issuance.
 3. The client requests the app's own API scope
    (`"<clientId>/access_as_user"`, declared via `api.oauth2_permission_scope`)
    so the returned *access* token (not just an ID token) carries the caller's

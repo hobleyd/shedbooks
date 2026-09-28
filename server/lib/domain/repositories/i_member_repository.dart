@@ -152,6 +152,18 @@ abstract interface class IMemberRepository {
     required String entityId,
     required String upn,
   });
+
+  /// Records the Shedbooks app role now in effect for member [id]'s O365
+  /// mailbox account — see [Member.shedbooksAppRole]. Pass `role: null` to
+  /// record that access has been revoked. Deliberately does not touch
+  /// `updated_at`/`etag`, for the same reason [markO365MailboxCreated]
+  /// doesn't (a role change should not make CardDAV clients see a spurious
+  /// contact change).
+  Future<void> setShedbooksAppRole({
+    required String id,
+    required String entityId,
+    required String? role,
+  });
 }
 
 /// Data transfer object for bulk member import.

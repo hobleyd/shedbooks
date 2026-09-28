@@ -21,6 +21,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/app_role.dart';
+import '../auth/auth_state.dart';
 import '../services/api_client.dart';
 import '../services/reference_data_cache.dart';
 
@@ -69,6 +71,7 @@ class _UsersScreenState extends State<UsersScreen> {
   String? _error;
   Timer? _refreshTimer;
   DateTime? _lastRefreshed;
+  final Set<String> _updatingUserIds = {};
 
   @override
   void initState() {
@@ -123,6 +126,50 @@ class _UsersScreenState extends State<UsersScreen> {
       if (mounted) setState(() => _error = 'Error: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setRole(_UserPresence u, AppRole? role) async {
+    setState(() => _updatingUserIds.add(u.userId));
+    try {
+      final client = context.read<ApiClient>();
+      final res = await client.put(
+        '/admin/users/${u.userId}/role',
+        jsonEncode({'role': role?.name}),
+      );
+      if (!mounted) return;
+      if (res.statusCode != 200) {
+        String msg = 'Failed to update access (${res.statusCode})';
+        try {
+          msg = (jsonDecode(res.body) as Map<String, dynamic>)['error']
+                  as String? ??
+              msg;
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+        ));
+        return;
+      }
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(role == null
+            ? 'Access removed for ${u.userEmail}. Takes effect next time '
+                'they sign in.'
+            : 'Granted ${role.name} access to ${u.userEmail}. Takes effect '
+                'next time they sign in.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _updatingUserIds.remove(u.userId));
     }
   }
 
@@ -310,7 +357,7 @@ class _UsersScreenState extends State<UsersScreen> {
     return DataRow(cells: [
       DataCell(_buildStatusDot(u.isActive)),
       DataCell(_buildUserCell(u)),
-      DataCell(_buildRoleBadge(u.role)),
+      DataCell(_buildRoleCell(u)),
       DataCell(Text(
         _formatDateTime(u.lastSeen),
         style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
@@ -360,6 +407,64 @@ class _UsersScreenState extends State<UsersScreen> {
         style: const TextStyle(
             fontSize: 12, fontFamily: 'monospace', color: Colors.black54),
       ),
+    );
+  }
+
+  Widget _buildRoleCell(_UserPresence u) {
+    final currentUserId = context.read<AuthState>().userId;
+    final isSelf = currentUserId != null && currentUserId == u.userId;
+    final isUpdating = _updatingUserIds.contains(u.userId);
+    AppRole? currentRole;
+    for (final r in AppRole.values) {
+      if (r.name == u.role) {
+        currentRole = r;
+        break;
+      }
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildRoleBadge(u.role),
+        const SizedBox(width: 4),
+        SizedBox(
+          width: 28,
+          height: 28,
+          child: isUpdating
+              ? const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : PopupMenuButton<AppRole?>(
+                  tooltip: isSelf
+                      ? 'You cannot change your own access here'
+                      : 'Change access',
+                  enabled: !isSelf,
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: Icon(Icons.edit_outlined,
+                      size: 16, color: Colors.black45),
+                  onSelected: (role) => _setRole(u, role),
+                  itemBuilder: (ctx) => [
+                    for (final role in AppRole.values)
+                      PopupMenuItem<AppRole?>(
+                        value: role,
+                        enabled: currentRole != role,
+                        child: Text(
+                            '${role.name[0].toUpperCase()}${role.name.substring(1)}'),
+                      ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem<AppRole?>(
+                      value: null,
+                      child: Text('Remove access'),
+                    ),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 

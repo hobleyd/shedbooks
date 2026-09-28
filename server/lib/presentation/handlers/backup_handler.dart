@@ -180,7 +180,8 @@ class BackupHandler {
                emergency_contact_phone, woodworking_induction,
                metalworking_induction, gym_waiver, etag, o365_contact_id,
                o365_synced_at, o365_sync_failed_at, o365_mailbox_upn,
-               o365_mailbox_created_at, created_at, updated_at, deleted_at
+               o365_mailbox_created_at, shedbooks_app_role,
+               shedbooks_app_role_set_at, created_at, updated_at, deleted_at
         FROM members WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -779,7 +780,8 @@ class BackupHandler {
                  emergency_contact_phone, woodworking_induction,
                  metalworking_induction, gym_waiver, etag, o365_contact_id,
                  o365_synced_at, o365_sync_failed_at, o365_mailbox_upn,
-                 o365_mailbox_created_at, created_at, updated_at,
+                 o365_mailbox_created_at, shedbooks_app_role,
+                 shedbooks_app_role_set_at, created_at, updated_at,
                  deleted_at)
               VALUES (
                 @id::uuid, @e, @name, @fn, @ln, @dj::date,
@@ -788,7 +790,8 @@ class BackupHandler {
                 @ecp, @wi::date,
                 @mi::date, @gw::date, @etag, @ocid,
                 @osync::timestamptz, @ofail::timestamptz, @mupn,
-                @mcreated::timestamptz, @ca::timestamptz,
+                @mcreated::timestamptz, @role, @roleSetAt::timestamptz,
+                @ca::timestamptz,
                 @ua::timestamptz, @da::timestamptz
               )
             '''),
@@ -828,6 +831,8 @@ class BackupHandler {
               'ofail': r['o365_sync_failed_at'],
               'mupn': r['o365_mailbox_upn'],
               'mcreated': r['o365_mailbox_created_at'],
+              'role': r['shedbooks_app_role'],
+              'roleSetAt': r['shedbooks_app_role_set_at'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],

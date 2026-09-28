@@ -101,6 +101,15 @@ class Member {
   /// Timestamp the mailbox in [o365MailboxUpn] was created, or null.
   final DateTime? o365MailboxCreatedAt;
 
+  /// The Shedbooks app role ('viewer'/'contributor'/'administrator') last
+  /// granted to this member's [o365MailboxUpn] account, or null if they
+  /// have no access. A cache of Microsoft Graph state written by
+  /// SetMemberAppRoleUseCase — see migration 060.
+  final String? shedbooksAppRole;
+
+  /// Timestamp [shedbooksAppRole] was last changed, or null if never set.
+  final DateTime? shedbooksAppRoleSetAt;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -133,6 +142,8 @@ class Member {
     this.o365SyncFailedAt,
     this.o365MailboxUpn,
     this.o365MailboxCreatedAt,
+    this.shedbooksAppRole,
+    this.shedbooksAppRoleSetAt,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,

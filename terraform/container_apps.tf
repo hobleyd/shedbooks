@@ -180,6 +180,10 @@ resource "azurerm_container_app" "server" {
         value = azuread_application.shedbooks_login.client_id
       }
       env {
+        name  = "ENTRA_LOGIN_SP_OBJECT_ID"
+        value = azuread_service_principal.shedbooks_login.object_id
+      }
+      env {
         name  = "CORS_ORIGIN"
         value = var.cors_origin
       }

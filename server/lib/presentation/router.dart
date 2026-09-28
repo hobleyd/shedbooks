@@ -37,6 +37,7 @@ import '../infrastructure/security/temporary_password_generator.dart';
 import '../infrastructure/services/abn_lookup_service.dart';
 import '../infrastructure/services/exchange_online_mail_contact_sync_service.dart';
 import '../infrastructure/services/exchange_online_mailbox_service.dart';
+import '../infrastructure/services/graph_app_role_assignment_service.dart';
 import '../infrastructure/services/openssl_certificate_generator.dart';
 import '../infrastructure/repositories/postgres_general_ledger_repository.dart';
 import '../infrastructure/repositories/postgres_contact_repository.dart';
@@ -106,7 +107,9 @@ import '../application/o365/get_o365_sync_settings_use_case.dart';
 import '../application/o365/list_available_o365_licenses_use_case.dart';
 import '../application/o365/member_o365_auto_sync.dart';
 import '../application/o365/save_o365_sync_settings_use_case.dart';
+import '../application/o365/set_member_app_role_use_case.dart';
 import '../application/o365/sync_members_to_o365_use_case.dart';
+import '../application/users/set_user_app_role_use_case.dart';
 import '../infrastructure/repositories/postgres_budget_repository.dart';
 import '../infrastructure/repositories/postgres_user_presence_repository.dart';
 import '../application/closing_bank_balance/list_all_closing_bank_balances_use_case.dart';
@@ -178,6 +181,7 @@ import 'middleware/role_guard.dart';
 Handler buildRouter({
   required String entraTenantId,
   required String entraClientId,
+  required String entraLoginServicePrincipalId,
   required String corsOrigin,
   required FieldEncryptor fieldEncryptor,
   String abrGuid = '',
@@ -315,10 +319,6 @@ Handler buildRouter({
     list: ListAuditEntriesUseCase(PostgresAuditRepository(pool)),
   );
 
-  final usersHandler = UsersHandler(
-    list: ListActiveUsersUseCase(PostgresUserPresenceRepository(pool)),
-  );
-
   final bankImportsHandler = BankImportsHandler(
     get: GetBankImportsUseCase(PostgresBankImportRepository(pool)),
     save: SaveBankImportsUseCase(PostgresBankImportRepository(pool)),
@@ -330,6 +330,17 @@ Handler buildRouter({
       PostgresO365SyncSettingsRepository(pool, fieldEncryptor);
   final o365ContactSyncService = ExchangeOnlineMailContactSyncService();
   final o365MailboxService = ExchangeOnlineMailboxService();
+  final graphAppRoleService = GraphAppRoleAssignmentService();
+
+  final usersHandler = UsersHandler(
+    list: ListActiveUsersUseCase(PostgresUserPresenceRepository(pool)),
+    setAppRole: SetUserAppRoleUseCase(
+      o365SettingsRepository,
+      graphAppRoleService,
+      entraLoginServicePrincipalId,
+    ),
+  );
+
   final o365SettingsHandler = O365SettingsHandler(
     get: GetO365SyncSettingsUseCase(o365SettingsRepository),
     save: SaveO365SyncSettingsUseCase(o365SettingsRepository),
@@ -368,6 +379,12 @@ Handler buildRouter({
       memberRepository,
       o365MailboxService,
       TemporaryPasswordGenerator(),
+    ),
+    setAppRole: SetMemberAppRoleUseCase(
+      memberRepository,
+      o365SettingsRepository,
+      graphAppRoleService,
+      entraLoginServicePrincipalId,
     ),
   );
   final assetRepository = PostgresAssetRepository(pool);
@@ -663,6 +680,13 @@ Router _adminRouter(BackupHandler backup, AuditHandler audit,
     ..post('/restore', _role(requireAdministrator(), backup.handleRestore))
     ..get('/audit-log', _role(requireAdministrator(), audit.handleList))
     ..get('/users', _role(requireAdministrator(), users.handleList))
+    ..put(
+      '/users/<userId>/role',
+      (Request req, String userId) => _role(
+        requireAdministrator(),
+        (r) => users.handleSetRole(r, userId),
+      )(req),
+    )
     ..get('/o365-settings',
         _role(requireAdministrator(), o365Settings.handleGet))
     ..put('/o365-settings',
@@ -712,6 +736,13 @@ Router _memberRouter(MemberHandler h) {
       (Request req, String id) => _role(
         requireAdministrator(),
         (r) => h.handleCreateMailbox(r, id),
+      )(req),
+    )
+    ..put(
+      '/<id>/app-role',
+      (Request req, String id) => _role(
+        requireAdministrator(),
+        (r) => h.handleSetAppRole(r, id),
       )(req),
     );
 }

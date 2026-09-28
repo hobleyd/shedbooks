@@ -71,6 +71,31 @@ void main() {
     });
   });
 
+  group('AuthState.userId', () {
+    test('reads the oid claim', () {
+      final authState = AuthState();
+      authState.setSession(
+        accessToken: _fakeJwt({'oid': 'entra-object-id-123'}),
+        user: const AuthUser(),
+      );
+      expect(authState.userId, equals('entra-object-id-123'));
+    });
+
+    test('is null when not authenticated', () {
+      final authState = AuthState();
+      expect(authState.userId, isNull);
+    });
+
+    test('is null when no oid claim is present', () {
+      final authState = AuthState();
+      authState.setSession(
+        accessToken: _fakeJwt({'sub': '1'}),
+        user: const AuthUser(),
+      );
+      expect(authState.userId, isNull);
+    });
+  });
+
   group('AuthState session lifecycle', () {
     test('setSession populates isAuthenticated/user', () {
       final authState = AuthState();

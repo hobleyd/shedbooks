@@ -113,37 +113,27 @@ resource "azuread_service_principal" "shedbooks_login" {
   owners    = [data.azuread_client_config.current.object_id]
 }
 
-locals {
-  entra_app_role_ids = {
-    viewer        = "46359b54-f197-4e05-a1a6-95813db4992a"
-    contributor   = "5e4db24c-a397-4edf-ac80-fba5f00bc6e6"
-    administrator = "47c6f44f-1c64-4c17-9518-5fc94028618a"
-  }
-
-  # One assignment per migrated identity — see the migration plan's old ->
-  # new email mapping table. Object ids looked up once via `az ad user
-  # show` against the real tenant (all three accounts already existed);
-  # update here, not by hand in the portal, if an account is ever recreated.
-  entra_role_assignments = {
-    "david.hobley@woodgatemensshed.org.au" = {
-      object_id = "177e0e3b-d3f6-44b8-a8d6-dfa840a8af7a"
-      app_role  = "administrator"
-    }
-    "john.henderson@woodgatemensshed.org.au" = {
-      object_id = "790bfa1c-27a2-422f-a28f-af4c01b631f7"
-      app_role  = "administrator"
-    }
-    "greg.carlson@woodgatemensshed.org.au" = {
-      object_id = "df8abfee-fae4-44cb-8aab-2a679e481eef"
-      app_role  = "contributor"
-    }
-  }
-}
-
-resource "azuread_app_role_assignment" "shedbooks_login" {
-  for_each = local.entra_role_assignments
-
-  app_role_id         = local.entra_app_role_ids[each.value.app_role]
-  principal_object_id = each.value.object_id
-  resource_object_id  = azuread_service_principal.shedbooks_login.object_id
-}
+# Per-user role assignment used to be managed here directly
+# (azuread_app_role_assignment.shedbooks_login, for_each over a hardcoded
+# email -> object_id -> role map) — deliberately NOT a dashboard
+# click-through, so a bad assignment couldn't be made without a `tofu
+# apply` to review.
+#
+# That's been superseded: the Membership and Users screens now grant/change
+# roles live via Microsoft Graph (server/lib/application/o365/set_member_app_role_use_case.dart,
+# server/lib/application/users/set_user_app_role_use_case.dart), which is
+# more useful for a growing membership than editing this file. The three
+# original assignments (david.hobley, john.henderson, greg.carlson —
+# administrator/administrator/contributor) still exist in Entra; they were
+# removed from Terraform's state with `tofu state rm
+# 'azuread_app_role_assignment.shedbooks_login'` (NOT destroy — the real
+# assignments were untouched) before this block was deleted, so applying
+# this file will not revert or destroy them. They're now editable from the
+# Users screen like any other assignment.
+#
+# The app role ids themselves are unchanged and still live in the
+# app_role blocks above (id = "46359b54-...", "5e4db24c-...",
+# "47c6f44f-..." for viewer/contributor/administrator) — the same three
+# constants are hardcoded in
+# server/lib/infrastructure/services/scripts/manage_app_role_assignment.ps1,
+# which must be kept in sync with this file if they're ever regenerated.

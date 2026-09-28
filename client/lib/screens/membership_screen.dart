@@ -23,6 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../auth/app_role.dart';
 import '../auth/auth_state.dart';
 import '../models/member_entry.dart';
 import '../services/api_client.dart';
@@ -76,6 +77,7 @@ class _MemberRow {
   final DateTime? o365SyncedAt;
   final DateTime? o365SyncFailedAt;
   final String? o365MailboxUpn;
+  final String? shedbooksAppRole;
 
   // Originals for dirty-check
   final String _origLastName;
@@ -114,6 +116,7 @@ class _MemberRow {
         o365SyncedAt = null,
         o365SyncFailedAt = null,
         o365MailboxUpn = null,
+        shedbooksAppRole = null,
         _origLastName = '',
         _origFirstName = '',
         _origDateJoined = '',
@@ -159,6 +162,7 @@ class _MemberRow {
         o365SyncedAt = e.o365SyncedAt,
         o365SyncFailedAt = e.o365SyncFailedAt,
         o365MailboxUpn = e.o365MailboxUpn,
+        shedbooksAppRole = e.shedbooksAppRole,
         _origLastName = e.lastName,
         _origFirstName = e.firstName,
         _origDateJoined = _isoToDisplay(e.dateJoined ?? ''),
@@ -955,6 +959,40 @@ class _MembershipScreenState extends State<MembershipScreen> {
     );
   }
 
+  Future<void> _setAppRole(_MemberRow row, AppRole? role) async {
+    setState(() => _saving = true);
+    try {
+      final client = context.read<ApiClient>();
+      final res = await client.put(
+        '/members/${row.id}/app-role',
+        jsonEncode({'role': role?.name}),
+      );
+      if (!mounted) return;
+      if (res.statusCode != 200) {
+        String msg = 'Failed to update access (${res.statusCode})';
+        try {
+          msg = (jsonDecode(res.body) as Map<String, dynamic>)['error']
+                  as String? ??
+              msg;
+        } catch (_) {}
+        _showErrorDialog('Access update failed', msg);
+        return;
+      }
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(role == null
+            ? 'Access removed. Takes effect next time they sign in.'
+            : 'Granted ${role.name} access. Takes effect next time they sign in.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+    } catch (e) {
+      if (mounted) _showErrorDialog('Access update failed', 'Error: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   void _applySort() {
     if (_sortColumn == null) return;
     _rows.sort((a, b) {
@@ -1056,6 +1094,8 @@ class _MembershipScreenState extends State<MembershipScreen> {
                         onSave: _saveRow,
                         onDelete: _deleteRow,
                         onCreateMailbox: _createMailbox,
+                        onSetAppRole: _setAppRole,
+                        currentUserEmail: authState.user?.email,
                         onChanged: _updateDirty,
                         sortColumn: _sortColumn,
                         sortAscending: _sortAscending,
@@ -1145,7 +1185,7 @@ const double _kWoodworkingW = 130;
 const double _kMetalworkingW = 130;
 const double _kGymWaiverW = 100;
 const double _kO365W = 56;
-const double _kActionsW = 116;
+const double _kActionsW = 148;
 
 // Minimum width of the edit panel — equals the sum of all column widths so the
 // panel always spans the full table regardless of content width.
@@ -1168,6 +1208,8 @@ class _MemberTable extends StatefulWidget {
   final Future<void> Function(_MemberRow) onSave;
   final Future<void> Function(_MemberRow) onDelete;
   final Future<void> Function(_MemberRow)? onCreateMailbox;
+  final Future<void> Function(_MemberRow, AppRole?)? onSetAppRole;
+  final String? currentUserEmail;
   final VoidCallback onChanged;
   final int? sortColumn;
   final bool sortAscending;
@@ -1184,6 +1226,8 @@ class _MemberTable extends StatefulWidget {
     required this.onSave,
     required this.onDelete,
     this.onCreateMailbox,
+    this.onSetAppRole,
+    this.currentUserEmail,
     required this.onChanged,
     required this.sortColumn,
     required this.sortAscending,
@@ -1400,6 +1444,62 @@ class _MemberTableState extends State<_MemberTable> {
         child: icon == null
             ? const SizedBox.shrink()
             : Tooltip(message: tooltip!, child: icon),
+      ),
+    );
+  }
+
+  /// Icon + dropdown for granting/changing/revoking a member's Shedbooks
+  /// app role. Only shown for admins once the member has an O365 mailbox
+  /// (app role assignment needs a real Entra ID user object).
+  Widget _appRoleAction(BuildContext context, _MemberRow row) {
+    final roleName = row.shedbooksAppRole;
+    final isSelf = widget.currentUserEmail != null &&
+        row.o365MailboxUpn != null &&
+        widget.currentUserEmail!.toLowerCase() ==
+            row.o365MailboxUpn!.toLowerCase();
+    final hasAccess = roleName != null;
+
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: PopupMenuButton<AppRole?>(
+        tooltip: isSelf
+            ? 'You cannot change your own access here'
+            : hasAccess
+                ? 'Shedbooks access: $roleName'
+                : 'Grant Shedbooks access',
+        enabled: !isSelf && widget.onSetAppRole != null,
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        icon: Icon(
+          hasAccess
+              ? Icons.admin_panel_settings
+              : Icons.admin_panel_settings_outlined,
+          size: 18,
+          color: hasAccess
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        onSelected: (role) => widget.onSetAppRole?.call(row, role),
+        itemBuilder: (ctx) => [
+          for (final role in AppRole.values)
+            PopupMenuItem<AppRole?>(
+              value: role,
+              enabled: roleName != role.name,
+              child: Text(
+                  '${role.name[0].toUpperCase()}${role.name.substring(1)}'),
+            ),
+          if (hasAccess) ...[
+            const PopupMenuDivider(),
+            const PopupMenuItem<AppRole?>(
+              value: null,
+              child: Text('Remove access'),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1752,6 +1852,8 @@ class _MemberTableState extends State<_MemberTable> {
                             ),
                           ),
                         ),
+                      if (widget.isAdmin && row.o365MailboxUpn != null)
+                        _appRoleAction(context, row),
                     ],
                   ),
                 ),

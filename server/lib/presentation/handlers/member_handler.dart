@@ -29,8 +29,10 @@ import '../../application/member/list_members_use_case.dart';
 import '../../application/member/update_member_use_case.dart';
 import '../../application/o365/create_member_mailbox_use_case.dart';
 import '../../application/o365/list_available_o365_licenses_use_case.dart';
+import '../../application/o365/set_member_app_role_use_case.dart';
 import '../../application/o365/sync_members_to_o365_use_case.dart';
 import '../../domain/entities/member.dart';
+import '../../domain/exceptions/app_role_exception.dart';
 import '../../domain/exceptions/member_exception.dart';
 import '../../domain/exceptions/o365_sync_exception.dart';
 import '../audit_changes.dart';
@@ -41,6 +43,7 @@ import '../dto/import_member_request.dart';
 import '../dto/member_response.dart';
 import '../dto/o365_available_licenses_response.dart';
 import '../dto/o365_sync_result_response.dart';
+import '../dto/set_app_role_request.dart';
 import 'handler_diff.dart';
 
 /// Shelf request handlers for the /members REST resource.
@@ -54,6 +57,7 @@ class MemberHandler {
   final SyncMembersToO365UseCase _syncO365;
   final ListAvailableO365LicensesUseCase _availableLicenses;
   final CreateMemberMailboxUseCase _createMailbox;
+  final SetMemberAppRoleUseCase _setAppRole;
 
   const MemberHandler({
     required CreateMemberUseCase create,
@@ -65,6 +69,7 @@ class MemberHandler {
     required SyncMembersToO365UseCase syncO365,
     required ListAvailableO365LicensesUseCase availableLicenses,
     required CreateMemberMailboxUseCase createMailbox,
+    required SetMemberAppRoleUseCase setAppRole,
   })  : _create = create,
         _get = get,
         _list = list,
@@ -73,7 +78,8 @@ class MemberHandler {
         _import = import,
         _syncO365 = syncO365,
         _availableLicenses = availableLicenses,
-        _createMailbox = createMailbox;
+        _createMailbox = createMailbox,
+        _setAppRole = setAppRole;
 
   /// GET /members
   Future<Response> handleList(Request request) async {
@@ -351,6 +357,48 @@ class MemberHandler {
     }
   }
 
+  /// PUT /members/:id/app-role — grants, changes, or revokes the member's
+  /// Shedbooks access (their O365 mailbox account's app role). Requires the
+  /// member to already have a mailbox — see [SetMemberAppRoleUseCase].
+  Future<Response> handleSetAppRole(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final SetAppRoleRequest dto;
+    try {
+      final json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      dto = SetAppRoleRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    try {
+      final role = await _setAppRole.execute(
+        memberId: id,
+        entityId: entityId,
+        appRole: dto.role,
+        callerEmail: resolveEmail(request),
+      );
+      _auditChanges(request)?.set({'memberId': id, 'role': role});
+      return Response.ok(
+        jsonEncode({'memberId': id, 'role': role}),
+        headers: _jsonHeaders,
+      );
+    } on MemberNotFoundException catch (e) {
+      return _notFound(e.message);
+    } on MemberValidationException catch (e) {
+      return _badRequest(e.message);
+    } on SelfRoleChangeException catch (e) {
+      return _forbidden(e.message);
+    } on O365SyncNotConfiguredException catch (e) {
+      return _badRequest(e.message);
+    } on GraphAppRoleException catch (e) {
+      return _syncFailed(e.message);
+    }
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
   static String? _entityId(Request request) => resolveEntityId(request);
@@ -396,6 +444,11 @@ class MemberHandler {
   static Response _conflict(String message) => Response(
         409,
         body: jsonEncode({'error': message}),
+        headers: _jsonHeaders,
+      );
+
+  static Response _forbidden(String message) => Response.forbidden(
+        jsonEncode({'error': message}),
         headers: _jsonHeaders,
       );
 

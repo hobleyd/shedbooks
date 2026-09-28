@@ -55,6 +55,11 @@ class MemberEntry {
   /// mailbox", or null if none has been created.
   final String? o365MailboxUpn;
 
+  /// The Shedbooks app role ('viewer'/'contributor'/'administrator') last
+  /// granted to this member's O365 mailbox account, or null if they have
+  /// no access.
+  final String? shedbooksAppRole;
+
   /// CardDAV ETag — changes on every server-side update.
   final String etag;
 
@@ -77,6 +82,7 @@ class MemberEntry {
     this.o365SyncedAt,
     this.o365SyncFailedAt,
     this.o365MailboxUpn,
+    this.shedbooksAppRole,
     required this.etag,
   });
 
@@ -110,6 +116,7 @@ class MemberEntry {
           ? DateTime.parse(json['o365SyncFailedAt'] as String)
           : null,
       o365MailboxUpn: json['o365MailboxUpn'] as String?,
+      shedbooksAppRole: json['shedbooksAppRole'] as String?,
       etag: json['etag'] as String,
     );
   }

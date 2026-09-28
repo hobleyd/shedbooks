@@ -49,10 +49,12 @@ void main() async {
   final fieldEncryptor = FieldEncryptor(encryptionKey);
   final entraTenantId = _require('ENTRA_TENANT_ID');
   final entraClientId = _require('ENTRA_CLIENT_ID');
+  final entraLoginServicePrincipalId = _require('ENTRA_LOGIN_SP_OBJECT_ID');
 
   final handler = buildRouter(
     entraTenantId: entraTenantId,
     entraClientId: entraClientId,
+    entraLoginServicePrincipalId: entraLoginServicePrincipalId,
     corsOrigin: corsOrigin,
     fieldEncryptor: fieldEncryptor,
     abrGuid: abrGuid,

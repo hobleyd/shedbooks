@@ -45,6 +45,7 @@ class PostgresMemberRepository implements IMemberRepository {
     woodworking_induction, metalworking_induction, gym_waiver,
     etag, o365_contact_id, o365_synced_at, o365_sync_failed_at,
     o365_mailbox_upn, o365_mailbox_created_at,
+    shedbooks_app_role, shedbooks_app_role_set_at,
     created_at, updated_at, deleted_at
   ''';
 
@@ -325,6 +326,28 @@ class PostgresMemberRepository implements IMemberRepository {
   }
 
   @override
+  Future<void> setShedbooksAppRole({
+    required String id,
+    required String entityId,
+    required String? role,
+  }) async {
+    await _pool.execute(
+      Sql.named('''
+        UPDATE members
+        SET shedbooks_app_role        = @role,
+            shedbooks_app_role_set_at = NOW()
+        WHERE id = @id::uuid
+          AND entity_id = @entityId
+      '''),
+      parameters: {
+        'id': id,
+        'entityId': entityId,
+        'role': role,
+      },
+    );
+  }
+
+  @override
   Future<void> delete(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
@@ -419,6 +442,8 @@ class PostgresMemberRepository implements IMemberRepository {
       o365SyncFailedAt: row['o365_sync_failed_at'] as DateTime?,
       o365MailboxUpn: _decStr(row['o365_mailbox_upn']),
       o365MailboxCreatedAt: row['o365_mailbox_created_at'] as DateTime?,
+      shedbooksAppRole: row['shedbooks_app_role'] as String?,
+      shedbooksAppRoleSetAt: row['shedbooks_app_role_set_at'] as DateTime?,
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,

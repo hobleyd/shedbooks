@@ -55,6 +55,11 @@ output "entra_login_client_id" {
   value       = azuread_application.shedbooks_login.client_id
 }
 
+output "entra_login_service_principal_object_id" {
+  description = "Object ID of the Shedbooks Login app's service principal — the `resourceId` server/lib/infrastructure/services/scripts/manage_app_role_assignment.ps1 assigns app roles against. Wired into the server container as ENTRA_LOGIN_SP_OBJECT_ID (container_apps.tf); deliberately passed through rather than looked up at runtime via Get-MgServicePrincipal, which would need a Graph permission/module this feature doesn't otherwise use."
+  value       = azuread_service_principal.shedbooks_login.object_id
+}
+
 output "next_steps" {
   description = "Checklist for things this apply does not automate"
   value       = <<-EOT
