@@ -94,86 +94,109 @@ $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
 $requestedRole = $config.appRole
 
 if ($requestedRole -and -not $RoleIds.ContainsKey($requestedRole)) {
-    Write-Error "Unknown app role '$requestedRole' — expected one of: $($RoleIds.Keys -join ', ')"
+    [Console]::Error.WriteLine("Unknown app role '$requestedRole' — expected one of: $($RoleIds.Keys -join ', ')")
     exit 1
 }
 
-Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-Import-Module Microsoft.Graph.Users -ErrorAction Stop
-# Get-/New-/Remove-MgUserAppRoleAssignment's exact module has not been
-# confirmed against a live tenant (see file header) — Users.Actions is
-# already installed for Set-MgUserLicense (create_o365_mailbox.ps1) and
-# imported defensively here in case the assignment cmdlets live there
-# instead of/as well as Microsoft.Graph.Users.
-Import-Module Microsoft.Graph.Users.Actions -ErrorAction Stop
-
-$securePassword = ConvertTo-SecureString -String $config.certificatePassword -AsPlainText -Force
-$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-    $config.certificatePath, $securePassword,
-    [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
-
+# Everything from here on funnels through ONE catch below, which prints a
+# single clean line to stderr via [Console]::Error.WriteLine rather than
+# Write-Error. Two reasons: (1) with $ErrorActionPreference = 'Stop',
+# Write-Error itself becomes a terminating error — called from inside a
+# nested catch, it does not fall through to that catch's own `exit`, it
+# gets re-caught by whatever try/catch encloses it, defeating the specific
+# message a nested catch is there to add. (2) Write-Error's default
+# rendering (a "Write-Error: <path>:<line>" header, a "Line |" source
+# excerpt with a tilde underline, then the message) is several lines of
+# boilerplate that easily eats the whole snippet budget
+# GraphAppRoleAssignmentService truncates stderr to before the actual
+# message is reached. `throw "context: $($_.Exception.Message)"` in each
+# nested catch below chains cleanly into that single final message instead.
 try {
-    Connect-MgGraph -TenantId $config.tenantId -ClientId $config.appId -Certificate $cert -NoWelcome -ErrorAction Stop
-}
-catch {
-    Write-Error "Failed to connect to Microsoft Graph: $($_.Exception.Message)"
-    exit 1
-}
+    Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+    Import-Module Microsoft.Graph.Users -ErrorAction Stop
+    # Get-/New-/Remove-MgUserAppRoleAssignment's exact module has not been
+    # confirmed against a live tenant (see file header) — Users.Actions is
+    # already installed for Set-MgUserLicense (create_o365_mailbox.ps1) and
+    # imported defensively here in case the assignment cmdlets live there
+    # instead of/as well as Microsoft.Graph.Users.
+    Import-Module Microsoft.Graph.Users.Actions -ErrorAction Stop
 
-try {
-    try {
-        $user = Get-MgUser -UserId $config.targetUserId -Property Id -ErrorAction Stop
-    }
-    catch {
-        Write-Error "Could not resolve target user '$($config.targetUserId)': $($_.Exception.Message)"
-        exit 1
-    }
-    $principalId = $user.Id
+    $securePassword = ConvertTo-SecureString -String $config.certificatePassword -AsPlainText -Force
+    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+        $config.certificatePath, $securePassword,
+        [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
 
     try {
-        $existing = @(Get-MgUserAppRoleAssignment -UserId $principalId -All -ErrorAction Stop |
-            Where-Object { $_.ResourceId -eq $config.resourceId })
+        Connect-MgGraph -TenantId $config.tenantId -ClientId $config.appId -Certificate $cert -NoWelcome -ErrorAction Stop
     }
     catch {
-        Write-Error "Could not read existing app role assignments for '$($config.targetUserId)': $($_.Exception.Message)"
-        exit 1
+        throw "Failed to connect to Microsoft Graph: $($_.Exception.Message)"
     }
 
-    $desiredRoleId = if ($requestedRole) { $RoleIds[$requestedRole] } else { $null }
-    $keptAssignment = $existing | Where-Object { $_.AppRoleId -eq $desiredRoleId } | Select-Object -First 1
+    try {
+        try {
+            $user = Get-MgUser -UserId $config.targetUserId -Property Id -ErrorAction Stop
+        }
+        catch {
+            throw "Could not resolve target user '$($config.targetUserId)': $($_.Exception.Message)"
+        }
+        $principalId = $user.Id
 
-    # Remove every assignment for this resource except one already matching
-    # the desired role (if any) — Shedbooks only ever wants at most one
-    # active role per user per application.
-    foreach ($assignment in $existing) {
-        if ($keptAssignment -and $assignment.Id -eq $keptAssignment.Id) { continue }
-        Remove-MgUserAppRoleAssignment -UserId $principalId -AppRoleAssignmentId $assignment.Id -ErrorAction Stop
-    }
+        try {
+            $existing = @(Get-MgUserAppRoleAssignment -UserId $principalId -All -ErrorAction Stop |
+                Where-Object { $_.ResourceId -eq $config.resourceId })
+        }
+        catch {
+            throw "Could not read existing app role assignments for '$($config.targetUserId)': $($_.Exception.Message)"
+        }
 
-    if ($desiredRoleId -and -not $keptAssignment) {
-        New-MgUserAppRoleAssignment -UserId $principalId -PrincipalId $principalId `
-            -ResourceId $config.resourceId -AppRoleId $desiredRoleId -ErrorAction Stop | Out-Null
-    }
+        $desiredRoleId = if ($requestedRole) { $RoleIds[$requestedRole] } else { $null }
+        $keptAssignment = $existing | Where-Object { $_.AppRoleId -eq $desiredRoleId } | Select-Object -First 1
 
-    # Read back what's actually in effect now, rather than trusting the
-    # requested value — see file header.
-    $final = @(Get-MgUserAppRoleAssignment -UserId $principalId -All -ErrorAction Stop |
-        Where-Object { $_.ResourceId -eq $config.resourceId })
-    $finalRoleValue = $null
-    if ($final.Count -ge 1) {
-        $finalRoleId = $final[0].AppRoleId
-        $finalRoleValue = ($RoleIds.GetEnumerator() |
-            Where-Object { $_.Value -eq $finalRoleId } |
-            Select-Object -First 1).Key
+        try {
+            # Remove every assignment for this resource except one already
+            # matching the desired role (if any) — Shedbooks only ever wants
+            # at most one active role per user per application.
+            foreach ($assignment in $existing) {
+                if ($keptAssignment -and $assignment.Id -eq $keptAssignment.Id) { continue }
+                Remove-MgUserAppRoleAssignment -UserId $principalId -AppRoleAssignmentId $assignment.Id -ErrorAction Stop
+            }
+
+            if ($desiredRoleId -and -not $keptAssignment) {
+                New-MgUserAppRoleAssignment -UserId $principalId -PrincipalId $principalId `
+                    -ResourceId $config.resourceId -AppRoleId $desiredRoleId -ErrorAction Stop | Out-Null
+            }
+        }
+        catch {
+            throw "Could not update the app role assignment for '$($config.targetUserId)': $($_.Exception.Message)"
+        }
+
+        try {
+            # Read back what's actually in effect now, rather than trusting
+            # the requested value — see file header.
+            $final = @(Get-MgUserAppRoleAssignment -UserId $principalId -All -ErrorAction Stop |
+                Where-Object { $_.ResourceId -eq $config.resourceId })
+        }
+        catch {
+            throw "Could not verify the resulting app role assignment for '$($config.targetUserId)': $($_.Exception.Message)"
+        }
+
+        $finalRoleValue = $null
+        if ($final.Count -ge 1) {
+            $finalRoleId = $final[0].AppRoleId
+            $finalRoleValue = ($RoleIds.GetEnumerator() |
+                Where-Object { $_.Value -eq $finalRoleId } |
+                Select-Object -First 1).Key
+        }
+        Write-Result -Role $finalRoleValue
     }
-    Write-Result -Role $finalRoleValue
+    finally {
+        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+    }
 }
 catch {
-    Write-Error "Failed while managing app role assignment: $($_.Exception.Message)"
+    [Console]::Error.WriteLine($_.Exception.Message)
     exit 1
-}
-finally {
-    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 }
 
 exit 0

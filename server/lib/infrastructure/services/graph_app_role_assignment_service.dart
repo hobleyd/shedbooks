@@ -120,5 +120,10 @@ class GraphAppRoleAssignmentService implements IGraphAppRoleService {
     }
   }
 
-  String _snippet(String s) => s.length > 500 ? '${s.substring(0, 500)}...' : s;
+  // Graph error messages often carry a correlation/request id GUID and are
+  // longer than the plain validation messages elsewhere in this codebase
+  // budget for — the script now emits a single clean line (no PowerShell
+  // Write-Error boilerplate, see manage_app_role_assignment.ps1's header),
+  // so this budget is spent entirely on the message itself.
+  String _snippet(String s) => s.length > 1000 ? '${s.substring(0, 1000)}...' : s;
 }
