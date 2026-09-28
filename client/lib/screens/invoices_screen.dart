@@ -446,6 +446,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         'abn': contact.abn,
         'bsb': contact.bsb,
         'accountNumber': contact.accountNumber,
+        'isBpay': contact.isBpay,
+        'bpayBillerCode': contact.bpayBillerCode,
+        'bpayReference': contact.bpayReference,
         'address': trimmed,
       });
       final res = await client.put('/contacts/${contact.id}', body);

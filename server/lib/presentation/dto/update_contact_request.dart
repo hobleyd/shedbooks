@@ -25,6 +25,9 @@ class UpdateContactRequest {
   final String? abn;
   final String? bsb;
   final String? accountNumber;
+  final bool isBpay;
+  final String? bpayBillerCode;
+  final String? bpayReference;
   final String? address;
 
   const UpdateContactRequest({
@@ -34,6 +37,9 @@ class UpdateContactRequest {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.isBpay = false,
+    this.bpayBillerCode,
+    this.bpayReference,
     this.address,
   });
 
@@ -44,6 +50,9 @@ class UpdateContactRequest {
     final abn = json['abn'];
     final bsb = json['bsb'];
     final accountNumber = json['accountNumber'];
+    final isBpay = json['isBpay'] ?? false;
+    final bpayBillerCode = json['bpayBillerCode'];
+    final bpayReference = json['bpayReference'];
     final address = json['address'];
 
     if (name is! String) throw const FormatException('name must be a string');
@@ -61,6 +70,15 @@ class UpdateContactRequest {
     }
     if (accountNumber != null && accountNumber is! String) {
       throw const FormatException('accountNumber must be a string');
+    }
+    if (isBpay is! bool) {
+      throw const FormatException('isBpay must be a boolean');
+    }
+    if (bpayBillerCode != null && bpayBillerCode is! String) {
+      throw const FormatException('bpayBillerCode must be a string');
+    }
+    if (bpayReference != null && bpayReference is! String) {
+      throw const FormatException('bpayReference must be a string');
     }
     if (address != null && address is! String) {
       throw const FormatException('address must be a string');
@@ -82,6 +100,9 @@ class UpdateContactRequest {
       abn: abn as String?,
       bsb: bsb as String?,
       accountNumber: accountNumber as String?,
+      isBpay: isBpay,
+      bpayBillerCode: bpayBillerCode as String?,
+      bpayReference: bpayReference as String?,
       address: address as String?,
     );
   }

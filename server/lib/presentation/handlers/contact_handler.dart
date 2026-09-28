@@ -104,6 +104,9 @@ class ContactHandler {
         abn: dto.abn,
         bsb: dto.bsb,
         accountNumber: dto.accountNumber,
+        isBpay: dto.isBpay,
+        bpayBillerCode: dto.bpayBillerCode,
+        bpayReference: dto.bpayReference,
         address: dto.address,
       );
       _auditChanges(request)?.set(_contactSnapshot(contact, redact: true));
@@ -177,6 +180,10 @@ class ContactHandler {
         abn: dto.abn,
         bsb: isAuthorized ? dto.bsb : before?.bsb,
         accountNumber: isAuthorized ? dto.accountNumber : before?.accountNumber,
+        isBpay: isAuthorized ? dto.isBpay : (before?.isBpay ?? false),
+        bpayBillerCode:
+            isAuthorized ? dto.bpayBillerCode : before?.bpayBillerCode,
+        bpayReference: isAuthorized ? dto.bpayReference : before?.bpayReference,
         address: dto.address,
       );
       if (before != null) {
@@ -284,6 +291,9 @@ class ContactHandler {
         abn: c.abn,
         bsb: null,
         accountNumber: null,
+        isBpay: c.isBpay,
+        bpayBillerCode: null,
+        bpayReference: null,
         address: c.address,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
@@ -302,6 +312,11 @@ class ContactHandler {
         'bsb': redact ? (c.bsb != null ? '***' : null) : c.bsb,
         'accountNumber':
             redact ? (c.accountNumber != null ? '***' : null) : c.accountNumber,
+        'isBpay': c.isBpay,
+        'bpayBillerCode':
+            redact ? (c.bpayBillerCode != null ? '***' : null) : c.bpayBillerCode,
+        'bpayReference':
+            redact ? (c.bpayReference != null ? '***' : null) : c.bpayReference,
         'address': c.address,
       };
 

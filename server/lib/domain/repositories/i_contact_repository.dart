@@ -28,6 +28,9 @@ abstract interface class IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    bool isBpay = false,
+    String? bpayBillerCode,
+    String? bpayReference,
     String? address,
   });
 
@@ -48,6 +51,9 @@ abstract interface class IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    bool isBpay = false,
+    String? bpayBillerCode,
+    String? bpayReference,
     String? address,
   });
 

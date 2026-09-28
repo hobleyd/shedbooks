@@ -18,6 +18,7 @@
 import '../../domain/entities/contact.dart';
 import '../../domain/exceptions/contact_exception.dart';
 import '../../domain/repositories/i_contact_repository.dart';
+import 'create_contact_use_case.dart' show validateBpayFields;
 
 /// Updates an existing contact.
 class UpdateContactUseCase {
@@ -34,6 +35,9 @@ class UpdateContactUseCase {
     String? abn,
     String? bsb,
     String? accountNumber,
+    bool isBpay = false,
+    String? bpayBillerCode,
+    String? bpayReference,
     String? address,
   }) async {
     if (name.trim().isEmpty) {
@@ -58,18 +62,13 @@ class UpdateContactUseCase {
       }
     }
 
-    if (bsb != null && bsb.trim().isNotEmpty) {
-      if (!RegExp(r'^\d{6}$').hasMatch(bsb.trim())) {
-        throw const ContactValidationException('BSB must be 6 digits');
-      }
-    }
-    if (accountNumber != null && accountNumber.trim().isNotEmpty) {
-      if (!RegExp(r'^\d{6,10}$').hasMatch(accountNumber.trim())) {
-        throw const ContactValidationException(
-          'Account number must be 6-10 digits',
-        );
-      }
-    }
+    validateBpayFields(
+      isBpay: isBpay,
+      bsb: bsb,
+      accountNumber: accountNumber,
+      bpayBillerCode: bpayBillerCode,
+      bpayReference: bpayReference,
+    );
 
     return _repository.update(
       id: id,
@@ -78,8 +77,11 @@ class UpdateContactUseCase {
       contactType: contactType,
       gstRegistered: gstRegistered,
       abn: contactType == ContactType.company ? abn?.trim() : null,
-      bsb: bsb?.trim(),
-      accountNumber: accountNumber?.trim(),
+      bsb: isBpay ? null : bsb?.trim(),
+      accountNumber: isBpay ? null : accountNumber?.trim(),
+      isBpay: isBpay,
+      bpayBillerCode: isBpay ? bpayBillerCode?.trim() : null,
+      bpayReference: isBpay ? bpayReference?.trim() : null,
       address: address?.trim().isEmpty ?? true ? null : address!.trim(),
     );
   }

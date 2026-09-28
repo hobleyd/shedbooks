@@ -33,6 +33,9 @@ class CreateContactUseCase {
     String? abn,
     String? bsb,
     String? accountNumber,
+    bool isBpay = false,
+    String? bpayBillerCode,
+    String? bpayReference,
     String? address,
   }) async {
     if (name.trim().isEmpty) {
@@ -57,6 +60,76 @@ class CreateContactUseCase {
       }
     }
 
+    validateBpayFields(
+      isBpay: isBpay,
+      bsb: bsb,
+      accountNumber: accountNumber,
+      bpayBillerCode: bpayBillerCode,
+      bpayReference: bpayReference,
+    );
+
+    return _repository.create(
+      entityId: entityId,
+      name: name.trim(),
+      contactType: contactType,
+      gstRegistered: gstRegistered,
+      abn: contactType == ContactType.company ? abn?.trim() : null,
+      bsb: isBpay ? null : bsb?.trim(),
+      accountNumber: isBpay ? null : accountNumber?.trim(),
+      isBpay: isBpay,
+      bpayBillerCode: isBpay ? bpayBillerCode?.trim() : null,
+      bpayReference: isBpay ? bpayReference?.trim() : null,
+      address: address?.trim().isEmpty ?? true ? null : address!.trim(),
+    );
+  }
+}
+
+/// Validates that BSB/account number and BPAY biller code/reference are
+/// mutually exclusive per [isBpay], and that whichever pair is in use is
+/// well-formed when non-empty. Shared by [CreateContactUseCase] and
+/// `UpdateContactUseCase`.
+void validateBpayFields({
+  required bool isBpay,
+  String? bsb,
+  String? accountNumber,
+  String? bpayBillerCode,
+  String? bpayReference,
+}) {
+  if (isBpay) {
+    if (bsb != null && bsb.trim().isNotEmpty) {
+      throw const ContactValidationException(
+        'BSB must not be set when payment method is BPAY',
+      );
+    }
+    if (accountNumber != null && accountNumber.trim().isNotEmpty) {
+      throw const ContactValidationException(
+        'Account number must not be set when payment method is BPAY',
+      );
+    }
+    final billerValue = bpayBillerCode?.trim() ?? '';
+    if (billerValue.isNotEmpty && !RegExp(r'^\d{3,10}$').hasMatch(billerValue)) {
+      throw const ContactValidationException(
+        'BPAY biller code must be 3-10 digits',
+      );
+    }
+    final referenceValue = bpayReference?.trim() ?? '';
+    if (referenceValue.isNotEmpty &&
+        !RegExp(r'^\d{2,20}$').hasMatch(referenceValue)) {
+      throw const ContactValidationException(
+        'BPAY reference must be 2-20 digits',
+      );
+    }
+  } else {
+    if (bpayBillerCode != null && bpayBillerCode.trim().isNotEmpty) {
+      throw const ContactValidationException(
+        'BPAY biller code must not be set when payment method is bank transfer',
+      );
+    }
+    if (bpayReference != null && bpayReference.trim().isNotEmpty) {
+      throw const ContactValidationException(
+        'BPAY reference must not be set when payment method is bank transfer',
+      );
+    }
     if (bsb != null && bsb.trim().isNotEmpty) {
       if (!RegExp(r'^\d{6}$').hasMatch(bsb.trim())) {
         throw const ContactValidationException('BSB must be 6 digits');
@@ -69,16 +142,5 @@ class CreateContactUseCase {
         );
       }
     }
-
-    return _repository.create(
-      entityId: entityId,
-      name: name.trim(),
-      contactType: contactType,
-      gstRegistered: gstRegistered,
-      abn: contactType == ContactType.company ? abn?.trim() : null,
-      bsb: bsb?.trim(),
-      accountNumber: accountNumber?.trim(),
-      address: address?.trim().isEmpty ?? true ? null : address!.trim(),
-    );
   }
 }

@@ -170,6 +170,106 @@ void main() {
       );
     });
 
+    test('updates a contact to BPAY with biller code and reference', () async {
+      // Arrange
+      when(
+        () => repository.update(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          bsb: null,
+          accountNumber: null,
+          isBpay: true,
+          bpayBillerCode: '123456',
+          bpayReference: '9876543210',
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: 'entity-1',
+        name: 'Acme Pty Ltd',
+        contactType: ContactType.company,
+        gstRegistered: true,
+        abn: '51824753556',
+        isBpay: true,
+        bpayBillerCode: '123456',
+        bpayReference: '9876543210',
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          bsb: null,
+          accountNumber: null,
+          isBpay: true,
+          bpayBillerCode: '123456',
+          bpayReference: '9876543210',
+        ),
+      ).called(1);
+    });
+
+    test('throws ContactValidationException when BPAY contact also has BSB set',
+        () async {
+      expect(
+        () => sut.execute(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          isBpay: true,
+          bsb: '123456',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test('throws ContactValidationException when BPAY biller code is not 3-10 digits',
+        () async {
+      expect(
+        () => sut.execute(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          isBpay: true,
+          bpayBillerCode: 'abc',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test(
+        'throws ContactValidationException when biller code is set but payment method is bank transfer',
+        () async {
+      expect(
+        () => sut.execute(
+          id: tId,
+          entityId: 'entity-1',
+          name: 'Acme Pty Ltd',
+          contactType: ContactType.company,
+          gstRegistered: true,
+          abn: '51824753556',
+          bpayBillerCode: '123456',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
     test('trims whitespace from address before persisting', () async {
       // Arrange
       when(

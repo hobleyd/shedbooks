@@ -27,6 +27,9 @@ class ContactResponse {
   final String? abn;
   final String? bsb;
   final String? accountNumber;
+  final bool isBpay;
+  final String? bpayBillerCode;
+  final String? bpayReference;
   final String? address;
   final String createdAt;
   final String updatedAt;
@@ -39,6 +42,9 @@ class ContactResponse {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.isBpay = false,
+    this.bpayBillerCode,
+    this.bpayReference,
     this.address,
     required this.createdAt,
     required this.updatedAt,
@@ -53,6 +59,9 @@ class ContactResponse {
       abn: entity.abn,
       bsb: entity.bsb,
       accountNumber: entity.accountNumber,
+      isBpay: entity.isBpay,
+      bpayBillerCode: entity.bpayBillerCode,
+      bpayReference: entity.bpayReference,
       address: entity.address,
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
@@ -67,6 +76,9 @@ class ContactResponse {
         'abn': abn,
         'bsb': bsb,
         'accountNumber': accountNumber,
+        'isBpay': isBpay,
+        'bpayBillerCode': bpayBillerCode,
+        'bpayReference': bpayReference,
         'address': address,
         'createdAt': createdAt,
         'updatedAt': updatedAt,

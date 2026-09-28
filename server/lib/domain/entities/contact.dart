@@ -38,10 +38,23 @@ class Contact {
   final String? abn;
 
   /// Bank State Branch code (6 digits) for ABA payments.
+  /// Always null when [isBpay] is true — mutually exclusive with BPAY.
   final String? bsb;
 
   /// Bank account number (6-10 digits) for ABA payments.
+  /// Always null when [isBpay] is true — mutually exclusive with BPAY.
   final String? accountNumber;
+
+  /// Whether this contact is paid via BPAY rather than direct bank transfer.
+  /// When true, [bsb]/[accountNumber] are unused and [bpayBillerCode]/
+  /// [bpayReference] apply instead; when false, the reverse.
+  final bool isBpay;
+
+  /// BPAY Biller Code. Only present when [isBpay] is true.
+  final String? bpayBillerCode;
+
+  /// BPAY Customer Reference Number. Only present when [isBpay] is true.
+  final String? bpayReference;
 
   /// Multi-line postal/billing address, used on invoices raised against this contact.
   final String? address;
@@ -63,6 +76,9 @@ class Contact {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.isBpay = false,
+    this.bpayBillerCode,
+    this.bpayReference,
     this.address,
     required this.createdAt,
     required this.updatedAt,

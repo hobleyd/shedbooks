@@ -253,6 +253,155 @@ void main() {
       ).called(1);
     });
 
+    test('creates a BPAY contact with biller code and reference', () async {
+      // Arrange
+      when(
+        () => repository.create(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          bsb: null,
+          accountNumber: null,
+          isBpay: true,
+          bpayBillerCode: '123456',
+          bpayReference: '9876543210',
+        ),
+      ).thenAnswer((_) async => tCompany);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        name: 'Acme Corp',
+        contactType: ContactType.company,
+        gstRegistered: false,
+        abn: '51824753556',
+        isBpay: true,
+        bpayBillerCode: '123456',
+        bpayReference: '9876543210',
+      );
+
+      // Assert
+      verify(
+        () => repository.create(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          bsb: null,
+          accountNumber: null,
+          isBpay: true,
+          bpayBillerCode: '123456',
+          bpayReference: '9876543210',
+        ),
+      ).called(1);
+    });
+
+    test('throws ContactValidationException when BPAY contact also has BSB set',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          isBpay: true,
+          bsb: '123456',
+          bpayBillerCode: '123456',
+          bpayReference: '9876543210',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test(
+        'throws ContactValidationException when BPAY contact also has account number set',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          isBpay: true,
+          accountNumber: '12345678',
+          bpayBillerCode: '123456',
+          bpayReference: '9876543210',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test('throws ContactValidationException when BPAY biller code is not 3-10 digits',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          isBpay: true,
+          bpayBillerCode: '12',
+          bpayReference: '9876543210',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test('throws ContactValidationException when BPAY reference is not 2-20 digits',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          isBpay: true,
+          bpayBillerCode: '123456',
+          bpayReference: '1',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test(
+        'throws ContactValidationException when biller code is set but payment method is bank transfer',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          bpayBillerCode: '123456',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
+    test(
+        'throws ContactValidationException when reference is set but payment method is bank transfer',
+        () async {
+      expect(
+        () => sut.execute(
+          entityId: tEntityId,
+          name: 'Acme Corp',
+          contactType: ContactType.company,
+          gstRegistered: false,
+          abn: '51824753556',
+          bpayReference: '9876543210',
+        ),
+        throwsA(isA<ContactValidationException>()),
+      );
+    });
+
     test('passes null address when address is blank or omitted', () async {
       // Arrange
       when(

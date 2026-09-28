@@ -42,14 +42,20 @@ class PostgresContactRepository implements IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    bool isBpay = false,
+    String? bpayBillerCode,
+    String? bpayReference,
     String? address,
   }) async {
     final id = _uuid.v4();
     final result = await _pool.execute(
       Sql.named('''
-        INSERT INTO contacts (id, entity_id, name, contact_type, gst_registered, abn, bsb, account_number, address)
-        VALUES (@id::uuid, @entityId, @name, @contactType::contact_type, @gstRegistered, @abn, @bsb, @accountNumber, @address)
-        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
+        INSERT INTO contacts (id, entity_id, name, contact_type, gst_registered, abn, bsb, account_number,
+                               is_bpay, bpay_biller_code, bpay_reference, address)
+        VALUES (@id::uuid, @entityId, @name, @contactType::contact_type, @gstRegistered, @abn, @bsb, @accountNumber,
+                @isBpay, @bpayBillerCode, @bpayReference, @address)
+        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number,
+                  is_bpay, bpay_biller_code, bpay_reference, address, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
@@ -60,6 +66,9 @@ class PostgresContactRepository implements IContactRepository {
         'abn': abn,
         'bsb': bsb != null ? _enc.encrypt(bsb) : null,
         'accountNumber': accountNumber != null ? _enc.encrypt(accountNumber) : null,
+        'isBpay': isBpay,
+        'bpayBillerCode': bpayBillerCode != null ? _enc.encrypt(bpayBillerCode) : null,
+        'bpayReference': bpayReference != null ? _enc.encrypt(bpayReference) : null,
         'address': address,
       },
     );
@@ -70,7 +79,8 @@ class PostgresContactRepository implements IContactRepository {
   Future<Contact?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
+        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number,
+               is_bpay, bpay_biller_code, bpay_reference, address, created_at, updated_at, deleted_at
         FROM contacts
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -87,7 +97,8 @@ class PostgresContactRepository implements IContactRepository {
   Future<List<Contact>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
+        SELECT id, name, contact_type::text, gst_registered, abn, bsb, account_number,
+               is_bpay, bpay_biller_code, bpay_reference, address, created_at, updated_at, deleted_at
         FROM contacts
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -109,23 +120,30 @@ class PostgresContactRepository implements IContactRepository {
     String? abn,
     String? bsb,
     String? accountNumber,
+    bool isBpay = false,
+    String? bpayBillerCode,
+    String? bpayReference,
     String? address,
   }) async {
     final result = await _pool.execute(
       Sql.named('''
         UPDATE contacts
-        SET name           = @name,
-            contact_type   = @contactType::contact_type,
-            gst_registered = @gstRegistered,
-            abn            = @abn,
-            bsb            = @bsb,
-            account_number = @accountNumber,
-            address        = @address,
-            updated_at     = NOW()
+        SET name              = @name,
+            contact_type      = @contactType::contact_type,
+            gst_registered    = @gstRegistered,
+            abn               = @abn,
+            bsb               = @bsb,
+            account_number    = @accountNumber,
+            is_bpay           = @isBpay,
+            bpay_biller_code  = @bpayBillerCode,
+            bpay_reference    = @bpayReference,
+            address           = @address,
+            updated_at        = NOW()
         WHERE id = @id::uuid
           AND entity_id = @entityId
           AND deleted_at IS NULL
-        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number, address, created_at, updated_at, deleted_at
+        RETURNING id, name, contact_type::text, gst_registered, abn, bsb, account_number,
+                  is_bpay, bpay_biller_code, bpay_reference, address, created_at, updated_at, deleted_at
       '''),
       parameters: {
         'id': id,
@@ -136,6 +154,9 @@ class PostgresContactRepository implements IContactRepository {
         'abn': abn,
         'bsb': bsb != null ? _enc.encrypt(bsb) : null,
         'accountNumber': accountNumber != null ? _enc.encrypt(accountNumber) : null,
+        'isBpay': isBpay,
+        'bpayBillerCode': bpayBillerCode != null ? _enc.encrypt(bpayBillerCode) : null,
+        'bpayReference': bpayReference != null ? _enc.encrypt(bpayReference) : null,
         'address': address,
       },
     );
@@ -171,6 +192,13 @@ class PostgresContactRepository implements IContactRepository {
       bsb: row['bsb'] != null ? _enc.decrypt(row['bsb'] as String) : null,
       accountNumber: row['account_number'] != null
           ? _enc.decrypt(row['account_number'] as String)
+          : null,
+      isBpay: row['is_bpay'] as bool,
+      bpayBillerCode: row['bpay_biller_code'] != null
+          ? _enc.decrypt(row['bpay_biller_code'] as String)
+          : null,
+      bpayReference: row['bpay_reference'] != null
+          ? _enc.decrypt(row['bpay_reference'] as String)
           : null,
       address: row['address'] as String?,
       createdAt: row['created_at'] as DateTime,

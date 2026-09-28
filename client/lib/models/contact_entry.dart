@@ -34,6 +34,17 @@ class ContactEntry {
   /// Account number (6-10 digits) for ABA payments.
   final String? accountNumber;
 
+  /// Whether this contact is paid via BPAY rather than direct bank transfer.
+  /// When true, [bsb]/[accountNumber] are unused and [bpayBillerCode]/
+  /// [bpayReference] apply instead; when false, the reverse.
+  final bool isBpay;
+
+  /// BPAY Biller Code. Only present when [isBpay] is true.
+  final String? bpayBillerCode;
+
+  /// BPAY Customer Reference Number. Only present when [isBpay] is true.
+  final String? bpayReference;
+
   /// Multi-line postal/billing address, used on invoices raised against this contact.
   final String? address;
 
@@ -45,6 +56,9 @@ class ContactEntry {
     this.abn,
     this.bsb,
     this.accountNumber,
+    this.isBpay = false,
+    this.bpayBillerCode,
+    this.bpayReference,
     this.address,
   });
 
@@ -57,6 +71,9 @@ class ContactEntry {
       abn: json['abn'] as String?,
       bsb: json['bsb'] as String?,
       accountNumber: json['accountNumber'] as String?,
+      isBpay: json['isBpay'] as bool? ?? false,
+      bpayBillerCode: json['bpayBillerCode'] as String?,
+      bpayReference: json['bpayReference'] as String?,
       address: json['address'] as String?,
     );
   }

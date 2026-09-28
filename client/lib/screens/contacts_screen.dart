@@ -36,15 +36,21 @@ class _ContactRow {
   final TextEditingController abnController;
   final TextEditingController bsbController;
   final TextEditingController accountNumberController;
+  final TextEditingController billerCodeController;
+  final TextEditingController referenceController;
   final FocusNode nameFocusNode;
   ContactType contactType;
   bool gstRegistered;
+  bool isBpay;
   _AbnLookupState abnLookupState;
   final bool isNew;
   final String _origName;
   final String? _origAbn;
   final String? _origBsb;
   final String? _origAccountNumber;
+  final bool _origIsBpay;
+  final String? _origBillerCode;
+  final String? _origReference;
   final ContactType _origContactType;
   final bool _origGstRegistered;
 
@@ -54,15 +60,21 @@ class _ContactRow {
         abnController = TextEditingController(text: e.abn ?? ''),
         bsbController = TextEditingController(text: e.bsb ?? ''),
         accountNumberController = TextEditingController(text: e.accountNumber ?? ''),
+        billerCodeController = TextEditingController(text: e.bpayBillerCode ?? ''),
+        referenceController = TextEditingController(text: e.bpayReference ?? ''),
         nameFocusNode = FocusNode(),
         contactType = e.contactType,
         gstRegistered = e.gstRegistered,
+        isBpay = e.isBpay,
         abnLookupState = _AbnLookupState.idle,
         isNew = false,
         _origName = e.name,
         _origAbn = e.abn,
         _origBsb = e.bsb,
         _origAccountNumber = e.accountNumber,
+        _origIsBpay = e.isBpay,
+        _origBillerCode = e.bpayBillerCode,
+        _origReference = e.bpayReference,
         _origContactType = e.contactType,
         _origGstRegistered = e.gstRegistered;
 
@@ -72,15 +84,21 @@ class _ContactRow {
         abnController = TextEditingController(),
         bsbController = TextEditingController(),
         accountNumberController = TextEditingController(),
+        billerCodeController = TextEditingController(),
+        referenceController = TextEditingController(),
         nameFocusNode = FocusNode(),
         contactType = ContactType.person,
         gstRegistered = false,
+        isBpay = false,
         abnLookupState = _AbnLookupState.idle,
         isNew = true,
         _origName = '',
         _origAbn = null,
         _origBsb = null,
         _origAccountNumber = null,
+        _origIsBpay = false,
+        _origBillerCode = null,
+        _origReference = null,
         _origContactType = ContactType.person,
         _origGstRegistered = false;
 
@@ -90,8 +108,23 @@ class _ContactRow {
         abnController.text != (_origAbn ?? '') ||
         bsbController.text != (_origBsb ?? '') ||
         accountNumberController.text != (_origAccountNumber ?? '') ||
+        isBpay != _origIsBpay ||
+        billerCodeController.text != (_origBillerCode ?? '') ||
+        referenceController.text != (_origReference ?? '') ||
         contactType != _origContactType ||
         gstRegistered != _origGstRegistered;
+  }
+
+  /// Clears the payment fields that don't apply to the current [isBpay]
+  /// selection, enforcing the either/or between bank transfer and BPAY.
+  void clearInactivePaymentFields() {
+    if (isBpay) {
+      bsbController.clear();
+      accountNumberController.clear();
+    } else {
+      billerCodeController.clear();
+      referenceController.clear();
+    }
   }
 
   void dispose() {
@@ -99,8 +132,20 @@ class _ContactRow {
     abnController.dispose();
     bsbController.dispose();
     accountNumberController.dispose();
+    billerCodeController.dispose();
+    referenceController.dispose();
     nameFocusNode.dispose();
   }
+
+  /// The text of whichever "first" payment field (BSB or Biller Code) is
+  /// currently active, for sorting.
+  String get paymentFieldA =>
+      isBpay ? billerCodeController.text : bsbController.text;
+
+  /// The text of whichever "second" payment field (Account No. or
+  /// Reference) is currently active, for sorting.
+  String get paymentFieldB =>
+      isBpay ? referenceController.text : accountNumberController.text;
 }
 
 /// Displays the Contacts screen with inline editing.
@@ -211,10 +256,9 @@ class _ContactsScreenState extends State<ContactsScreen> {
         case 3:
           cmp = (a.gstRegistered ? 1 : 0).compareTo(b.gstRegistered ? 1 : 0);
         case 4:
-          cmp = a.bsbController.text.compareTo(b.bsbController.text);
+          cmp = a.paymentFieldA.compareTo(b.paymentFieldA);
         case 5:
-          cmp = a.accountNumberController.text
-              .compareTo(b.accountNumberController.text);
+          cmp = a.paymentFieldB.compareTo(b.paymentFieldB);
         default:
           return 0;
       }
@@ -344,6 +388,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
           return;
         }
       }
+      if (row.isBpay) {
+        final billerCode = row.billerCodeController.text.trim();
+        if (billerCode.isNotEmpty && !RegExp(r'^\d{3,10}$').hasMatch(billerCode)) {
+          _showSnackbar('Row ${i + 1}: BPAY biller code must be 3-10 digits');
+          return;
+        }
+        final reference = row.referenceController.text.trim();
+        if (reference.isNotEmpty && !RegExp(r'^\d{2,20}$').hasMatch(reference)) {
+          _showSnackbar('Row ${i + 1}: BPAY reference must be 2-20 digits');
+          return;
+        }
+      }
     }
 
     setState(() => _saving = true);
@@ -369,8 +425,16 @@ class _ContactsScreenState extends State<ContactsScreen> {
           'contactType': row.contactType.name,
           'gstRegistered': row.gstRegistered,
           if (isCompany) 'abn': row.abnController.text.trim(),
-          'bsb': row.bsbController.text.replaceAll('-', '').trim(),
-          'accountNumber': row.accountNumberController.text.trim(),
+          'bsb': row.isBpay
+              ? ''
+              : row.bsbController.text.replaceAll('-', '').trim(),
+          'accountNumber':
+              row.isBpay ? '' : row.accountNumberController.text.trim(),
+          'isBpay': row.isBpay,
+          'bpayBillerCode':
+              row.isBpay ? row.billerCodeController.text.trim() : '',
+          'bpayReference':
+              row.isBpay ? row.referenceController.text.trim() : '',
         });
 
         if (row.isNew) {
@@ -627,11 +691,24 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SizedBox(width: 8),
           SizedBox(width: 130, child: _colHeader('ABN', 1)),
           const SizedBox(width: 8),
-          SizedBox(width: 90, child: _colHeader('BSB', 4)),
+          SizedBox(width: 90, child: _colHeader('BSB / Biller', 4)),
           const SizedBox(width: 8),
-          SizedBox(width: 120, child: _colHeader('Account No.', 5)),
+          SizedBox(width: 120, child: _colHeader('Acc No. / Ref', 5)),
           const SizedBox(width: 8),
           const SizedBox(width: 32), // bank reveal toggle
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 64,
+            child: Center(
+              child: Text(
+                'BPAY',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
           const SizedBox(width: 8),
           SizedBox(
             width: 128,
@@ -655,11 +732,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final bool canEdit = authState.canEdit;
     final bool isAdmin = authState.isAdmin;
 
-    final hasBankDetails = row.bsbController.text.isNotEmpty ||
-        row.accountNumberController.text.isNotEmpty;
+    final hasBankDetails = row.isBpay
+        ? row.billerCodeController.text.isNotEmpty ||
+            row.referenceController.text.isNotEmpty
+        : row.bsbController.text.isNotEmpty ||
+            row.accountNumberController.text.isNotEmpty;
     final rowKey = row.id ?? '';
     final bankHidden =
         !row.isNew && hasBankDetails && !_bankDetailsRevealed.contains(rowKey);
+    // Existing rows carry hidden encrypted data a contributor can't see, so
+    // only an admin may switch payment method on them (server also enforces
+    // this — see ContactHandler.handleUpdate). New rows have nothing hidden.
+    final bool canTogglePaymentMethod = canEdit && (row.isNew || isAdmin);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -742,6 +826,27 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SizedBox(width: 8),
           if (bankHidden)
             _buildBankMask(90, '•••-•••')
+          else if (row.isBpay)
+            SizedBox(
+              width: 90,
+              child: TextFormField(
+                controller: row.billerCodeController,
+                enabled: !_saving && canEdit,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  isDense: true,
+                  hintText: 'Biller code',
+                ),
+                onChanged: (_) => _markDirty(),
+              ),
+            )
           else
             SizedBox(
               width: 90,
@@ -766,6 +871,27 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SizedBox(width: 8),
           if (bankHidden)
             _buildBankMask(120, '••••••••••')
+          else if (row.isBpay)
+            SizedBox(
+              width: 120,
+              child: TextFormField(
+                controller: row.referenceController,
+                enabled: !_saving && canEdit,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(20),
+                ],
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  isDense: true,
+                  hintText: 'Reference',
+                ),
+                onChanged: (_) => _markDirty(),
+              ),
+            )
           else
             SizedBox(
               width: 120,
@@ -811,6 +937,24 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     ),
                   )
                 : const SizedBox.shrink(),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 64,
+            child: Center(
+              child: Checkbox(
+                value: row.isBpay,
+                onChanged: (_saving || !canTogglePaymentMethod)
+                    ? null
+                    : (v) {
+                        setState(() {
+                          row.isBpay = v ?? false;
+                          row.clearInactivePaymentFields();
+                        });
+                        _markDirty();
+                      },
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           SizedBox(

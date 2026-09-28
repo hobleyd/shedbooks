@@ -71,7 +71,8 @@ class BackupHandler {
       final contacts = await _queryRows('''
         SELECT id::text, entity_id, name,
                contact_type::text AS contact_type,
-               gst_registered, abn, bsb, account_number, address,
+               gst_registered, abn, bsb, account_number,
+               is_bpay, bpay_biller_code, bpay_reference, address,
                created_at, updated_at, deleted_at
         FROM contacts WHERE entity_id = @entityId
       ''', {'entityId': entityId});
@@ -500,10 +501,11 @@ class BackupHandler {
             Sql.named('''
               INSERT INTO contacts
                 (id, entity_id, name, contact_type, gst_registered, abn,
-                 bsb, account_number, address, created_at, updated_at, deleted_at)
+                 bsb, account_number, is_bpay, bpay_biller_code, bpay_reference,
+                 address, created_at, updated_at, deleted_at)
               VALUES (
                 @id::uuid, @e, @name, @ct::contact_type, @gst, @abn,
-                @bsb, @anum, @addr,
+                @bsb, @anum, @isBpay, @billerCode, @ref, @addr,
                 @ca::timestamptz, @ua::timestamptz, @da::timestamptz
               )
             '''),
@@ -516,6 +518,9 @@ class BackupHandler {
               'abn': r['abn'],
               'bsb': r['bsb'],
               'anum': r['account_number'],
+              'isBpay': r['is_bpay'] as bool? ?? false,
+              'billerCode': r['bpay_biller_code'],
+              'ref': r['bpay_reference'],
               'addr': r['address'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
