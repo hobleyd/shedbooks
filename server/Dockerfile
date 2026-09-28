@@ -41,6 +41,16 @@ FROM debian:bookworm-slim
 # app-only auth (server/lib/infrastructure/services/openssl_certificate_generator.dart)
 # — PowerShell's New-SelfSignedCertificate is part of the Windows-only PKI
 # module and unavailable on PowerShell Core/Linux.
+#
+# Microsoft.Graph.Applications is required for the Membership/Users
+# screens' access-management action
+# (server/lib/infrastructure/services/graph_app_role_assignment_service.dart,
+# scripts/manage_app_role_assignment.ps1) — Get-/New-/Remove-MgUserAppRoleAssignment
+# live there, confirmed against Microsoft's own cmdlet reference after an
+# initial guess of Microsoft.Graph.Users/Users.Actions failed live with
+# "term 'Get-MgUserAppRoleAssignment' is not recognized" (2026-09-28) — see
+# that script's header for the same "don't trust a guessed cmdlet" caution
+# create_o365_mailbox.ps1 already documents.
 ARG PS_VERSION=7.4.6
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates wget libicu72 openssl \
@@ -62,7 +72,8 @@ RUN apt-get update \
          Install-Module -Name Microsoft.Graph.Authentication -Force -Scope AllUsers; \
          Install-Module -Name Microsoft.Graph.Identity.DirectoryManagement -Force -Scope AllUsers; \
          Install-Module -Name Microsoft.Graph.Users -Force -Scope AllUsers; \
-         Install-Module -Name Microsoft.Graph.Users.Actions -Force -Scope AllUsers"
+         Install-Module -Name Microsoft.Graph.Users.Actions -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Applications -Force -Scope AllUsers"
 
 WORKDIR /app
 COPY --from=build /app/bin/server ./bin/server

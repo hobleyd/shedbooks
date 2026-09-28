@@ -34,13 +34,16 @@
   Shedbooks' local cache (members.shedbooks_app_role) can never drift
   further from Graph reality than one write ever fixes.
 
-  CAUTION — unverified cmdlet surface: `Get-MgUserAppRoleAssignment`,
-  `New-MgUserAppRoleAssignment`, and `Remove-MgUserAppRoleAssignment` (all
-  Microsoft.Graph.Users) have NOT been confirmed against a live tenant.
-  create_o365_mailbox.ps1's header documents a previous real incident where
-  a guessed parameter didn't exist and failed silently for months — treat
-  this script with the same suspicion until `Get-Command <cmdlet> -Syntax`
-  has been run against this tenant and any mismatch fixed.
+  `Get-MgUserAppRoleAssignment`/`New-MgUserAppRoleAssignment`/
+  `Remove-MgUserAppRoleAssignment` live in Microsoft.Graph.Applications, NOT
+  Microsoft.Graph.Users or Microsoft.Graph.Users.Actions — confirmed the
+  hard way: an initial guess of the latter two failed live against the real
+  tenant on 2026-09-28 with "term 'Get-MgUserAppRoleAssignment' is not
+  recognized" (that module wasn't even installed in the server image; see
+  Dockerfile). create_o365_mailbox.ps1's header documents an earlier,
+  similar incident (a guessed parameter that failed silently for months) —
+  don't assume a cmdlet's module from its name; verify with `Get-Command
+  <cmdlet>` before trusting a change here.
 
 .PARAMETER ConfigPath
   Path to the JSON input file:
@@ -114,12 +117,9 @@ if ($requestedRole -and -not $RoleIds.ContainsKey($requestedRole)) {
 try {
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
     Import-Module Microsoft.Graph.Users -ErrorAction Stop
-    # Get-/New-/Remove-MgUserAppRoleAssignment's exact module has not been
-    # confirmed against a live tenant (see file header) — Users.Actions is
-    # already installed for Set-MgUserLicense (create_o365_mailbox.ps1) and
-    # imported defensively here in case the assignment cmdlets live there
-    # instead of/as well as Microsoft.Graph.Users.
-    Import-Module Microsoft.Graph.Users.Actions -ErrorAction Stop
+    # Get-/New-/Remove-MgUserAppRoleAssignment live in .Applications, not
+    # .Users or .Users.Actions — see file header for how that was confirmed.
+    Import-Module Microsoft.Graph.Applications -ErrorAction Stop
 
     $securePassword = ConvertTo-SecureString -String $config.certificatePassword -AsPlainText -Force
     $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
