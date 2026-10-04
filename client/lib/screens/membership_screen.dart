@@ -1519,7 +1519,11 @@ class _MemberTableState extends State<_MemberTable> {
               value: role,
               enabled: roleName != role.name,
               child: Text(
-                  '${role.name[0].toUpperCase()}${role.name.substring(1)}'),
+                '${role.name[0].toUpperCase()}${role.name.substring(1)}',
+                style: roleName == role.name
+                    ? const TextStyle(fontWeight: FontWeight.bold)
+                    : null,
+              ),
             ),
           if (hasAccess) ...[
             const PopupMenuDivider(),
