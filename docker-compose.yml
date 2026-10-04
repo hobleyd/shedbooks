@@ -37,6 +37,7 @@ services:
     environment:
       ENTRA_TENANT_ID: ${ENTRA_TENANT_ID}
       ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID}
+      ENTRA_LOGIN_SP_OBJECT_ID: ${ENTRA_LOGIN_SP_OBJECT_ID}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       ABR_GUID: ${ABR_GUID:-*}
       PORT: "8080"
