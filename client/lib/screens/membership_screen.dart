@@ -1019,6 +1019,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
               : r.o365SyncedAt != null
                   ? _isoDate(r.o365SyncedAt!.toLocal())
                   : '',
+          14 => r.shedbooksAppRole ?? '',
           _ => '',
         };
       }
@@ -1184,6 +1185,7 @@ class _Toolbar extends StatelessWidget {
 const double _kExpandW = 32;
 const double _kFirstNameW = 120;
 const double _kLastNameW = 130;
+const double _kRoleW = 100;
 const double _kDateJoinedW = 100;
 const double _kStatusW = 80;
 const double _kPhoneW = 120;
@@ -1198,6 +1200,7 @@ const double _kActionsW = 148;
 const double _kTableMinWidth = _kExpandW +
     _kFirstNameW +
     _kLastNameW +
+    _kRoleW +
     _kDateJoinedW +
     _kStatusW +
     _kPhoneW +
@@ -1314,6 +1317,24 @@ class _MemberTableState extends State<_MemberTable> {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Text(
           ctrl.text.isEmpty ? '—' : ctrl.text,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+    );
+  }
+
+  /// Displays [_MemberRow.shedbooksAppRole] (capitalised), or '—' if the
+  /// member has no Shedbooks access — mirrors [_appRoleAction]'s source of
+  /// truth, but read-only; role changes still go through that action icon.
+  Widget _readRoleCell(BuildContext context, _MemberRow row, double width) {
+    final role = row.shedbooksAppRole;
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          role == null ? '—' : '${role[0].toUpperCase()}${role.substring(1)}',
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -1724,6 +1745,7 @@ class _MemberTableState extends State<_MemberTable> {
           const SizedBox(width: _kExpandW),
           _headerCell(context, 'First Name', 0, _kFirstNameW),
           _headerCell(context, 'Last Name', 1, _kLastNameW),
+          _headerCell(context, 'Role', 14, _kRoleW),
           _headerCell(context, 'Date Joined', 2, _kDateJoinedW),
           _headerCell(context, 'Status', 3, _kStatusW),
           _headerCell(context, 'Phone', 7, _kPhoneW),
@@ -1793,6 +1815,7 @@ class _MemberTableState extends State<_MemberTable> {
                 ),
                 _readCell(context, row.firstNameCtrl, _kFirstNameW),
                 _readCell(context, row.lastNameCtrl, _kLastNameW),
+                _readRoleCell(context, row, _kRoleW),
                 _readCell(context, row.dateJoinedCtrl, _kDateJoinedW),
                 _readCell(context, row.statusCtrl, _kStatusW),
                 _readPhoneCell(context, row.phoneCtrl, _kPhoneW),
