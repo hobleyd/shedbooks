@@ -17,6 +17,13 @@ server {
     set_real_ip_from  10.0.0.0/8;
     set_real_ip_from  172.16.0.0/12;
     set_real_ip_from  192.168.0.0/16;
+    # Azure Container Apps' internal ingress/Envoy hop uses addresses from
+    # this RFC 6598 "shared address space" (CGNAT) range, not RFC 1918 —
+    # without trusting it here, nginx never applies real_ip and
+    # $remote_addr is left as the ingress's own fixed internal address
+    # (observed as 100.100.0.209 for every request) instead of resolving
+    # through X-Forwarded-For to the actual client.
+    set_real_ip_from  100.64.0.0/10;
     real_ip_header    X-Forwarded-For;
     real_ip_recursive on;
 
