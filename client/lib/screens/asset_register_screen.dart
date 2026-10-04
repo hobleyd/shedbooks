@@ -24,10 +24,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/asset_entry.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/permission_service.dart';
 import '../utils/asset_xlsx_parser.dart';
 
 // ── Row editing model ─────────────────────────────────────────────────────────
@@ -574,8 +575,7 @@ class _AssetRegisterScreenState extends State<AssetRegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authState = context.watch<AuthState>();
-    final canEdit = authState.canEdit;
+    final canEdit = context.watch<PermissionService>().canWritePage(PermissionPage.assets);
     final allTypes = _allTypes;
 
     return Scaffold(

@@ -398,6 +398,126 @@ components:
           items:
             $ref: '#/components/schemas/GlMapping'
 
+    PagePermissionCell:
+      type: object
+      required: [page, role, canRead, canWrite, isOverride]
+      properties:
+        page:
+          type: string
+          description: Stable page key, e.g. "transactions", "admin-roles".
+        role:
+          type: string
+          enum: [viewer, contributor, administrator]
+        canRead:
+          type: boolean
+        canWrite:
+          type: boolean
+        isOverride:
+          type: boolean
+          description: >
+            True when this cell is an explicit override for the requesting
+            entity (or, for the template entity, an explicit global default)
+            rather than inherited.
+
+    ActionPermissionCell:
+      type: object
+      required: [action, role, canPerform, isOverride]
+      properties:
+        action:
+          type: string
+          description: Stable action key, e.g. "transactions-import".
+        role:
+          type: string
+          enum: [viewer, contributor, administrator]
+        canPerform:
+          type: boolean
+        isOverride:
+          type: boolean
+
+    RolePermissionMatrixResponse:
+      type: object
+      required: [isTemplateEntity, pages, actions]
+      properties:
+        isTemplateEntity:
+          type: boolean
+          description: >
+            When true, saving this matrix updates the global defaults that
+            future entities inherit, rather than only this entity's own
+            overrides.
+        pages:
+          type: array
+          items:
+            $ref: '#/components/schemas/PagePermissionCell'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionPermissionCell'
+
+    PagePermissionOverrideInput:
+      type: object
+      required: [page, role, canRead, canWrite]
+      properties:
+        page:
+          type: string
+        role:
+          type: string
+          enum: [viewer, contributor, administrator]
+        canRead:
+          type: boolean
+        canWrite:
+          type: boolean
+
+    ActionPermissionOverrideInput:
+      type: object
+      required: [action, role, canPerform]
+      properties:
+        action:
+          type: string
+        role:
+          type: string
+          enum: [viewer, contributor, administrator]
+        canPerform:
+          type: boolean
+
+    RolePermissionSaveRequest:
+      type: object
+      required: [pages, actions]
+      description: >
+        The complete desired override state — any cell not listed here
+        resets to "inherit" from the applicable default.
+      properties:
+        pages:
+          type: array
+          items:
+            $ref: '#/components/schemas/PagePermissionOverrideInput'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionPermissionOverrideInput'
+
+    EffectivePagePermission:
+      type: object
+      required: [canRead, canWrite]
+      properties:
+        canRead:
+          type: boolean
+        canWrite:
+          type: boolean
+
+    EffectivePermissionsResponse:
+      type: object
+      required: [pages, actions]
+      description: The caller's own flattened, resolved permissions.
+      properties:
+        pages:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/EffectivePagePermission'
+        actions:
+          type: object
+          additionalProperties:
+            type: boolean
+
 paths:
   /general-ledger:
     get:
@@ -1201,3 +1321,69 @@ paths:
           description: Unauthorised
         '403':
           description: Forbidden
+
+  /roles/permissions:
+    get:
+      summary: >
+        Get the full editable role/page/action permission matrix for the
+        caller's entity (administrator only).
+      operationId: getRolePermissions
+      tags: [Roles]
+      responses:
+        '200':
+          description: The current matrix
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RolePermissionMatrixResponse'
+        '401':
+          description: Unauthorised
+        '403':
+          description: Forbidden
+
+    put:
+      summary: >
+        Replace the caller's entity permission overrides (or, for the
+        template entity, the global defaults) with exactly what's submitted
+        (administrator only).
+      operationId: saveRolePermissions
+      tags: [Roles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolePermissionSaveRequest'
+      responses:
+        '204':
+          description: Saved
+        '400':
+          description: >
+            Validation error, including a save that would leave
+            administrator without read+write on the Roles page itself.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorised
+        '403':
+          description: Forbidden
+
+  /roles/effective:
+    get:
+      summary: >
+        Get the caller's own resolved page/action permissions — used by the
+        client to render navigation and action buttons. Server-side route
+        guards remain the actual enforcement point.
+      operationId: getEffectivePermissions
+      tags: [Roles]
+      responses:
+        '200':
+          description: The caller's flattened permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EffectivePermissionsResponse'
+        '401':
+          description: Unauthorised

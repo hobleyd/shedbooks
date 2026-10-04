@@ -158,6 +158,7 @@ const _tableMap = {
   'capex-requests': 'capex_requests',
   'invoices': 'invoices',
   'api-key': 'user_api_keys',
+  'roles': 'role_permissions',
 };
 
 String _tableName(String path) {
@@ -177,7 +178,7 @@ String? _recordId(String path) {
     'confirm-import', 'gl-mappings', 'import', 'members',
     'next-number', 'mark-paid', 'decision', 'generate', 'sync-o365',
     'generate-certificate', 'sections', 'available-licenses',
-    'create-mailbox', 'executed-date', 'app-role', 'role',
+    'create-mailbox', 'executed-date', 'app-role', 'role', 'permissions',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

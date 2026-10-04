@@ -28,4 +28,10 @@ abstract class IEntityDetailsRepository {
   /// Returns the entity_id whose `entra_tenant_id` matches [tenantId], or
   /// null if no entity has Entra login configured for that tenant.
   Future<String?> findEntityIdByEntraTenantId(String tenantId);
+
+  /// Whether [entityId] is the platform template entity — its Roles-page
+  /// saves define the permission defaults new entities inherit (see
+  /// migration 062_add_role_permissions.sql). Returns false if [entityId]
+  /// does not exist.
+  Future<bool> isTemplateEntity(String entityId);
 }

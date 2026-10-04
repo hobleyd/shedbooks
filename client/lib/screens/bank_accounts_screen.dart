@@ -21,9 +21,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 
 /// Admin screen for managing bank accounts.
@@ -166,7 +167,8 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminBankAccounts);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -219,7 +221,8 @@ class _BankAccountsScreenState extends State<BankAccountsScreen> {
   }
 
   Widget _buildList() {
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminBankAccounts);
     if (_accounts.isEmpty) {
       return Center(
         child: Column(

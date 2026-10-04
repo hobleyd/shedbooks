@@ -28,8 +28,9 @@ import '../models/general_ledger_entry.dart';
 import '../models/gl_pair_filter.dart';
 import '../models/locked_month_entry.dart';
 import '../models/transaction_entry.dart';
-import '../auth/auth_state.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 
 class _MonthSummary {
@@ -388,7 +389,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         const Spacer(),
         if (!_loading) ...[
-          if (context.watch<AuthState>().isAdmin)
+          if (context.watch<PermissionService>().canReadPage(PermissionPage.reportsMonthly))
             IconButton(
               icon: const Icon(Icons.assignment_outlined),
               onPressed: () => context.go('/reports/monthly'),

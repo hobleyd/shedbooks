@@ -22,10 +22,12 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/contact_entry.dart';
+import '../models/permission_action.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 
 enum _AbnLookupState { idle, loading, found, notFound, error }
@@ -582,7 +584,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   Widget _buildTitleRow() {
     final busy = _saving || _merging;
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final bool canEdit = context.watch<PermissionService>().canWritePage(PermissionPage.adminContacts);
     return Row(
       children: [
         Text('Contacts', style: Theme.of(context).textTheme.headlineMedium),
@@ -647,7 +649,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Widget _buildTable() {
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final bool canEdit = context.watch<PermissionService>().canWritePage(PermissionPage.adminContacts);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -728,9 +730,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final isSelected = row.id != null && _selectedIds.contains(row.id);
     final hasTxns = row.id != null && _contactsWithTransactions.contains(row.id);
     final busy = _saving || _merging;
-    final AuthState authState = context.watch<AuthState>();
-    final bool canEdit = authState.canEdit;
-    final bool isAdmin = authState.isAdmin;
+    final permissions = context.watch<PermissionService>();
+    final bool canEdit = permissions.canWritePage(PermissionPage.adminContacts);
+    final bool canRevealBankDetails =
+        permissions.canPerform(PermissionAction.contactsRevealBankDetails);
 
     final hasBankDetails = row.isBpay
         ? row.billerCodeController.text.isNotEmpty ||
@@ -741,9 +744,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final bankHidden =
         !row.isNew && hasBankDetails && !_bankDetailsRevealed.contains(rowKey);
     // Existing rows carry hidden encrypted data a contributor can't see, so
-    // only an admin may switch payment method on them (server also enforces
-    // this — see ContactHandler.handleUpdate). New rows have nothing hidden.
-    final bool canTogglePaymentMethod = canEdit && (row.isNew || isAdmin);
+    // only a role with contactsTogglePaymentMethod may switch payment method
+    // on them (server also enforces this — see ContactHandler.handleUpdate).
+    // New rows have nothing hidden.
+    final bool canTogglePaymentMethod = canEdit &&
+        (row.isNew || permissions.canPerform(PermissionAction.contactsTogglePaymentMethod));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -925,7 +930,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       icon: const Icon(Icons.autorenew),
                       tooltip:
                           bankHidden ? 'Show bank details' : 'Hide bank details',
-                      onPressed: isAdmin
+                      onPressed: canRevealBankDetails
                           ? () => setState(() {
                                 if (bankHidden) {
                                   _bankDetailsRevealed.add(rowKey);
@@ -1044,7 +1049,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Widget _buildAbnField(_ContactRow row, bool isCompany) {
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final bool canEdit = context.watch<PermissionService>().canWritePage(PermissionPage.adminContacts);
     Widget? suffixIcon;
     switch (row.abnLookupState) {
       case _AbnLookupState.loading:

@@ -28,15 +28,17 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
 import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/gl_pair_filter.dart';
+import '../models/permission_action.dart';
+import '../models/permission_page.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import 'import_cba_screen.dart';
@@ -1029,7 +1031,9 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                 onPressed: _generateTransactionsXlsx,
               ),
               Builder(builder: (context) {
-                final canImport = context.watch<AuthState>().isAdmin;
+                final canImport = context
+                    .watch<PermissionService>()
+                    .canPerform(PermissionAction.transactionsImport);
                 if (!canImport) return const SizedBox.shrink();
                 return MenuAnchor(
                   builder: (context, controller, _) => IconButton(
@@ -1233,7 +1237,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           onPressed: _generateTransactionsPdf,
         ),
         if (_selectedTransactionIds.isNotEmpty &&
-            context.read<AuthState>().isAdmin) ...[
+            context.read<PermissionService>().canPerform(PermissionAction.transactionsBankUpload)) ...[
           const SizedBox(width: 16),
           FilledButton.icon(
             onPressed: _handleBankUpload,
@@ -1257,7 +1261,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                if (isMoneyOut && context.read<AuthState>().isAdmin)
+                if (isMoneyOut && context.read<PermissionService>().canPerform(PermissionAction.transactionsBankUpload))
                   SizedBox(
                     width: 40,
                     child: Builder(builder: (context) {
@@ -1351,7 +1355,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
   }
 
   Widget _buildAddSection(bool isMoneyOut) {
-    final bool canEdit = context.read<AuthState>().canEdit;
+    final bool canEdit =
+        context.read<PermissionService>().canWritePage(PermissionPage.transactions);
     if (!canEdit || _isSearchMode || _isGlMode) return const SizedBox.shrink();
 
     final isAdding = isMoneyOut ? _addingMoneyOut : _addingMoneyIn;
@@ -1392,7 +1397,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
             child: Row(
               children: [
-                if (isMoneyOut && context.read<AuthState>().isAdmin) const SizedBox(width: 40),
+                if (isMoneyOut && context.read<PermissionService>().canPerform(PermissionAction.transactionsBankUpload)) const SizedBox(width: 40),
                 Icon(Icons.add,
                     size: 16,
                     color: Theme.of(context).colorScheme.primary),
@@ -1449,7 +1454,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              if (isMoneyOut && context.read<AuthState>().isAdmin)
+              if (isMoneyOut && context.read<PermissionService>().canPerform(PermissionAction.transactionsBankUpload))
                 SizedBox(
                   width: 40,
                   child: t.bankMatched
@@ -1552,7 +1557,9 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                 width: 110,
                 child: Builder(
                   builder: (context) {
-                    final bool canEdit = context.watch<AuthState>().canEdit;
+                    final bool canEdit = context
+                        .watch<PermissionService>()
+                        .canWritePage(PermissionPage.transactions);
                     final bool locked = _isTransactionLocked(t);
                     
                     return Row(

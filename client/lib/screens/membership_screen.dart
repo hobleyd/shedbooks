@@ -26,8 +26,11 @@ import 'package:provider/provider.dart';
 import '../auth/app_role.dart';
 import '../auth/auth_state.dart';
 import '../models/member_entry.dart';
+import '../models/permission_action.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/permission_service.dart';
 
 // ── Date format helpers ────────────────────────────────────────────────────
 
@@ -1050,7 +1053,8 @@ class _MembershipScreenState extends State<MembershipScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = context.watch<AuthState>();
-    final canEdit = authState.canEdit;
+    final permissions = context.watch<PermissionService>();
+    final canEdit = permissions.canWritePage(PermissionPage.members);
 
     return Scaffold(
       body: Column(
@@ -1059,7 +1063,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
           _Toolbar(
             onImport: canEdit ? _importFromXlsx : null,
             onRefresh: _loading ? null : _load,
-            showSyncO365: authState.isAdmin,
+            showSyncO365: permissions.canPerform(PermissionAction.membersSyncO365),
             onSyncO365: _syncingO365 ? null : _syncToO365,
             syncingO365: _syncingO365,
           ),
@@ -1090,7 +1094,9 @@ class _MembershipScreenState extends State<MembershipScreen> {
                   : _MemberTable(
                         rows: _rows,
                         canEdit: canEdit,
-                        isAdmin: authState.isAdmin,
+                        canCreateMailbox:
+                            permissions.canPerform(PermissionAction.membersCreateMailbox),
+                        canSetRole: permissions.canPerform(PermissionAction.membersSetRole),
                         onSave: _saveRow,
                         onDelete: _deleteRow,
                         onCreateMailbox: _createMailbox,
@@ -1204,7 +1210,8 @@ const double _kTableMinWidth = _kExpandW +
 class _MemberTable extends StatefulWidget {
   final List<_MemberRow> rows;
   final bool canEdit;
-  final bool isAdmin;
+  final bool canCreateMailbox;
+  final bool canSetRole;
   final Future<void> Function(_MemberRow) onSave;
   final Future<void> Function(_MemberRow) onDelete;
   final Future<void> Function(_MemberRow)? onCreateMailbox;
@@ -1222,7 +1229,8 @@ class _MemberTable extends StatefulWidget {
   const _MemberTable({
     required this.rows,
     required this.canEdit,
-    this.isAdmin = false,
+    this.canCreateMailbox = false,
+    this.canSetRole = false,
     required this.onSave,
     required this.onDelete,
     this.onCreateMailbox,
@@ -1821,7 +1829,7 @@ class _MemberTableState extends State<_MemberTable> {
                           constraints: const BoxConstraints(
                               minWidth: 32, minHeight: 32),
                         ),
-                      if (widget.isAdmin && row.o365MailboxUpn == null)
+                      if (widget.canCreateMailbox && row.o365MailboxUpn == null)
                         IconButton(
                           icon: Icon(Icons.mail_outline,
                               size: 18,
@@ -1836,7 +1844,7 @@ class _MemberTableState extends State<_MemberTable> {
                           constraints: const BoxConstraints(
                               minWidth: 32, minHeight: 32),
                         )
-                      else if (widget.isAdmin && row.o365MailboxUpn != null)
+                      else if (widget.canCreateMailbox && row.o365MailboxUpn != null)
                         SizedBox(
                           width: 32,
                           height: 32,
@@ -1852,7 +1860,7 @@ class _MemberTableState extends State<_MemberTable> {
                             ),
                           ),
                         ),
-                      if (widget.isAdmin && row.o365MailboxUpn != null)
+                      if (widget.canSetRole && row.o365MailboxUpn != null)
                         _appRoleAction(context, row),
                     ],
                   ),

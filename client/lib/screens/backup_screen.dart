@@ -23,8 +23,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 
 /// Admin screen for database backup and restore.
 class BackupScreen extends StatefulWidget {
@@ -169,7 +170,8 @@ class _BackupScreenState extends State<BackupScreen> {
   @override
   Widget build(BuildContext context) {
     final busy = _backupBusy || _restoreBusy;
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminBackup);
 
     return Padding(
       padding: const EdgeInsets.all(24),

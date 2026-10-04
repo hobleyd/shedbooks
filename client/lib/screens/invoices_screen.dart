@@ -21,14 +21,16 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/invoice_entry.dart';
 import '../models/invoice_line_item.dart';
+import '../models/permission_action.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 import '../widgets/contact_picker.dart';
 import '../widgets/gl_account_dropdown.dart';
@@ -605,8 +607,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 
   Widget _buildTable() {
-    final isAdmin = context.read<AuthState>().isAdmin;
-    final canEdit = context.read<AuthState>().canEdit;
+    final permissions = context.read<PermissionService>();
+    final canManageUnpaid = permissions.canPerform(PermissionAction.invoicesManageUnpaid);
+    final canEdit = permissions.canWritePage(PermissionPage.invoices);
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 900),
@@ -682,7 +685,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     )
                   : _buildInlineForm(isEdit: true, editInvoice: inv)
             else
-              _buildInvoiceRow(inv, isAdmin: isAdmin, canEdit: canEdit),
+              _buildInvoiceRow(inv, canManageUnpaid: canManageUnpaid, canEdit: canEdit),
 
           // Add section
           if (_addingNew)
@@ -696,7 +699,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   Widget _buildInvoiceRow(
     InvoiceEntry inv, {
-    required bool isAdmin,
+    required bool canManageUnpaid,
     required bool canEdit,
   }) {
     final contact = _contacts[inv.contactId];
@@ -782,7 +785,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           const BoxConstraints(minWidth: 32, minHeight: 32),
                       onPressed: () => _generatePdfForInvoice(inv),
                     ),
-                    if (isAdmin && !inv.isPaid) ...[
+                    if (canManageUnpaid && !inv.isPaid) ...[
                       IconButton(
                         icon: const Icon(Icons.edit_outlined, size: 16),
                         tooltip: 'Edit',

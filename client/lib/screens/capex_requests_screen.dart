@@ -24,7 +24,10 @@ import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
 import '../models/capex_request_entry.dart';
+import '../models/permission_action.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 
 /// Capital Expenditure Requests screen — the club's paper CER form, digitised.
 class CapexRequestsScreen extends StatefulWidget {
@@ -124,7 +127,8 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
 
   Future<void> _openDialog({CapexRequestEntry? existing}) async {
     final authState = context.read<AuthState>();
-    final readOnly = existing != null && (!existing.isPending || !authState.canEdit);
+    final canEdit = context.read<PermissionService>().canWritePage(PermissionPage.capexRequests);
+    final readOnly = existing != null && (!existing.isPending || !canEdit);
     final saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -211,7 +215,7 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canEdit = context.watch<AuthState>().canEdit;
+    final canEdit = context.watch<PermissionService>().canWritePage(PermissionPage.capexRequests);
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -264,8 +268,9 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
   }
 
   Widget _buildList() {
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final permissions = context.watch<PermissionService>();
+    final bool canApproveReject = permissions.canPerform(PermissionAction.capexApproveReject);
+    final bool canEdit = permissions.canWritePage(PermissionPage.capexRequests);
 
     if (_requests.isEmpty) {
       return Center(
@@ -315,8 +320,8 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
             padding: EdgeInsets.zero,
             itemCount: _requests.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) =>
-                _buildRow(_requests[index], isAdmin: isAdmin, canEdit: canEdit),
+            itemBuilder: (context, index) => _buildRow(_requests[index],
+                canApproveReject: canApproveReject, canEdit: canEdit),
           ),
         ),
       ],
@@ -355,7 +360,7 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
   }
 
   Widget _buildRow(CapexRequestEntry entry,
-      {required bool isAdmin, required bool canEdit}) {
+      {required bool canApproveReject, required bool canEdit}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
@@ -411,7 +416,7 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
                   tooltip: entry.isPending && canEdit ? 'Edit' : 'View',
                   onPressed: () => _openDialog(existing: entry),
                 ),
-                if (isAdmin && entry.isPending) ...[
+                if (canApproveReject && entry.isPending) ...[
                   IconButton(
                     icon: Icon(Icons.check_circle_outline,
                         size: 18, color: Colors.green.shade700),

@@ -104,6 +104,20 @@ class PostgresEntityDetailsRepository implements IEntityDetailsRepository {
     return result.first.toColumnMap()['entity_id'] as String;
   }
 
+  /// @param entityId - Looked up by primary key; a missing row is treated as not-template.
+  @override
+  Future<bool> isTemplateEntity(String entityId) async {
+    final result = await _pool.execute(
+      Sql.named('''
+        SELECT is_template_entity FROM entity_details WHERE entity_id = @entityId
+      '''),
+      parameters: {'entityId': entityId},
+    );
+
+    if (result.isEmpty) return false;
+    return result.first.toColumnMap()['is_template_entity'] as bool;
+  }
+
   EntityDetails _mapRow(Map<String, dynamic> row) => EntityDetails(
         entityId: row['entity_id'] as String,
         name: row['name'] as String,

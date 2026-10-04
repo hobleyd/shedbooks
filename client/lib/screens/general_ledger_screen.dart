@@ -21,10 +21,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 
 /// A row in the editable general ledger table.
@@ -322,7 +323,8 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   }
 
   Widget _buildTitleRow() {
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final bool canEdit =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminGeneralLedger);
     return Row(
       children: [
         Text(
@@ -397,7 +399,8 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   Widget _buildTable(GlDirection direction) {
     final dirRows = _rows.where((r) => r.direction == direction).toList();
     final treeItems = _buildTreeItems(dirRows);
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final bool canEdit =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminGeneralLedger);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -461,7 +464,8 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
   }
 
   Widget _buildTableRow(_GlRow row, int depth, GlDirection direction) {
-    final bool canEdit = context.watch<AuthState>().canEdit;
+    final bool canEdit =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminGeneralLedger);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),

@@ -213,6 +213,20 @@ class BackupHandler {
         FROM o365_sync_settings WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
+      // Global role_page_permission_defaults / role_action_permission_defaults
+      // are deliberately NOT included here — they are the platform-wide
+      // baseline, not this entity's data, and must never be touched by
+      // restoring one tenant's backup.
+      final pagePermissionOverrides = await _queryRows('''
+        SELECT entity_id, page_key, role, can_read, can_write
+        FROM entity_page_permission_overrides WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
+      final actionPermissionOverrides = await _queryRows('''
+        SELECT entity_id, action_key, role, can_perform
+        FROM entity_action_permission_overrides WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
       final now = DateTime.now();
       final stamp =
           '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}'
@@ -242,6 +256,8 @@ class BackupHandler {
         'assets': assets,
         'capex_requests': capexRequests,
         'o365_sync_settings': o365SyncSettings,
+        'entity_page_permission_overrides': pagePermissionOverrides,
+        'entity_action_permission_overrides': actionPermissionOverrides,
       };
 
       final jsonBytes = Uint8List.fromList(utf8.encode(jsonEncode(backup)));
@@ -331,6 +347,8 @@ class BackupHandler {
         await _del(tx, 'assets', entityId);
         await _del(tx, 'capex_requests', entityId);
         await _del(tx, 'o365_sync_settings', entityId);
+        await _del(tx, 'entity_page_permission_overrides', entityId);
+        await _del(tx, 'entity_action_permission_overrides', entityId);
         await tx.execute(
           Sql.named('DELETE FROM dashboard_preferences WHERE entity_id = @e'),
           parameters: {'e': entityId},
@@ -951,6 +969,39 @@ class BackupHandler {
               'isc': r['initial_sync_completed_at'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'entity_page_permission_overrides')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO entity_page_permission_overrides
+                (entity_id, page_key, role, can_read, can_write)
+              VALUES (@e, @pageKey, @role, @canRead, @canWrite)
+            '''),
+            parameters: {
+              'e': entityId,
+              'pageKey': r['page_key'] as String,
+              'role': r['role'] as String,
+              'canRead': r['can_read'] as bool,
+              'canWrite': r['can_write'] as bool,
+            },
+          );
+        }
+
+        for (final r in _rows(backup, 'entity_action_permission_overrides')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO entity_action_permission_overrides
+                (entity_id, action_key, role, can_perform)
+              VALUES (@e, @actionKey, @role, @canPerform)
+            '''),
+            parameters: {
+              'e': entityId,
+              'actionKey': r['action_key'] as String,
+              'role': r['role'] as String,
+              'canPerform': r['can_perform'] as bool,
             },
           );
         }

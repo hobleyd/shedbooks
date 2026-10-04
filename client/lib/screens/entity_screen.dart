@@ -21,9 +21,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/entity_details.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 import '../utils/receipt_format.dart';
 
@@ -268,7 +269,7 @@ class _EntityScreenState extends State<EntityScreen> {
   }
 
   Widget _buildHeader() {
-    final canEdit = context.watch<AuthState>().canEdit;
+    final canEdit = context.watch<PermissionService>().canWritePage(PermissionPage.adminEntity);
     return Row(
       children: [
         Text('Entity Details',

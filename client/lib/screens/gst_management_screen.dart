@@ -22,10 +22,11 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/gst_rate_entry.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 
 class _GstRow {
@@ -321,7 +322,8 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
   }
 
   Widget _buildTitleRow() {
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminGstManagement);
     return Row(
       children: [
         Text(
@@ -374,7 +376,8 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
   }
 
   Widget _buildTable() {
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminGstManagement);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -421,7 +424,8 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
 
   Widget _buildTableRow(int index) {
     final row = _rows[index];
-    final bool isAdmin = context.read<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.read<PermissionService>().canWritePage(PermissionPage.adminGstManagement);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       child: Row(
@@ -471,7 +475,8 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
     final date = row.effectiveFrom;
     final colorScheme = Theme.of(context).colorScheme;
 
-    final bool isAdmin = context.read<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.read<PermissionService>().canWritePage(PermissionPage.adminGstManagement);
     return InkWell(
       onTap: (_saving || !isAdmin) ? null : () => _pickDate(index),
       borderRadius: BorderRadius.circular(4),

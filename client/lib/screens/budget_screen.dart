@@ -25,13 +25,14 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/budget_entry.dart';
 import '../models/budget_import_row.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/permission_page.dart';
 import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/budget_pdf_report.dart';
@@ -584,7 +585,9 @@ class _BudgetScreenState extends State<BudgetScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = context.watch<AuthState>().isAdmin;
+    // Named isAdmin for historical reasons — now driven by the reportsBudget
+    // page's write permission, which happens to default to administrator-only.
+    final isAdmin = context.watch<PermissionService>().canWritePage(PermissionPage.reportsBudget);
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -660,7 +663,7 @@ class _BudgetScreenState extends State<BudgetScreen>
           value: now.year, child: Text('${now.year} (new)')));
     }
 
-    final isAdmin = context.watch<AuthState>().isAdmin;
+    final isAdmin = context.watch<PermissionService>().canWritePage(PermissionPage.reportsBudget);
 
     return Row(
       mainAxisSize: MainAxisSize.min,

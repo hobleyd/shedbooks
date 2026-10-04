@@ -171,11 +171,20 @@ import 'handlers/invoice_handler.dart';
 import 'handlers/transaction_handler.dart';
 import 'handlers/general_ledger_handler.dart';
 import 'handlers/gst_rate_handler.dart';
+import 'handlers/roles_handler.dart';
 import 'middleware/audit_middleware.dart';
 import 'middleware/cors_middleware.dart';
 import 'middleware/error_handler_middleware.dart';
 import 'middleware/presence_middleware.dart';
 import 'middleware/role_guard.dart';
+import '../application/roles/get_effective_permissions_use_case.dart';
+import '../application/roles/get_role_permissions_use_case.dart';
+import '../application/roles/save_role_permissions_use_case.dart';
+import '../domain/enums/permission_access.dart';
+import '../domain/enums/permission_action.dart';
+import '../domain/enums/permission_page.dart';
+import '../domain/repositories/i_role_permission_repository.dart';
+import '../infrastructure/repositories/postgres_role_permission_repository.dart';
 
 /// Builds and returns the application [Handler] with all routes wired up.
 Handler buildRouter({
@@ -261,6 +270,14 @@ Handler buildRouter({
   final entityDetailsHandler = EntityDetailsHandler(
     get: GetEntityDetailsUseCase(entityDetailsRepository),
     save: SaveEntityDetailsUseCase(entityDetailsRepository),
+  );
+
+  final rolePermissionRepository =
+      PostgresRolePermissionRepository(pool, entityDetailsRepository);
+  final rolesHandler = RolesHandler(
+    get: GetRolePermissionsUseCase(rolePermissionRepository),
+    save: SaveRolePermissionsUseCase(rolePermissionRepository, entityDetailsRepository),
+    getEffective: GetEffectivePermissionsUseCase(rolePermissionRepository),
   );
 
   final invoiceRepository = PostgresInvoiceRepository(pool);
@@ -473,45 +490,52 @@ Handler buildRouter({
 
   final router = Router()
     ..get('/health', (Request _) => Response.ok('ok'))
-    ..post('/aba-sequences/next',
-        _authed(_role(requireAdministrator(), abaSequenceHandler.handleNext)))
+    // Only ever called as part of the Transactions page's "Bank Upload"
+    // bulk action, alongside /transactions/aba-batch — same action guard.
+    ..post(
+      '/aba-sequences/next',
+      _authed(_action(rolePermissionRepository,
+          PermissionAction.transactionsBankUpload, abaSequenceHandler.handleNext)),
+    )
     ..mount('/abn-lookup',
         _authed((req) => abnLookupHandler.handle(req)))
     ..mount('/general-ledger',
-        _authed(_generalLedgerRouter(generalLedgerHandler)))
+        _authed(_generalLedgerRouter(generalLedgerHandler, rolePermissionRepository)))
     ..mount('/gst-rates',
-        _authed(_gstRateRouter(gstRateHandler)))
+        _authed(_gstRateRouter(gstRateHandler, rolePermissionRepository)))
     ..mount('/contacts',
-        _authed(_contactRouter(contactHandler)))
+        _authed(_contactRouter(contactHandler, rolePermissionRepository)))
     ..mount('/transactions',
-        _authed(_transactionRouter(transactionHandler)))
+        _authed(_transactionRouter(transactionHandler, rolePermissionRepository)))
     ..mount('/dashboard-preferences',
-        _authed(_dashboardPreferenceRouter(dashboardPreferenceHandler)))
+        _authed(_dashboardPreferenceRouter(dashboardPreferenceHandler, rolePermissionRepository)))
     ..mount('/bank-accounts',
-        _authed(_bankAccountRouter(bankAccountHandler)))
+        _authed(_bankAccountRouter(bankAccountHandler, rolePermissionRepository)))
     ..mount('/entity-details',
-        _authed(_entityDetailsRouter(entityDetailsHandler)))
+        _authed(_entityDetailsRouter(entityDetailsHandler, rolePermissionRepository)))
     ..mount('/invoices',
-        _authed(_invoiceRouter(invoiceHandler)))
+        _authed(_invoiceRouter(invoiceHandler, rolePermissionRepository)))
     ..mount('/bank-imports',
-        _authed(_bankImportsRouter(bankImportsHandler)))
+        _authed(_bankImportsRouter(bankImportsHandler, rolePermissionRepository)))
     ..mount('/locked-months',
-        _authed(_lockedMonthsRouter(lockedMonthHandler)))
+        _authed(_lockedMonthsRouter(lockedMonthHandler, rolePermissionRepository)))
     ..mount('/closing-bank-balances',
-        _authed(_closingBankBalanceRouter(closingBankBalanceHandler)))
+        _authed(_closingBankBalanceRouter(closingBankBalanceHandler, rolePermissionRepository)))
     ..mount('/bank-reconciliation',
-        _authed(_bankReconciliationRouter(bankReconciliationHandler)))
+        _authed(_bankReconciliationRouter(bankReconciliationHandler, rolePermissionRepository)))
     ..mount('/budgets',
-        _authed(_budgetRouter(budgetHandler)))
+        _authed(_budgetRouter(budgetHandler, rolePermissionRepository)))
     ..mount('/members',
-        _authed(_memberRouter(memberHandler)))
+        _authed(_memberRouter(memberHandler, rolePermissionRepository)))
     ..mount('/assets',
-        _authed(_assetRouter(assetHandler)))
+        _authed(_assetRouter(assetHandler, rolePermissionRepository)))
     ..mount('/capex-requests',
-        _authed(_capexRequestRouter(capexRequestHandler)))
+        _authed(_capexRequestRouter(capexRequestHandler, rolePermissionRepository)))
     ..mount('/admin',
-        _authed(_adminRouter(
-            backupHandler, auditHandler, usersHandler, o365SettingsHandler)))
+        _authed(_adminRouter(backupHandler, auditHandler, usersHandler,
+            o365SettingsHandler, rolePermissionRepository)))
+    ..mount('/roles',
+        _authed(_rolesRouter(rolesHandler, rolePermissionRepository)))
     ..mount('/api-key',
         _authed(_apiKeyRouter(apiKeyHandler)))
     // CardDAV addressbook — uses separate auth (Bearer OR Basic w/ JWT password or API key).
@@ -560,156 +584,235 @@ FutureOr<Response> Function(Request, String) _roleId(
     (Request request, String id) =>
         _role(middleware, (Request r) => inner(r, id))(request);
 
+/// Wraps a plain [Handler], requiring [access] on [page] for the caller's role.
+Handler _page(
+  IRolePermissionRepository permissions,
+  PermissionPage page,
+  PermissionAccess access,
+  Handler inner,
+) =>
+    _role(requirePagePermission(permissions, page, access), inner);
+
+/// [_page], for a path-parameterised handler `(Request, String)`.
+FutureOr<Response> Function(Request, String) _pageId(
+  IRolePermissionRepository permissions,
+  PermissionPage page,
+  PermissionAccess access,
+  FutureOr<Response> Function(Request, String) inner,
+) =>
+    _roleId(requirePagePermission(permissions, page, access), inner);
+
+/// Wraps a plain [Handler], requiring the caller's role be able to perform
+/// [action] (an explicit override, else its page's write permission).
+Handler _action(
+  IRolePermissionRepository permissions,
+  PermissionAction action,
+  Handler inner,
+) =>
+    _role(requireActionPermission(permissions, action), inner);
+
+/// [_action], for a path-parameterised handler `(Request, String)`.
+FutureOr<Response> Function(Request, String) _actionId(
+  IRolePermissionRepository permissions,
+  PermissionAction action,
+  FutureOr<Response> Function(Request, String) inner,
+) =>
+    _roleId(requireActionPermission(permissions, action), inner);
+
 // ── Route sub-routers ──────────────────────────────────────────────────────
 
-// Viewers can read; contributors and admins can write.
-Router _transactionRouter(TransactionHandler h) {
+// Viewers can read; contributors and admins can write. Importing a bank
+// statement and stamping an ABA batch both back the "Bank Upload" bulk
+// action, which is administrator-only regardless of the page's write access.
+Router _transactionRouter(TransactionHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.transactions;
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleCreate))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
     // Fixed paths must be registered before /<id> to avoid being shadowed.
-    ..post('/bank-match', _role(requireContributor(), h.handleBankMatch))
-    ..post('/aba-batch', _role(requireContributor(), h.handleStampAbaBatch))
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+    ..post('/bank-match', _page(permissions, page, PermissionAccess.write, h.handleBankMatch))
+    ..post('/aba-batch',
+        _action(permissions, PermissionAction.transactionsBankUpload, h.handleStampAbaBatch))
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete));
 }
 
 // Viewers can read; contributors and admins can write.
-Router _generalLedgerRouter(GeneralLedgerHandler h) {
+Router _generalLedgerRouter(GeneralLedgerHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.adminGeneralLedger;
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleCreate))
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete));
 }
 
-// Viewers can read; contributors and admins can write.
-Router _contactRouter(ContactHandler h) {
+// Viewers can read; contributors and admins can write. Revealing masked bank
+// details and switching payment method on an existing row are UI-only
+// affordances within this same write access (see PermissionAction docs on
+// contactsRevealBankDetails/contactsTogglePaymentMethod) — there's no
+// separate server endpoint for either to guard independently.
+Router _contactRouter(ContactHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.adminContacts;
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleCreate))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
     // /merge must be registered before /<id> to avoid being shadowed
-    ..post('/merge', _role(requireContributor(), h.handleMerge))
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+    ..post('/merge', _page(permissions, page, PermissionAccess.write, h.handleMerge))
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete));
 }
 
 // Administrators only.
-Router _bankAccountRouter(BankAccountHandler h) {
+Router _bankAccountRouter(BankAccountHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.adminBankAccounts;
   return Router()
-    ..get('/', _role(requireAdministrator(), h.handleList))
-    ..post('/', _role(requireAdministrator(), h.handleCreate))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
     // /order must be registered before /<id> to avoid being shadowed
-    ..put('/order', _role(requireAdministrator(), h.handleReorder))
-    ..get('/<id>', _roleId(requireAdministrator(), h.handleGet))
-    ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
+    ..put('/order', _page(permissions, page, PermissionAccess.write, h.handleReorder))
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete));
 }
 
 // Viewers can read; contributors and admins can write.
-Router _entityDetailsRouter(EntityDetailsHandler h) {
+Router _entityDetailsRouter(EntityDetailsHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.adminEntity;
   return Router()
-    ..get('/', h.handleGet)
-    ..put('/', _role(requireContributor(), h.handleSave));
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/', _page(permissions, page, PermissionAccess.write, h.handleSave));
 }
 
 // Viewers can read; contributors and admins can write.
-Router _dashboardPreferenceRouter(DashboardPreferenceHandler h) {
+Router _dashboardPreferenceRouter(
+    DashboardPreferenceHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.dashboard;
   return Router()
-    ..get('/', h.handleGet)
-    ..put('/', _role(requireContributor(), h.handleSave));
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/', _page(permissions, page, PermissionAccess.write, h.handleSave));
 }
 
 // Administrators only, except /effective: every authenticated user needs the
 // current rate to price a transaction, so it's readable by all roles while
-// the rate list/CRUD stay admin-only.
-Router _gstRateRouter(GstRateHandler h) {
+// the rate list/CRUD stay admin-only (and outside the page permission system
+// entirely, per CLAUDE.md).
+Router _gstRateRouter(GstRateHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.adminGstManagement;
   return Router()
-    ..get('/', _role(requireAdministrator(), h.handleList))
-    ..post('/', _role(requireAdministrator(), h.handleCreate))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
     // /effective must be registered before /<id> to avoid shadowing
     ..get('/effective', h.handleGetEffective)
-    ..get('/<id>', _roleId(requireAdministrator(), h.handleGet))
-    ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete));
 }
 
-// Administrators only.
-Router _bankImportsRouter(BankImportsHandler h) {
+// Backs the Transactions page's bank-statement "Import" menu — not a page of
+// its own (no dedicated client route), so it's action- rather than
+// page-guarded.
+Router _bankImportsRouter(BankImportsHandler h, IRolePermissionRepository permissions) {
+  const action = PermissionAction.transactionsImport;
   return Router()
-    ..get('/', _role(requireAdministrator(), h.handleList))
-    ..post('/', _role(requireAdministrator(), h.handleSave));
+    ..get('/', _action(permissions, action, h.handleList))
+    ..post('/', _action(permissions, action, h.handleSave));
 }
 
 // All roles can read; only admins can lock or unlock.
-Router _lockedMonthsRouter(LockedMonthHandler h) {
+Router _lockedMonthsRouter(LockedMonthHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.adminLockedMonths;
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireAdministrator(), h.handleLock))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleLock))
     ..delete(
       '/<monthYear>/<bankAccountId>',
-      (Request req, String monthYear, String bankAccountId) => _role(
-        requireAdministrator(),
+      (Request req, String monthYear, String bankAccountId) => _page(
+        permissions,
+        page,
+        PermissionAccess.write,
         (r) => h.handleUnlock(r, monthYear, bankAccountId),
       )(req),
     );
 }
 
-// All authenticated users can read; contributors and admins can write.
-Router _closingBankBalanceRouter(ClosingBankBalanceHandler h) {
+// All authenticated users can read (used by Dashboard/Monthly Report); only
+// writable from the Bank Reconciliation page, which owns this write action.
+Router _closingBankBalanceRouter(
+    ClosingBankBalanceHandler h, IRolePermissionRepository permissions) {
   return Router()
     ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleSave));
+    ..post('/',
+        _page(permissions, PermissionPage.bankReconciliation, PermissionAccess.write, h.handleSave));
 }
 
 // Administrators only; bank-accounts list accessible to all authenticated users.
-Router _bankReconciliationRouter(BankReconciliationHandler h) {
+Router _bankReconciliationRouter(
+    BankReconciliationHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.bankReconciliation;
   return Router()
     ..get('/bank-accounts', h.handleListBankAccounts)
-    ..post('/parse-statement', _role(requireAdministrator(), h.handleParseStatement));
+    ..post('/parse-statement',
+        _page(permissions, page, PermissionAccess.write, h.handleParseStatement));
 }
 
 // Administrators only.
-Router _adminRouter(BackupHandler backup, AuditHandler audit,
-    UsersHandler users, O365SettingsHandler o365Settings) {
+Router _adminRouter(
+    BackupHandler backup,
+    AuditHandler audit,
+    UsersHandler users,
+    O365SettingsHandler o365Settings,
+    IRolePermissionRepository permissions) {
+  const backupPage = PermissionPage.adminBackup;
+  const auditPage = PermissionPage.adminAuditLog;
+  const usersPage = PermissionPage.adminUsers;
+  const o365Page = PermissionPage.adminO365Sync;
   return Router()
-    ..get('/backup', _role(requireAdministrator(), backup.handleBackup))
-    ..post('/restore', _role(requireAdministrator(), backup.handleRestore))
-    ..get('/audit-log', _role(requireAdministrator(), audit.handleList))
-    ..get('/users', _role(requireAdministrator(), users.handleList))
+    ..get('/backup', _page(permissions, backupPage, PermissionAccess.read, backup.handleBackup))
+    ..post('/restore', _page(permissions, backupPage, PermissionAccess.write, backup.handleRestore))
+    ..get('/audit-log', _page(permissions, auditPage, PermissionAccess.read, audit.handleList))
+    ..get('/users', _page(permissions, usersPage, PermissionAccess.read, users.handleList))
     ..put(
       '/users/<userId>/role',
-      (Request req, String userId) => _role(
-        requireAdministrator(),
+      (Request req, String userId) => _page(
+        permissions,
+        usersPage,
+        PermissionAccess.write,
         (r) => users.handleSetRole(r, userId),
       )(req),
     )
     ..get('/o365-settings',
-        _role(requireAdministrator(), o365Settings.handleGet))
+        _page(permissions, o365Page, PermissionAccess.read, o365Settings.handleGet))
     ..put('/o365-settings',
-        _role(requireAdministrator(), o365Settings.handleSave))
+        _page(permissions, o365Page, PermissionAccess.write, o365Settings.handleSave))
     ..post('/o365-settings/generate-certificate',
-        _role(requireAdministrator(), o365Settings.handleGenerateCertificate));
+        _page(permissions, o365Page, PermissionAccess.write,
+            o365Settings.handleGenerateCertificate));
 }
 
-// All roles can read budgets; only admins can write or import.
+// Viewers/contributors can read budgets; only admins can write or import.
 // Fixed paths (gl-mappings, parse-import) are registered before <year> to avoid shadowing.
-Router _budgetRouter(BudgetHandler h) {
+Router _budgetRouter(BudgetHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.reportsBudget;
   return Router()
-    ..get('/', h.handleList)
-    ..get('/gl-mappings', h.handleGetMappings)
-    ..put('/gl-mappings', _role(requireAdministrator(), h.handleSaveMappings))
-    ..post('/parse-import', _role(requireAdministrator(), h.handleParseImport))
-    ..get('/<year>', h.handleGet)
-    ..put('/<year>', _roleId(requireAdministrator(), h.handleSave))
-    ..delete('/<year>', _roleId(requireAdministrator(), h.handleDelete))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..get('/gl-mappings', _page(permissions, page, PermissionAccess.read, h.handleGetMappings))
+    ..put('/gl-mappings',
+        _page(permissions, page, PermissionAccess.write, h.handleSaveMappings))
+    ..post('/parse-import',
+        _page(permissions, page, PermissionAccess.write, h.handleParseImport))
+    ..get('/<year>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<year>', _pageId(permissions, page, PermissionAccess.write, h.handleSave))
+    ..delete('/<year>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete))
     ..post(
       '/<year>/confirm-import',
-      (Request req, String year) => _role(
-        requireAdministrator(),
+      (Request req, String year) => _page(
+        permissions,
+        page,
+        PermissionAccess.write,
         (r) => h.handleConfirmImport(r, year),
       )(req),
     );
@@ -720,28 +823,32 @@ Router _budgetRouter(BudgetHandler h) {
 // creating a tenant mailbox account — is administrator-only. Fixed paths
 // (import, sync-o365, available-licenses) must be registered before /<id>
 // to avoid being shadowed.
-Router _memberRouter(MemberHandler h) {
+Router _memberRouter(MemberHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.members;
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleCreate))
-    ..post('/import', _role(requireContributor(), h.handleImport))
-    ..post('/sync-o365', _role(requireAdministrator(), h.handleSyncO365))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
+    ..post('/import', _page(permissions, page, PermissionAccess.write, h.handleImport))
+    ..post('/sync-o365',
+        _action(permissions, PermissionAction.membersSyncO365, h.handleSyncO365))
     ..get('/available-licenses',
-        _role(requireAdministrator(), h.handleAvailableLicenses))
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete))
+        _action(permissions, PermissionAction.membersCreateMailbox, h.handleAvailableLicenses))
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete))
     ..post(
       '/<id>/create-mailbox',
-      (Request req, String id) => _role(
-        requireAdministrator(),
+      (Request req, String id) => _action(
+        permissions,
+        PermissionAction.membersCreateMailbox,
         (r) => h.handleCreateMailbox(r, id),
       )(req),
     )
     ..put(
       '/<id>/app-role',
-      (Request req, String id) => _role(
-        requireAdministrator(),
+      (Request req, String id) => _action(
+        permissions,
+        PermissionAction.membersSetRole,
         (r) => h.handleSetAppRole(r, id),
       )(req),
     );
@@ -750,61 +857,83 @@ Router _memberRouter(MemberHandler h) {
 // Viewers can read; contributors and admins can write.
 // Fixed paths (import, next-number, sections) must be registered before
 // /<id> to avoid being shadowed.
-Router _assetRouter(AssetHandler h) {
+Router _assetRouter(AssetHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.assets;
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleCreate))
-    ..post('/import', _role(requireContributor(), h.handleImport))
-    ..get('/next-number', h.handleNextNumber)
-    ..get('/sections', h.handleListSections)
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete));
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
+    ..post('/import', _page(permissions, page, PermissionAccess.write, h.handleImport))
+    ..get('/next-number', _page(permissions, page, PermissionAccess.read, h.handleNextNumber))
+    ..get('/sections', _page(permissions, page, PermissionAccess.read, h.handleListSections))
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete));
 }
 
 // Viewers can read; contributors and admins can create/edit/delete;
 // only administrators can approve/reject (record the decision).
 // Fixed paths (next-number) must be registered before /<id> to avoid shadowing.
-Router _capexRequestRouter(CapexRequestHandler h) {
+Router _capexRequestRouter(CapexRequestHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.capexRequests;
   return Router()
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleCreate))
-    ..get('/next-number', h.handleNextNumber)
-    ..get('/<id>', h.handleGet)
-    ..put('/<id>', _roleId(requireContributor(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireContributor(), h.handleDelete))
-    ..put('/<id>/executed-date', _roleId(requireContributor(), h.handleSetExecutedDate))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
+    ..get('/next-number', _page(permissions, page, PermissionAccess.read, h.handleNextNumber))
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
+    ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
+    ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete))
+    ..put('/<id>/executed-date',
+        _pageId(permissions, page, PermissionAccess.write, h.handleSetExecutedDate))
     ..post(
       '/<id>/decision',
-      (Request req, String id) => _role(
-        requireAdministrator(),
+      (Request req, String id) => _action(
+        permissions,
+        PermissionAction.capexApproveReject,
         (r) => h.handleDecide(r, id),
       )(req),
     );
 }
 
-// Contributors and administrators only.
+// Contributors and administrators only — a personal CardDAV-sync credential,
+// not a page in the Roles registry (see requireContributor() doc comment).
 Router _apiKeyRouter(ApiKeyHandler h) {
   return Router()
     ..get('/', _role(requireContributor(), h.handleGetStatus))
     ..post('/generate', _role(requireContributor(), h.handleGenerate));
 }
 
-// Viewers can read; contributors and admins can create; admins only can edit/delete.
-// Fixed paths (next-number) must be registered before /<id> to avoid shadowing.
-Router _invoiceRouter(InvoiceHandler h) {
+// Read-only bootstrap for the caller's own permissions; the matrix itself is
+// administrator-only, guarded by the Roles page's own permission cell.
+Router _rolesRouter(RolesHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.adminRoles;
   return Router()
-    ..get('/next-number', h.handleNextNumber)
-    ..get('/', h.handleList)
-    ..post('/', _role(requireContributor(), h.handleCreate))
+    ..get('/effective', h.handleGetEffective)
+    ..get('/permissions', _page(permissions, page, PermissionAccess.read, h.handleGetPermissions))
+    ..put('/permissions',
+        _page(permissions, page, PermissionAccess.write, h.handleSavePermissions));
+}
+
+// Viewers can read; contributors and admins can create; admins only can
+// edit/delete (invoicesManageUnpaid — stricter than the page's write access).
+// Fixed paths (next-number) must be registered before /<id> to avoid shadowing.
+Router _invoiceRouter(InvoiceHandler h, IRolePermissionRepository permissions) {
+  const page = PermissionPage.invoices;
+  return Router()
+    ..get('/next-number', _page(permissions, page, PermissionAccess.read, h.handleNextNumber))
+    ..get('/', _page(permissions, page, PermissionAccess.read, h.handleList))
+    ..post('/', _page(permissions, page, PermissionAccess.write, h.handleCreate))
     ..post(
       '/<id>/mark-paid',
-      (Request req, String id) => _role(
-        requireContributor(),
+      (Request req, String id) => _page(
+        permissions,
+        page,
+        PermissionAccess.write,
         (r) => h.handleMarkPaid(r, id),
       )(req),
     )
-    ..get('/<id>', (Request req, String id) => h.handleGet(req, id))
-    ..put('/<id>', _roleId(requireAdministrator(), h.handleUpdate))
-    ..delete('/<id>', _roleId(requireAdministrator(), h.handleDelete));
+    ..get('/<id>', _pageId(permissions, page, PermissionAccess.read,
+        (Request req, String id) => h.handleGet(req, id)))
+    ..put('/<id>', _actionId(permissions, PermissionAction.invoicesManageUnpaid, h.handleUpdate))
+    ..delete(
+        '/<id>', _actionId(permissions, PermissionAction.invoicesManageUnpaid, h.handleDelete));
 }

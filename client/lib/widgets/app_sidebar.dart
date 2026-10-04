@@ -21,11 +21,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/app_role.dart';
 import '../auth/auth_state.dart';
+import '../models/permission_page.dart';
 import '../screens/api_key_dialog.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
+import '../services/permission_service.dart';
 
 /// Persistent left navigation sidebar for authenticated screens.
 class AppSidebar extends StatefulWidget {
@@ -114,6 +115,7 @@ class _AppSidebarState extends State<AppSidebar> {
   Widget build(BuildContext context) {
     final currentPath = GoRouterState.of(context).uri.path;
     final authState = context.watch<AuthState>();
+    final permissions = context.watch<PermissionService>();
     final userName = authState.user?.name ?? authState.user?.email ?? '';
 
     return SizedBox(
@@ -147,59 +149,67 @@ class _AppSidebarState extends State<AppSidebar> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 4),
-                  _NavItem(
-                    label: 'Dashboard',
-                    icon: Icons.dashboard_outlined,
-                    path: '/dashboard',
-                    currentPath: currentPath,
-                  ),
-                  _NavItem(
-                    label: 'Transactions',
-                    icon: Icons.receipt_long_outlined,
-                    path: '/transactions',
-                    currentPath: currentPath,
-                  ),
-                  if (authState.isAdmin)
+                  if (permissions.canReadPage(PermissionPage.dashboard))
+                    _NavItem(
+                      label: 'Dashboard',
+                      icon: Icons.dashboard_outlined,
+                      path: '/dashboard',
+                      currentPath: currentPath,
+                    ),
+                  if (permissions.canReadPage(PermissionPage.transactions))
+                    _NavItem(
+                      label: 'Transactions',
+                      icon: Icons.receipt_long_outlined,
+                      path: '/transactions',
+                      currentPath: currentPath,
+                    ),
+                  if (permissions.canReadPage(PermissionPage.bankReconciliation))
                     _NavItem(
                       label: 'Bank Reconciliation',
                       icon: Icons.account_balance_outlined,
                       path: '/bank-reconciliation',
                       currentPath: currentPath,
                     ),
-                  _NavItem(
-                    label: 'Invoices',
-                    icon: Icons.description_outlined,
-                    path: '/invoices',
-                    currentPath: currentPath,
-                  ),
-                  _NavItem(
-                    label: 'Capex Requests',
-                    icon: Icons.request_quote_outlined,
-                    path: '/capex-requests',
-                    currentPath: currentPath,
-                  ),
-                  _NavItem(
-                    label: 'Members',
-                    icon: Icons.badge_outlined,
-                    path: '/members',
-                    currentPath: currentPath,
-                  ),
-                  _NavItem(
-                    label: 'Asset Register',
-                    icon: Icons.inventory_2_outlined,
-                    path: '/assets',
-                    currentPath: currentPath,
-                  ),
+                  if (permissions.canReadPage(PermissionPage.invoices))
+                    _NavItem(
+                      label: 'Invoices',
+                      icon: Icons.description_outlined,
+                      path: '/invoices',
+                      currentPath: currentPath,
+                    ),
+                  if (permissions.canReadPage(PermissionPage.capexRequests))
+                    _NavItem(
+                      label: 'Capex Requests',
+                      icon: Icons.request_quote_outlined,
+                      path: '/capex-requests',
+                      currentPath: currentPath,
+                    ),
+                  if (permissions.canReadPage(PermissionPage.members))
+                    _NavItem(
+                      label: 'Members',
+                      icon: Icons.badge_outlined,
+                      path: '/members',
+                      currentPath: currentPath,
+                    ),
+                  if (permissions.canReadPage(PermissionPage.assets))
+                    _NavItem(
+                      label: 'Asset Register',
+                      icon: Icons.inventory_2_outlined,
+                      path: '/assets',
+                      currentPath: currentPath,
+                    ),
                   _ReportsNavGroup(
                     currentPath: currentPath,
                     expanded: _reportsExpanded,
                     onExpansionChanged: (v) => setState(() => _reportsExpanded = v),
+                    permissions: permissions,
                   ),
                   _AdminNavGroup(
                     currentPath: currentPath,
                     expanded: _adminExpanded,
                     onExpansionChanged: (expanded) =>
                         setState(() => _adminExpanded = expanded),
+                    permissions: permissions,
                   ),
                 ],
               ),
@@ -286,25 +296,29 @@ class _ReportsNavGroup extends StatelessWidget {
   final String currentPath;
   final bool expanded;
   final ValueChanged<bool> onExpansionChanged;
+  final PermissionService permissions;
 
   const _ReportsNavGroup({
     required this.currentPath,
     required this.expanded,
     required this.onExpansionChanged,
+    required this.permissions,
   });
 
-  static const _subItems = [
-    (label: 'Assets', icon: Icons.inventory_2_outlined, path: '/reports/assets'),
-    (label: 'BAS Report', icon: Icons.receipt_long_outlined, path: '/reports/bas'),
-    (label: 'Budget', icon: Icons.account_balance_wallet_outlined, path: '/reports/budget'),
-    (label: 'Financial Performance', icon: Icons.analytics_outlined, path: '/reports/financial-performance'),
-    (label: 'P&L', icon: Icons.trending_up_outlined, path: '/reports/pl'),
+  static const _allSubItems = [
+    (label: 'Assets', icon: Icons.inventory_2_outlined, path: '/reports/assets', page: PermissionPage.reportsAssets),
+    (label: 'BAS Report', icon: Icons.receipt_long_outlined, path: '/reports/bas', page: PermissionPage.reportsBas),
+    (label: 'Budget', icon: Icons.account_balance_wallet_outlined, path: '/reports/budget', page: PermissionPage.reportsBudget),
+    (label: 'Financial Performance', icon: Icons.analytics_outlined, path: '/reports/financial-performance', page: PermissionPage.reportsFinancialPerformance),
+    (label: 'P&L', icon: Icons.trending_up_outlined, path: '/reports/pl', page: PermissionPage.reportsPl),
   ];
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isActive = currentPath.startsWith('/reports');
+    final subItems =
+        _allSubItems.where((i) => permissions.canReadPage(i.page)).toList();
 
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -324,7 +338,7 @@ class _ReportsNavGroup extends StatelessWidget {
         onExpansionChanged: onExpansionChanged,
         tilePadding: const EdgeInsets.symmetric(horizontal: 16),
         childrenPadding: EdgeInsets.zero,
-        children: _subItems.map((item) {
+        children: subItems.map((item) {
           final isItemActive = currentPath == item.path;
           return ListTile(
             leading: Icon(
@@ -356,54 +370,35 @@ class _AdminNavGroup extends StatelessWidget {
   final String currentPath;
   final bool expanded;
   final ValueChanged<bool> onExpansionChanged;
+  final PermissionService permissions;
 
   const _AdminNavGroup({
     required this.currentPath,
     required this.expanded,
     required this.onExpansionChanged,
+    required this.permissions,
   });
 
   static const _allSubItems = [
-    (label: 'Audit Log', icon: Icons.history_outlined, path: '/admin/audit-log'),
-    (label: 'Backup', icon: Icons.backup_outlined, path: '/admin/backup'),
-    (label: 'Bank Accounts', icon: Icons.account_balance_outlined, path: '/admin/bank-accounts'),
-    (label: 'Contacts', icon: Icons.people_outlined, path: '/admin/contacts'),
-    (label: 'Entity', icon: Icons.business_outlined, path: '/admin/entity'),
-    (label: 'General Ledger', icon: Icons.book_outlined, path: '/admin/general-ledger'),
-    (label: 'GST Management', icon: Icons.percent_outlined, path: '/admin/gst-management'),
-    (label: 'Locked Months', icon: Icons.lock_outlined, path: '/admin/locked-months'),
+    (label: 'Audit Log', icon: Icons.history_outlined, path: '/admin/audit-log', page: PermissionPage.adminAuditLog),
+    (label: 'Backup', icon: Icons.backup_outlined, path: '/admin/backup', page: PermissionPage.adminBackup),
+    (label: 'Bank Accounts', icon: Icons.account_balance_outlined, path: '/admin/bank-accounts', page: PermissionPage.adminBankAccounts),
+    (label: 'Contacts', icon: Icons.people_outlined, path: '/admin/contacts', page: PermissionPage.adminContacts),
+    (label: 'Entity', icon: Icons.business_outlined, path: '/admin/entity', page: PermissionPage.adminEntity),
+    (label: 'General Ledger', icon: Icons.book_outlined, path: '/admin/general-ledger', page: PermissionPage.adminGeneralLedger),
+    (label: 'GST Management', icon: Icons.percent_outlined, path: '/admin/gst-management', page: PermissionPage.adminGstManagement),
+    (label: 'Locked Months', icon: Icons.lock_outlined, path: '/admin/locked-months', page: PermissionPage.adminLockedMonths),
+    (label: 'O365 Sync', icon: Icons.sync_outlined, path: '/admin/o365-sync', page: PermissionPage.adminO365Sync),
+    (label: 'Roles', icon: Icons.admin_panel_settings_outlined, path: '/admin/roles', page: PermissionPage.adminRoles),
+    (label: 'Users', icon: Icons.manage_accounts_outlined, path: '/admin/users', page: PermissionPage.adminUsers),
   ];
-
-  // Visible to administrators only; hidden from viewers and contributors.
-  static const _adminOnlySubItems = [
-    (label: 'O365 Sync', icon: Icons.sync_outlined, path: '/admin/o365-sync'),
-    (label: 'Users', icon: Icons.manage_accounts_outlined, path: '/admin/users'),
-  ];
-
-  // Paths hidden from contributors.
-  static const _contributorHidden = {
-    '/admin/audit-log',
-    '/admin/backup',
-    '/admin/bank-accounts',
-    '/admin/gst-management',
-    '/admin/locked-months',
-  };
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isAdminActive = currentPath.startsWith('/admin');
-    final role = context.watch<AuthState>().role;
-    final List<({String label, IconData icon, String path})> subItems;
-    if (role == AppRole.administrator) {
-      subItems = [..._allSubItems, ..._adminOnlySubItems];
-    } else if (role == AppRole.contributor) {
-      subItems = _allSubItems
-          .where((i) => !_contributorHidden.contains(i.path))
-          .toList();
-    } else {
-      subItems = [];
-    }
+    final subItems =
+        _allSubItems.where((i) => permissions.canReadPage(i.page)).toList();
 
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),

@@ -20,10 +20,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../auth/auth_state.dart';
 import '../models/bank_account_entry.dart';
 import '../models/locked_month_entry.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
 
 /// How a term-deposit account's closing balance is determined when locking
@@ -278,7 +279,8 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isAdmin = context.watch<AuthState>().isAdmin;
+    final bool isAdmin =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminLockedMonths);
     context.watch<ReferenceDataCache>();
 
     return Padding(

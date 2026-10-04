@@ -24,6 +24,7 @@ import 'auth/msal_web.dart';
 import 'routing/app_router.dart';
 import 'services/api_client.dart';
 import 'services/navigation_guard.dart';
+import 'services/permission_service.dart';
 import 'services/reference_data_cache.dart';
 
 const String _entraTenantId = String.fromEnvironment('ENTRA_TENANT_ID');
@@ -55,17 +56,25 @@ Future<void> main() async {
     print('MSAL onLoad error: $e');
   }
 
-  final router = createRouter(authState);
-
   final apiClient = ApiClient(
     baseUrl: _apiUrl,
     getToken: () => authState.accessToken,
     onUnauthorized: authState.clearCredentials,
   );
 
+  final permissionService = PermissionService(apiClient);
+  // Awaited before the first render so the router's (synchronous) redirect
+  // callback never has to reason about a not-yet-loaded permission set.
+  if (authState.isAuthenticated) await permissionService.ensureLoaded();
+
+  final router = createRouter(authState, permissionService);
+
   final referenceDataCache = ReferenceDataCache(apiClient);
   authState.addListener(() {
-    if (!authState.isAuthenticated) referenceDataCache.reset();
+    if (!authState.isAuthenticated) {
+      referenceDataCache.reset();
+      permissionService.reset();
+    }
   });
 
   runApp(
@@ -75,6 +84,7 @@ Future<void> main() async {
         Provider.value(value: apiClient),
         ChangeNotifierProvider(create: (_) => NavigationGuard()),
         ChangeNotifierProvider.value(value: referenceDataCache),
+        ChangeNotifierProvider.value(value: permissionService),
       ],
       child: ShedbooksApp(router: router),
     ),

@@ -20,6 +20,11 @@ import 'dart:convert';
 import 'package:shelf/shelf.dart';
 
 import '../../domain/enums/app_role.dart';
+import '../../domain/enums/permission_access.dart';
+import '../../domain/enums/permission_action.dart';
+import '../../domain/enums/permission_page.dart';
+import '../../domain/repositories/i_role_permission_repository.dart';
+import '../request_identity.dart';
 
 /// Extracts the authenticated user's role from the request context.
 ///
@@ -35,38 +40,54 @@ AppRole roleFromRequest(Request request) {
   return AppRole.fromClaims(roles);
 }
 
-/// Middleware that returns 403 if the caller is a [AppRole.contributor].
-///
-/// Used on routes that [AppRole.viewer] and [AppRole.administrator] may
-/// access but [AppRole.contributor] may not (audit log, bank accounts,
-/// GST rates, backup).
-Middleware blockContributor() => _guard(
-      (role) => role == AppRole.contributor,
-    );
+/// Middleware that returns 403 unless the caller's role has [access] on
+/// [page], as resolved by [repository] (entity override, else global
+/// default, else deny — see migration 062_add_role_permissions.sql).
+Middleware requirePagePermission(
+  IRolePermissionRepository repository,
+  PermissionPage page,
+  PermissionAccess access,
+) =>
+    _guard((entityId, role) async {
+      final permissions =
+          await repository.getEffective(entityId: entityId, role: role);
+      return access == PermissionAccess.read
+          ? permissions.canRead(page)
+          : permissions.canWrite(page);
+    });
 
 /// Middleware that returns 403 unless the caller is at least
 /// [AppRole.contributor].
 ///
-/// Used on write routes for general data resources (transactions, contacts,
-/// general ledger, entity details).
+/// Deliberately NOT migrated to [requirePagePermission] — this guards
+/// `/api-key`, a personal CardDAV-sync credential reachable from the user
+/// menu rather than any page in the Roles registry, so it isn't governed by
+/// "which pages can this role access."
 Middleware requireContributor() => _guard(
-      (role) => !role.atLeast(AppRole.contributor),
+      (_, role) async => role.atLeast(AppRole.contributor),
     );
 
-/// Middleware that returns 403 unless the caller is [AppRole.administrator].
-///
-/// Used on routes that modify privileged resources (bank accounts, GST
-/// rates, backup/restore).
-Middleware requireAdministrator() => _guard(
-      (role) => role != AppRole.administrator,
-    );
+/// Middleware that returns 403 unless the caller's role can perform
+/// [action] — an explicit override if one exists, else the action's own
+/// page's write permission (see [EffectivePermissions.canPerform]).
+Middleware requireActionPermission(
+  IRolePermissionRepository repository,
+  PermissionAction action,
+) =>
+    _guard((entityId, role) async {
+      final permissions =
+          await repository.getEffective(entityId: entityId, role: role);
+      return permissions.canPerform(action);
+    });
 
 // ── Private ────────────────────────────────────────────────────────────────
 
-Middleware _guard(bool Function(AppRole) shouldReject) {
-  return (Handler inner) => (Request request) {
+Middleware _guard(Future<bool> Function(String entityId, AppRole role) isAllowed) {
+  return (Handler inner) => (Request request) async {
+        final entityId = resolveEntityId(request);
+        if (entityId == null) return _forbidden();
         final role = roleFromRequest(request);
-        if (shouldReject(role)) return _forbidden();
+        if (!await isAllowed(entityId, role)) return _forbidden();
         return inner(request);
       };
 }

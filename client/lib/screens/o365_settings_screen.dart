@@ -24,10 +24,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 
-import '../auth/auth_state.dart';
 import '../models/generated_o365_certificate.dart';
 import '../models/o365_sync_settings.dart';
+import '../models/permission_page.dart';
 import '../services/api_client.dart';
+import '../services/permission_service.dart';
 
 /// Admin screen for configuring the Microsoft 365 app registration used to
 /// sync club members into the tenant's Global Address List as
@@ -640,7 +641,8 @@ Write-Host "Setup complete. $clientId can now create/update GAL mail contacts, m
   }
 
   Widget _buildHeader() {
-    final isAdmin = context.watch<AuthState>().isAdmin;
+    final isAdmin =
+        context.watch<PermissionService>().canWritePage(PermissionPage.adminO365Sync);
     return Row(
       children: [
         Text('O365 Sync', style: Theme.of(context).textTheme.headlineMedium),
