@@ -26,6 +26,10 @@ import '../models/locked_month_entry.dart';
 import '../services/api_client.dart';
 import '../services/reference_data_cache.dart';
 
+/// How a term-deposit account's closing balance is determined when locking
+/// a month, since term deposits receive no routine monthly statement.
+enum _TdBalanceMode { carryOver, manualEntry }
+
 /// Admin screen for locking and unlocking financial months per bank account.
 class LockedMonthsScreen extends StatefulWidget {
   const LockedMonthsScreen({super.key});
@@ -52,8 +56,11 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
   late int _pickerMonth;
   String? _pickerBankAccountId;
 
-  // Carry-over checkbox: shown and defaults to true for term-deposit accounts.
-  bool _carryOverBalance = true;
+  // Term-deposit accounts get no monthly statement, so locking offers a
+  // choice between carrying the last recorded balance forward unchanged or
+  // entering this month's actual closing balance directly.
+  _TdBalanceMode _tdMode = _TdBalanceMode.carryOver;
+  final _manualBalanceCtrl = TextEditingController();
 
   static const _monthNames = [
     '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -68,6 +75,12 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
     _pickerYear = prev.year;
     _pickerMonth = prev.month;
     _load();
+  }
+
+  @override
+  void dispose() {
+    _manualBalanceCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -126,16 +139,52 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
       (_lockedMap[_pickerMonthYear]?.containsKey(_pickerBankAccountId) ??
           false);
 
+  bool get _manualEntryActive =>
+      _pickerIsTermDeposit && _tdMode == _TdBalanceMode.manualEntry;
+
   Future<void> _lockMonth() async {
     if (_pickerBankAccountId == null) return;
+
+    int? manualCents;
+    if (_manualEntryActive) {
+      manualCents = _parseCentsFromDisplay(_manualBalanceCtrl.text);
+      if (manualCents == null) {
+        _showSnackbar('Enter a valid closing balance.');
+        return;
+      }
+    }
+
     setState(() => _saving = true);
     try {
+      if (manualCents != null) {
+        final lastDay = DateTime(_pickerYear, _pickerMonth + 1, 0);
+        final lastDayStr = '${lastDay.year}-'
+            '${lastDay.month.toString().padLeft(2, '0')}-'
+            '${lastDay.day.toString().padLeft(2, '0')}';
+        final balanceRes = await context.read<ApiClient>().post(
+              '/closing-bank-balances',
+              jsonEncode({
+                'bankAccountId': _pickerBankAccountId,
+                'balanceDate': lastDayStr,
+                'balanceCents': manualCents,
+                'statementPeriod':
+                    '${_monthNames[_pickerMonth]} $_pickerYear (manual entry)',
+              }),
+            );
+        if (balanceRes.statusCode != 201) {
+          final msg = (jsonDecode(balanceRes.body) as Map?)?['error'] ??
+              balanceRes.statusCode.toString();
+          throw Exception('Failed to save closing balance: $msg');
+        }
+      }
+
       final res = await context.read<ApiClient>().post(
             '/locked-months',
             jsonEncode({
               'monthYear': _pickerMonthYear,
               'bankAccountId': _pickerBankAccountId,
-              if (_pickerIsTermDeposit) 'carryOverBalance': _carryOverBalance,
+              if (_pickerIsTermDeposit)
+                'carryOverBalance': _tdMode == _TdBalanceMode.carryOver,
             }),
           );
       if (res.statusCode != 204) {
@@ -143,12 +192,20 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
             (jsonDecode(res.body) as Map?)?['error'] ?? res.statusCode.toString();
         throw Exception(msg);
       }
+      _manualBalanceCtrl.clear();
       await _load();
     } catch (e) {
       if (mounted) _showSnackbar('Failed to lock: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  static int? _parseCentsFromDisplay(String s) {
+    final cleaned = s.replaceAll(',', '').replaceAll('\$', '').trim();
+    final d = double.tryParse(cleaned);
+    if (d == null) return null;
+    return (d * 100).round();
   }
 
   Future<void> _unlockMonth(String monthYear, String bankAccountId) async {
@@ -379,13 +436,13 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                               ? null
                               : (v) => setState(() {
                                     _pickerBankAccountId = v;
-                                    // Default carry-over on when switching to a term deposit.
+                                    // Default to carry-over when switching to a term deposit.
                                     if (_bankAccounts
                                         .where((a) => a.id == v)
                                         .any((a) =>
                                             a.accountType ==
                                             BankAccountType.termDeposit)) {
-                                      _carryOverBalance = true;
+                                      _tdMode = _TdBalanceMode.carryOver;
                                     }
                                   }),
                         ),
@@ -409,19 +466,51 @@ class _LockedMonthsScreenState extends State<LockedMonthsScreen> {
                 ],
               ),
               if (_pickerIsTermDeposit) ...[
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Checkbox(
-                      value: _carryOverBalance,
-                      onChanged: _saving
-                          ? null
-                          : (v) => setState(() => _carryOverBalance = v!),
-                    ),
-                    const Text('Carry over last month\'s balance'),
-                  ],
+                const SizedBox(height: 4),
+                const Text(
+                  'Term deposits get no monthly statement, so choose how this '
+                  'month\'s closing balance is determined:',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
+                RadioListTile<_TdBalanceMode>(
+                  value: _TdBalanceMode.carryOver,
+                  groupValue: _tdMode,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Carry over last month\'s balance'),
+                  onChanged: _saving
+                      ? null
+                      : (v) => setState(() => _tdMode = v!),
+                ),
+                RadioListTile<_TdBalanceMode>(
+                  value: _TdBalanceMode.manualEntry,
+                  groupValue: _tdMode,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enter this month\'s closing balance'),
+                  onChanged: _saving
+                      ? null
+                      : (v) => setState(() => _tdMode = v!),
+                ),
+                if (_tdMode == _TdBalanceMode.manualEntry)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 32, bottom: 8),
+                    child: SizedBox(
+                      width: 180,
+                      child: TextField(
+                        controller: _manualBalanceCtrl,
+                        enabled: !_saving,
+                        decoration: const InputDecoration(
+                          labelText: 'Closing Balance',
+                          border: OutlineInputBorder(),
+                          prefixText: '\$ ',
+                          isDense: true,
+                        ),
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                      ),
+                    ),
+                  ),
               ],
             ],
           ),
