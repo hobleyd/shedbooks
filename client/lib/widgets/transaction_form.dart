@@ -182,6 +182,13 @@ class TransactionFormState extends State<TransactionForm> {
   /// an ordinary transaction.
   final List<_LineFields> _extraLines = [];
 
+  /// The whole payment's total (inc GST) in cents while it is split. The
+  /// first line then holds whatever is left of it once the additional lines
+  /// are taken out, so adding to a split line reduces the first line rather
+  /// than growing the payment. Null when the transaction isn't split, or the
+  /// first line's total hasn't been entered yet.
+  int? _paymentTotalCents;
+
   /// Mirrors the server's cap on the number of lines in one split.
   static const int _maxLines = 50;
 
@@ -255,6 +262,9 @@ class TransactionFormState extends State<TransactionForm> {
         line.total.text = _centsToString(extra.totalAmount);
         line.description.text = extra.description;
         _extraLines.add(line);
+      }
+      if (_extraLines.isNotEmpty) {
+        _paymentTotalCents = t.totalAmount + _extraLinesTotalCents;
       }
     } else {
       _date = DateTime.now();
@@ -420,6 +430,10 @@ class TransactionFormState extends State<TransactionForm> {
     if (_selectedGl == null) return 'Please select a general ledger account';
     if (_selectedBankAccountId == null) return 'Please select an account';
     final amount = _parseAmount(_amountController.text);
+    if (_extraLines.isNotEmpty && amount != null && amount <= 0) {
+      return 'The split lines use up the whole payment or more — '
+          'nothing is left on the first line';
+    }
     if (amount == null || amount <= 0)
       return 'Amount must be greater than zero';
     final gst = _parseAmount(_gstController.text);
@@ -475,9 +489,35 @@ class TransactionFormState extends State<TransactionForm> {
   int _dollarsToCents(double d) => (d * 100).round();
   String _centsToString(int cents) => (cents / 100).toStringAsFixed(2);
 
-  void _handleAmountChanged(String value) => _lineAmountChanged(_primary, value);
-  void _handleTotalChanged(String value) => _lineTotalChanged(_primary, value);
-  void _handleGstChanged(String value) => _lineGstChanged(_primary, value);
+  void _handleAmountChanged(String value) {
+    _lineAmountChanged(_primary, value);
+    _onPrimaryAmountsEdited();
+  }
+
+  void _handleTotalChanged(String value) {
+    _lineTotalChanged(_primary, value);
+    _onPrimaryAmountsEdited();
+  }
+
+  void _handleGstChanged(String value) {
+    _lineGstChanged(_primary, value);
+    _onPrimaryAmountsEdited();
+  }
+
+  void _extraAmountChanged(_LineFields line, String value) {
+    _lineAmountChanged(line, value);
+    _rebalancePrimary();
+  }
+
+  void _extraTotalChanged(_LineFields line, String value) {
+    _lineTotalChanged(line, value);
+    _rebalancePrimary();
+  }
+
+  void _extraGstChanged(_LineFields line, String value) {
+    _lineGstChanged(line, value);
+    _rebalancePrimary();
+  }
 
   void _lineAmountChanged(_LineFields line, String value) {
     line.anchor = _AmountAnchor.amount;
@@ -541,7 +581,10 @@ class TransactionFormState extends State<TransactionForm> {
   /// can flip GST applicability changes for all of them at once — the
   /// (Money-Out only) selected contact's GST-registration status, or the
   /// date's effective rate.
-  void _recalculateGstFields() => _allLines.forEach(_recalculateLine);
+  void _recalculateGstFields() {
+    _allLines.forEach(_recalculateLine);
+    _rebalancePrimary();
+  }
 
   /// Recomputes one line's GST/Amount/Total trio after its GST applicability
   /// may have changed (e.g. its GL account). Mirrors whichever of
@@ -579,10 +622,64 @@ class TransactionFormState extends State<TransactionForm> {
 
   // ── Split lines ────────────────────────────────────────────────────────────
 
-  void _addSplitLine() => setState(() => _extraLines.add(_LineFields()));
+  /// Total (inc GST) of the additional lines, in cents, ignoring lines whose
+  /// amounts aren't filled in yet.
+  int get _extraLinesTotalCents {
+    int cents = 0;
+    for (final _LineFields line in _extraLines) {
+      final total = _parseAmount(line.total.text);
+      if (total != null) cents += _dollarsToCents(total);
+    }
+    return cents;
+  }
+
+  /// Sets the first line to what is left of the payment once the additional
+  /// lines are taken out, keeping the payment total fixed. No-op when the
+  /// transaction isn't split or the payment total isn't known yet.
+  void _rebalancePrimary() {
+    final int? paymentTotal = _paymentTotalCents;
+    if (paymentTotal == null || _extraLines.isEmpty) return;
+    _primary.total.text = _centsToString(paymentTotal - _extraLinesTotalCents);
+    _primary.anchor = _AmountAnchor.total;
+    _recalculateLine(_primary);
+  }
+
+  /// The user typed into the first line's own amounts while the payment is
+  /// split: that redefines the payment total as the first line plus the
+  /// additional lines.
+  void _onPrimaryAmountsEdited() {
+    if (_extraLines.isEmpty) return;
+    final total = _parseAmount(_primary.total.text);
+    _paymentTotalCents =
+        total == null ? null : _dollarsToCents(total) + _extraLinesTotalCents;
+  }
+
+  void _addSplitLine() => setState(() {
+        if (_extraLines.isEmpty) {
+          // The first line carries the whole payment until lines are split
+          // off it.
+          final total = _parseAmount(_primary.total.text);
+          _paymentTotalCents = total == null ? null : _dollarsToCents(total);
+        }
+        _extraLines.add(_LineFields());
+      });
 
   void _removeSplitLine(_LineFields line) {
-    setState(() => _extraLines.remove(line));
+    setState(() {
+      _extraLines.remove(line);
+      // The removed line's amount goes back onto the first line.
+      if (_extraLines.isEmpty) {
+        final int? paymentTotal = _paymentTotalCents;
+        if (paymentTotal != null) {
+          _primary.total.text = _centsToString(paymentTotal);
+          _primary.anchor = _AmountAnchor.total;
+          _recalculateLine(_primary);
+        }
+        _paymentTotalCents = null;
+      } else {
+        _rebalancePrimary();
+      }
+    });
     // Dispose after the frame that drops the row's fields, not before —
     // they still hold the controllers until then.
     WidgetsBinding.instance.addPostFrameCallback((_) => line.dispose());
@@ -594,6 +691,7 @@ class TransactionFormState extends State<TransactionForm> {
   void _clearExtraLines() {
     final List<_LineFields> removed = List.of(_extraLines);
     _extraLines.clear();
+    _paymentTotalCents = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final _LineFields line in removed) {
         line.dispose();
@@ -626,6 +724,7 @@ class TransactionFormState extends State<TransactionForm> {
           ? widget.nextMoneyOutReceipt
           : '';
       _anchor = _AmountAnchor.total;
+      _paymentTotalCents = null;
       if (gl?.direction != GlDirection.moneyOut) _clearExtraLines();
     });
   }
@@ -947,7 +1046,9 @@ class TransactionFormState extends State<TransactionForm> {
               FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
             ],
             onChanged: _handleTotalChanged,
-            decoration: decoration.copyWith(labelText: 'Total Amount'),
+            decoration: decoration.copyWith(
+                labelText:
+                    _extraLines.isEmpty ? 'Total Amount' : 'Remaining Amount'),
           ),
         ),
         const SizedBox(width: 8),
@@ -1245,6 +1346,7 @@ class TransactionFormState extends State<TransactionForm> {
                     : (gl) => setState(() {
                           line.gl = gl;
                           _recalculateLine(line);
+                          _rebalancePrimary();
                         }),
               )),
             ),
@@ -1264,21 +1366,21 @@ class TransactionFormState extends State<TransactionForm> {
             amountField(
               controller: line.total,
               label: 'Total',
-              onChanged: _lineTotalChanged,
+              onChanged: _extraTotalChanged,
               width: 110,
             ),
             const SizedBox(width: 8),
             amountField(
               controller: line.amount,
               label: 'Amt ex GST',
-              onChanged: _lineAmountChanged,
+              onChanged: _extraAmountChanged,
               width: 110,
             ),
             const SizedBox(width: 8),
             amountField(
               controller: line.gst,
               label: 'GST',
-              onChanged: _lineGstChanged,
+              onChanged: _extraGstChanged,
               width: 90,
               greyed: !gstApplicable,
             ),
@@ -1438,8 +1540,11 @@ class TransactionFormState extends State<TransactionForm> {
                       FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
                     ],
                     onChanged: _handleTotalChanged,
-                    decoration:
-                        dec.copyWith(labelText: 'Total', prefixText: '\$ '),
+                    // While split, the first line shows what is left of the
+                    // payment after the additional lines.
+                    decoration: dec.copyWith(
+                        labelText: _extraLines.isEmpty ? 'Total' : 'Remaining',
+                        prefixText: '\$ '),
                   )),
                 ),
                 const SizedBox(width: 8),

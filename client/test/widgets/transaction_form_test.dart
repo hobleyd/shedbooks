@@ -298,9 +298,10 @@ void main() {
       );
     });
 
-    testWidgets('a new line calculates its own GST and updates the payment total',
+    testWidgets(
+        'a new line is taken out of the first line, leaving the payment total unchanged',
         (tester) async {
-      // Arrange
+      // Arrange — the transaction starts as a single $110.00 line.
       TransactionFormData? saved;
       await tester.pumpWidget(_splitHarness(onSave: (d) => saved = d));
       await tester.pumpAndSettle();
@@ -317,11 +318,54 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pump();
 
-      // Assert
-      expect(find.text('Payment total \$132.00  (incl. GST \$12.00)'), findsOneWidget);
+      // Assert — first line drops to $88.00; the payment is still $110.00.
+      expect(find.text('Payment total \$110.00  (incl. GST \$10.00)'), findsOneWidget);
+      expect(
+        tester.widget<TextFormField>(_fieldLabeled('Remaining')).controller!.text,
+        '88.00',
+      );
       expect(saved!.lines.map((l) => l.gl.id), ['gl1', 'gl3']);
-      expect(saved!.extraLines.single.amountCents, 2000);
-      expect(saved!.extraLines.single.gstCents, 200);
+      expect(saved!.lines.map((l) => l.amountCents), [8000, 2000]);
+      expect(saved!.lines.map((l) => l.gstCents), [800, 200]);
+    });
+
+    testWidgets('editing the first line while split redefines the payment total',
+        (tester) async {
+      // Arrange — $110.00 + $50.00 split.
+      await tester.pumpWidget(_splitHarness(splitLines: [secondLine]));
+      await tester.pumpAndSettle();
+
+      // Act — retype the first line, then grow the second line by $10.00.
+      await tester.enterText(_fieldLabeled('Remaining'), '220.00');
+      await tester.pump();
+      await tester.enterText(_fieldLabeled('Total').last, '60.00');
+      await tester.pump();
+
+      // Assert — payment became $270.00 and stays there; first line gives up $10.00.
+      expect(find.text('Payment total \$270.00  (incl. GST \$19.09)'), findsOneWidget);
+      expect(
+        tester.widget<TextFormField>(_fieldLabeled('Remaining')).controller!.text,
+        '210.00',
+      );
+    });
+
+    testWidgets('blocks the save when the split lines use up the whole payment',
+        (tester) async {
+      // Arrange — $110.00 + $50.00 split.
+      TransactionFormData? saved;
+      await tester.pumpWidget(
+          _splitHarness(splitLines: [secondLine], onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act — the second line claims the whole $160.00.
+      await tester.enterText(_fieldLabeled('Total').last, '160.00');
+      await tester.pump();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(saved, isNull);
+      expect(find.textContaining('nothing is left on the first line'), findsOneWidget);
     });
 
     testWidgets('removing the extra line turns the split back into one line',
@@ -338,9 +382,10 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pump();
 
-      // Assert
+      // Assert — the removed line's $50.00 goes back onto the first line.
       expect(saved!.isSplit, isFalse);
       expect(saved!.lines.single.gl.id, 'gl1');
+      expect(saved!.amountCents + saved!.gstCents, 16000);
     });
 
     testWidgets('Money-In offers no split option', (tester) async {
