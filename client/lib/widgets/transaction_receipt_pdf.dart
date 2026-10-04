@@ -27,14 +27,40 @@ import '../models/transaction_entry.dart';
 import 'pdf_report_components.dart';
 
 class TransactionReceiptPdf {
+  /// Prints a receipt for [transaction]. When it is one line of a split
+  /// payment, pass every line of the split (with its GL account description)
+  /// as [splitLines]: the receipt then itemises the lines and totals the
+  /// whole payment rather than showing just the one line.
   static Future<void> generateAndPrint({
     required TransactionEntry transaction,
     required EntityDetails? entity,
     required ContactEntry? contact,
     required GeneralLedgerEntry? glAccount,
     required String Function(int) formatCents,
+    List<({String glAccount, TransactionEntry line})> splitLines = const [],
   }) async {
     final doc = pw.Document();
+
+    final bool isSplit = splitLines.length > 1;
+    final int amount = isSplit
+        ? splitLines.fold(0, (int sum, l) => sum + l.line.amount)
+        : transaction.amount;
+    final int gstAmount = isSplit
+        ? splitLines.fold(0, (int sum, l) => sum + l.line.gstAmount)
+        : transaction.gstAmount;
+    final String glLabel = isSplit
+        ? 'Split across ${splitLines.length} GL codes'
+        : glAccount?.description ?? '-';
+    final String description = isSplit
+        ? [
+            for (final l in splitLines)
+              '${l.glAccount}'
+                  '${l.line.description.isNotEmpty ? ' - ${l.line.description}' : ''}'
+                  ': ${formatCents(l.line.totalAmount)}',
+          ].join('\n')
+        : transaction.description.isNotEmpty
+            ? transaction.description
+            : '-';
 
     final parts = transaction.transactionDate.split('-');
     final dateLabel = parts.length == 3
@@ -99,7 +125,7 @@ class TransactionReceiptPdf {
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Expanded(child: _infoField('Contact', contact?.name ?? '-')),
-                        pw.Expanded(child: _infoField('GL Account', glAccount?.description ?? '-')),
+                        pw.Expanded(child: _infoField('GL Account', glLabel)),
                       ],
                     ),
                     pw.SizedBox(height: 16),
@@ -107,7 +133,7 @@ class TransactionReceiptPdf {
                     pw.Text('DESCRIPTION',
                         style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
                     pw.SizedBox(height: 2),
-                    pw.Text(transaction.description.isNotEmpty ? transaction.description : '-', 
+                    pw.Text(description, 
                         style: const pw.TextStyle(fontSize: 10)),
                     
                     pw.Spacer(),
@@ -121,9 +147,9 @@ class TransactionReceiptPdf {
                         pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.end,
                           children: [
-                            _amountRow('Subtotal (ex GST):', formatCents(transaction.amount)),
+                            _amountRow('Subtotal (ex GST):', formatCents(amount)),
                             pw.SizedBox(height: 4),
-                            _amountRow('GST:', formatCents(transaction.gstAmount)),
+                            _amountRow('GST:', formatCents(gstAmount)),
                             pw.SizedBox(height: 8),
                             pw.Container(
                               padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 10),
@@ -133,7 +159,7 @@ class TransactionReceiptPdf {
                               ),
                               child: _amountRow(
                                 'TOTAL AMOUNT:', 
-                                formatCents(transaction.totalAmount),
+                                formatCents(amount + gstAmount),
                                 isBold: true,
                                 fontSize: 13,
                               ),

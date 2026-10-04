@@ -75,6 +75,43 @@ void main() {
       verify(() => repository.delete(tId, entityId: tEntityId)).called(1);
     });
 
+    test('deletes every line of the split when the transaction is one of its lines',
+        () async {
+      // Arrange
+      Transaction line(String id, int lineNo) => Transaction(
+            id: id,
+            contactId: tTransaction.contactId,
+            generalLedgerId: tTransaction.generalLedgerId,
+            amount: 1000,
+            gstAmount: 0,
+            transactionType: TransactionType.debit,
+            receiptNumber: 'REC-003',
+            description: '',
+            transactionDate: DateTime.utc(2026, 2, 28),
+            createdAt: DateTime.utc(2026, 1, 1),
+            updatedAt: DateTime.utc(2026, 1, 1),
+            splitGroupId: 'group-1',
+            splitLineNo: lineNo,
+          );
+      final group = [line(tId, 1), line('other-line', 2)];
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => group.first);
+      when(() => repository.findBySplitGroup('group-1', entityId: tEntityId))
+          .thenAnswer((_) async => group);
+      when(() => repository.deleteSplitGroup('group-1', entityId: tEntityId))
+          .thenAnswer((_) async {});
+
+      // Act
+      final deleted = await sut.execute(tId, entityId: tEntityId);
+
+      // Assert
+      expect(deleted, equals(group));
+      verify(() => repository.deleteSplitGroup('group-1', entityId: tEntityId))
+          .called(1);
+      verifyNever(
+          () => repository.delete(any(), entityId: any(named: 'entityId')));
+    });
+
     test('throws MonthIsLockedException when transaction month is locked', () async {
       // Arrange
       when(() => lockedMonths.isLocked(tEntityId, tMonthYear))

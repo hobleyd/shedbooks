@@ -40,6 +40,7 @@ import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/split_payments.dart';
 import '../utils/formatters.dart';
 import 'import_cba_screen.dart';
 import 'import_cashflow_manager_screen.dart';
@@ -87,6 +88,10 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   // ── Inline edit state ───────────────────────────────────────────────────────
   String? _editingId;
+
+  /// Split group of the transaction being edited (null when it's an ordinary
+  /// transaction). Only meaningful while [_editingId] is set.
+  String? _editingSplitGroupId;
   bool _editSaving = false;
 
   static const _monthNames = [
@@ -254,14 +259,16 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       return;
     }
 
-    // Identify selected transactions
-    final selectedTxns = _allTransactions
-        .where((t) => _selectedTransactionIds.contains(t.id))
-        .toList();
+    // Identify selected transactions. A split is one payment to the contact,
+    // so selecting any of its lines takes every line of it — the bank file
+    // then carries a single detail record for the split's total.
+    final selectedTxns = _selectedWithSplitSiblings();
+    final List<TransactionPayment> payments = groupIntoPayments(selectedTxns);
 
     // Check for missing contact bank details
     final missingDetails = <String>[];
-    for (final t in selectedTxns) {
+    for (final TransactionPayment payment in payments) {
+      final t = payment.first;
       final contact = _contacts.firstWhere((c) => c.id == t.contactId);
       if (contact.bsb == null ||
           contact.bsb!.isEmpty ||
@@ -306,7 +313,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     // Generate ABA
     try {
       final apiClient = context.read<ApiClient>();
-      final references = selectedTxns.map(_lodgementReference).toList();
+      final references =
+          payments.map((p) => _lodgementReference(p.first)).toList();
       final seqResponse = await apiClient.post(
         '/aba-sequences/next',
         jsonEncode({'references': references}),
@@ -322,7 +330,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       final seq = sequence.toString().padLeft(3, '0');
       final wmsName =
           'WMS${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}$seq';
-      final abaContent = _generateAba(selectedTxns, senderAccount, sequence);
+      final abaContent = _generateAba(payments, senderAccount, sequence);
       final bytes = utf8.encode(abaContent);
       final blob = web.Blob(<JSAny>[bytes.toJS].toJS);
       final url = web.URL.createObjectURL(blob);
@@ -351,6 +359,21 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     }
   }
 
+  /// The selected transactions plus every other line of any split one of
+  /// them belongs to.
+  List<TransactionEntry> _selectedWithSplitSiblings() {
+    final Set<String> selectedGroups = {
+      for (final t in _allTransactions)
+        if (t.splitGroupId != null && _selectedTransactionIds.contains(t.id))
+          t.splitGroupId!,
+    };
+    return _allTransactions
+        .where((t) =>
+            _selectedTransactionIds.contains(t.id) ||
+            selectedGroups.contains(t.splitGroupId))
+        .toList();
+  }
+
   /// Reference used as the bank upload's lodgement reference for [t] — the
   /// Payment Reference when set, falling back to the Receipt No.
   String _lodgementReference(TransactionEntry t) {
@@ -358,8 +381,10 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     return paymentRef != null && paymentRef.isNotEmpty ? paymentRef : t.receiptNumber;
   }
 
+  /// Builds the ABA file with one detail record per payment — a split
+  /// transaction is paid once, for the total of its lines.
   String _generateAba(
-      List<TransactionEntry> txns, BankAccountEntry sender, int sequence) {
+      List<TransactionPayment> payments, BankAccountEntry sender, int sequence) {
     final buffer = StringBuffer();
 
     // Record 0: Descriptive Record
@@ -393,11 +418,12 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     int totalCents = 0;
     int recordCount = 0;
 
-    for (final t in txns) {
+    for (final TransactionPayment payment in payments) {
+      final t = payment.first;
       final contact = _contacts.firstWhere((c) => c.id == t.contactId);
       final bsb = contact.bsb!.replaceAll(RegExp(r'[^0-9]'), '');
       final accNo = contact.accountNumber!.replaceAll(RegExp(r'[^0-9]'), '');
-      final amount = t.totalAmount;
+      final amount = payment.totalAmount;
       final name = contact.name.padRight(32).substring(0, 32).toUpperCase();
       final ref = _lodgementReference(t).padRight(18).substring(0, 18);
 
@@ -683,21 +709,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         context.read<ReferenceDataCache>().refreshContacts();
       }
 
-      final body = jsonEncode({
-        'contactId': contactId,
-        'generalLedgerId': data.gl.id,
-        'amount': data.amountCents,
-        'gstAmount': data.gstCents,
-        'transactionType':
-            data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
-        'receiptNumber': data.receiptNumber,
-        if (data.paymentReference != null) 'paymentReference': data.paymentReference,
-        'description': data.description,
-        'transactionDate':
-            '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
-        'isCash': data.isCash,
-        'bankAccountId': data.bankAccountId,
-      });
+      final body = _transactionBody(data, contactId, asLines: data.isSplit);
 
       final res = await context.read<ApiClient>().post('/transactions', body);
       if (!mounted) return;
@@ -721,6 +733,36 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  /// JSON body for `POST /transactions` and `PUT /transactions/:id`.
+  ///
+  /// With [asLines] the general ledger coding is sent as a `lines` array —
+  /// one entry per GL line of a split payment — instead of the single
+  /// `generalLedgerId` / `amount` / `gstAmount` / `description` fields.
+  String _transactionBody(
+    TransactionFormData data,
+    String? contactId, {
+    required bool asLines,
+  }) =>
+      jsonEncode({
+        'contactId': contactId,
+        if (asLines)
+          'lines': [for (final line in data.lines) line.toJson()]
+        else ...{
+          'generalLedgerId': data.gl.id,
+          'amount': data.amountCents,
+          'gstAmount': data.gstCents,
+          'description': data.description,
+        },
+        'transactionType':
+            data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
+        'receiptNumber': data.receiptNumber,
+        'paymentReference': data.paymentReference,
+        'transactionDate':
+            '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
+        'isCash': data.isCash,
+        'bankAccountId': data.bankAccountId,
+      });
 
   Future<void> _openImport() async {
     final didImport = await Navigator.push<bool>(
@@ -754,8 +796,11 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
   // ── Inline edit ─────────────────────────────────────────────────────────────
 
-  void _startEdit(TransactionEntry t) =>
-      setState(() { _editingId = t.id; _editSaving = false; });
+  void _startEdit(TransactionEntry t) => setState(() {
+        _editingId = t.id;
+        _editingSplitGroupId = t.splitGroupId;
+        _editSaving = false;
+      });
 
   void _cancelEdit() => setState(() { _editingId = null; _editSaving = false; });
 
@@ -794,21 +839,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         context.read<ReferenceDataCache>().refreshContacts();
       }
 
-      final body = jsonEncode({
-        'contactId': contactId,
-        'generalLedgerId': data.gl.id,
-        'amount': data.amountCents,
-        'gstAmount': data.gstCents,
-        'transactionType':
-            data.gl.direction == GlDirection.moneyOut ? 'debit' : 'credit',
-        'receiptNumber': data.receiptNumber,
-        'paymentReference': data.paymentReference,
-        'description': data.description,
-        'transactionDate':
-            '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
-        'isCash': data.isCash,
-        'bankAccountId': data.bankAccountId,
-      });
+      // A transaction that is (or is becoming) a split is saved as its full
+      // set of lines; the server replaces every line of the split together.
+      final body = _transactionBody(
+        data,
+        contactId,
+        asLines: data.isSplit || _editingSplitGroupId != null,
+      );
 
       final res = await context.read<ApiClient>().put('/transactions/$_editingId', body);
       if (!mounted) return;
@@ -834,14 +871,22 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     final dateLabel = parts.length == 3
         ? '${parts[2]}/${parts[1]}/${parts[0]}'
         : t.transactionDate;
+    final List<TransactionEntry> splitLines = splitLinesOf(t, _allTransactions);
+    final int splitTotal = TransactionPayment(splitLines).totalAmount;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete transaction?'),
         content: Text(
-          'Delete the ${t.isCredit ? 'income' : 'expense'} of '
-          '${_formatCents(t.totalAmount)} for '
-          '${_contactName(t.contactId) ?? '—'} on $dateLabel?',
+          splitLines.length > 1
+              ? 'This is one line of a payment split across '
+                  '${splitLines.length} GL codes. Delete the whole '
+                  '${_formatCents(splitTotal)} payment for '
+                  '${_contactName(t.contactId) ?? '—'} on $dateLabel '
+                  '(all ${splitLines.length} lines)?'
+              : 'Delete the ${t.isCredit ? 'income' : 'expense'} of '
+                  '${_formatCents(t.totalAmount)} for '
+                  '${_contactName(t.contactId) ?? '—'} on $dateLabel?',
         ),
         actions: [
           TextButton(
@@ -1242,7 +1287,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           FilledButton.icon(
             onPressed: _handleBankUpload,
             icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
-            label: Text('Bank Upload (${_selectedTransactionIds.length})'),
+            label: Text(
+                'Bank Upload (${groupIntoPayments(_selectedWithSplitSiblings()).length})'),
           ),
         ],
       ],
@@ -1415,8 +1461,23 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     );
   }
 
+  /// Marks a row as one line of a payment split across several GL codes.
+  Widget _splitBadge(TransactionEntry t) {
+    final List<TransactionEntry> lines = splitLinesOf(t, _allTransactions);
+    return Tooltip(
+      message: 'Split payment — line ${t.splitLineNo ?? 1} of ${lines.length}, '
+          'payment total ${_formatCents(TransactionPayment(lines).totalAmount)}',
+      child: Icon(Icons.call_split,
+          size: 14, color: Theme.of(context).colorScheme.primary),
+    );
+  }
+
   Widget _buildTransactionRow(TransactionEntry t, bool isMoneyOut) {
     if (_editingId == t.id) {
+      // A split is edited as a whole: the form opens on its first line with
+      // the remaining lines beneath, whichever line's Edit was clicked.
+      final List<TransactionEntry> splitLines =
+          splitLinesOf(t, _allTransactions);
       return Column(
         children: [
           TransactionForm(
@@ -1425,7 +1486,8 @@ class _TransactionsScreenState extends State<TransactionsScreen>
             glEntries: _glEntries,
             bankAccounts: _bankAccountSummaries,
             nextMoneyOutReceipt: _formatMoneyOutReceipt(),
-            initial: t,
+            initial: splitLines.first,
+            initialSplitLines: splitLines.skip(1).toList(),
             compact: true,
             isSaving: _editSaving,
             onSave: _saveEdit,
@@ -1434,6 +1496,13 @@ class _TransactionsScreenState extends State<TransactionsScreen>
           const Divider(height: 1),
         ],
       );
+    }
+
+    // The other lines of a split being edited are shown inside the edit form.
+    if (_editingId != null &&
+        t.splitGroupId != null &&
+        t.splitGroupId == _editingSplitGroupId) {
+      return const SizedBox.shrink();
     }
 
     final parts = t.transactionDate.split('-');
@@ -1463,10 +1532,17 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                           value: _selectedTransactionIds.contains(t.id),
                           onChanged: (v) {
                             setState(() {
+                              // A split is selected as a whole — it is
+                              // one payment on the bank upload.
+                              final List<String> ids = [
+                                for (final line
+                                    in splitLinesOf(t, _allTransactions))
+                                  line.id,
+                              ];
                               if (v == true) {
-                                _selectedTransactionIds.add(t.id);
+                                _selectedTransactionIds.addAll(ids);
                               } else {
-                                _selectedTransactionIds.remove(t.id);
+                                _selectedTransactionIds.removeAll(ids);
                               }
                             });
                           },
@@ -1486,10 +1562,20 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               ),
               SizedBox(
                 width: 150,
-                child: Text(
-                  _glDescription(t.generalLedgerId) ?? '—',
-                  style: const TextStyle(fontSize: 13),
-                  overflow: TextOverflow.ellipsis,
+                child: Row(
+                  children: [
+                    if (t.isSplit) ...[
+                      _splitBadge(t),
+                      const SizedBox(width: 4),
+                    ],
+                    Expanded(
+                      child: Text(
+                        _glDescription(t.generalLedgerId) ?? '—',
+                        style: const TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
@@ -1591,6 +1677,16 @@ class _TransactionsScreenState extends State<TransactionsScreen>
                               contact: contact,
                               glAccount: gl,
                               formatCents: _formatCents,
+                              splitLines: [
+                                for (final line
+                                    in splitLinesOf(t, _allTransactions))
+                                  (
+                                    glAccount:
+                                        _glDescription(line.generalLedgerId) ??
+                                            'Unknown',
+                                    line: line,
+                                  ),
+                              ],
                             );
                           },
                           tooltip: 'Print PDF Receipt',

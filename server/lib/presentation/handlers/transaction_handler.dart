@@ -23,11 +23,13 @@ import '../request_identity.dart';
 import '../../application/contact/get_contact_use_case.dart';
 import '../../application/general_ledger/get_general_ledger_use_case.dart';
 import '../../application/transaction/bank_match_transactions_use_case.dart';
+import '../../application/transaction/create_split_transaction_use_case.dart';
 import '../../application/transaction/create_transaction_use_case.dart';
 import '../../application/transaction/delete_transaction_use_case.dart';
 import '../../application/transaction/get_transaction_use_case.dart';
 import '../../application/transaction/list_transactions_use_case.dart';
 import '../../application/transaction/stamp_aba_batch_use_case.dart';
+import '../../application/transaction/update_split_transaction_use_case.dart';
 import '../../application/transaction/update_transaction_use_case.dart';
 import '../../domain/entities/transaction.dart';
 import '../../domain/exceptions/locked_month_exception.dart';
@@ -35,6 +37,7 @@ import '../../domain/exceptions/transaction_exception.dart';
 import '../audit_changes.dart';
 import '../dto/bank_match_request.dart';
 import '../dto/create_transaction_request.dart';
+import '../dto/split_transaction_request.dart';
 import '../dto/stamp_aba_batch_request.dart';
 import '../dto/transaction_response.dart';
 import '../dto/update_transaction_request.dart';
@@ -43,9 +46,11 @@ import 'handler_diff.dart';
 /// Shelf request handlers for the /transactions resource.
 class TransactionHandler {
   final CreateTransactionUseCase _create;
+  final CreateSplitTransactionUseCase _createSplit;
   final GetTransactionUseCase _get;
   final ListTransactionsUseCase _list;
   final UpdateTransactionUseCase _update;
+  final UpdateSplitTransactionUseCase _updateSplit;
   final DeleteTransactionUseCase _delete;
   final BankMatchTransactionsUseCase _bankMatch;
   final StampAbaBatchUseCase _stampAbaBatch;
@@ -54,18 +59,22 @@ class TransactionHandler {
 
   const TransactionHandler({
     required CreateTransactionUseCase create,
+    required CreateSplitTransactionUseCase createSplit,
     required GetTransactionUseCase get,
     required ListTransactionsUseCase list,
     required UpdateTransactionUseCase update,
+    required UpdateSplitTransactionUseCase updateSplit,
     required DeleteTransactionUseCase delete,
     required BankMatchTransactionsUseCase bankMatch,
     required StampAbaBatchUseCase stampAbaBatch,
     required GetContactUseCase getContact,
     required GetGeneralLedgerUseCase getGeneralLedger,
   })  : _create = create,
+        _createSplit = createSplit,
         _get = get,
         _list = list,
         _update = update,
+        _updateSplit = updateSplit,
         _delete = delete,
         _bankMatch = bankMatch,
         _stampAbaBatch = stampAbaBatch,
@@ -85,6 +94,9 @@ class TransactionHandler {
   }
 
   /// POST /transactions
+  ///
+  /// A body carrying a `lines` array creates a split transaction (one row per
+  /// general ledger line) and responds with the array of created rows.
   Future<Response> handleCreate(Request request) async {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
@@ -94,6 +106,10 @@ class TransactionHandler {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
     } catch (_) {
       return _badRequest('Request body must be valid JSON');
+    }
+
+    if (SplitTransactionRequest.isSplit(json)) {
+      return _handleCreateSplit(request, json, entityId);
     }
 
     final CreateTransactionRequest dto;
@@ -133,6 +149,39 @@ class TransactionHandler {
     }
   }
 
+  Future<Response> _handleCreateSplit(
+    Request request,
+    Map<String, dynamic> json,
+    String entityId,
+  ) async {
+    final SplitTransactionRequest dto;
+    try {
+      dto = SplitTransactionRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    }
+
+    try {
+      final List<Transaction> transactions = await _createSplit.execute(
+        entityId: entityId,
+        contactId: dto.contactId,
+        transactionType: dto.transactionType,
+        receiptNumber: dto.receiptNumber,
+        paymentReference: dto.paymentReference,
+        transactionDate: dto.transactionDate,
+        isCash: dto.isCash ?? false,
+        bankAccountId: dto.bankAccountId,
+        lines: dto.lines,
+      );
+      _auditChanges(request)?.set(await _groupSnapshot(transactions, entityId));
+      return Response(201, body: _listBody(transactions), headers: _jsonHeaders);
+    } on MonthIsLockedException catch (e) {
+      return _locked(e.message);
+    } on TransactionValidationException catch (e) {
+      return _badRequest(e.message);
+    }
+  }
+
   /// GET /transactions/:id
   Future<Response> handleGet(Request request, String id) async {
     final entityId = _entityId(request);
@@ -150,6 +199,10 @@ class TransactionHandler {
   }
 
   /// PUT /transactions/:id
+  ///
+  /// A body carrying a `lines` array replaces the transaction — and, when it
+  /// is one line of a split, every line of that split — with those lines, and
+  /// responds with the array of resulting rows.
   Future<Response> handleUpdate(Request request, String id) async {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
@@ -159,6 +212,10 @@ class TransactionHandler {
       json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
     } catch (_) {
       return _badRequest('Request body must be valid JSON');
+    }
+
+    if (SplitTransactionRequest.isSplit(json)) {
+      return _handleUpdateSplit(request, id, json, entityId);
     }
 
     final UpdateTransactionRequest dto;
@@ -213,19 +270,61 @@ class TransactionHandler {
     }
   }
 
+  Future<Response> _handleUpdateSplit(
+    Request request,
+    String id,
+    Map<String, dynamic> json,
+    String entityId,
+  ) async {
+    final SplitTransactionRequest dto;
+    try {
+      dto = SplitTransactionRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    }
+
+    try {
+      final SplitUpdateResult result = await _updateSplit.execute(
+        id: id,
+        entityId: entityId,
+        contactId: dto.contactId,
+        transactionType: dto.transactionType,
+        receiptNumber: dto.receiptNumber,
+        paymentReference: dto.paymentReference,
+        transactionDate: dto.transactionDate,
+        isCash: dto.isCash,
+        bankAccountId: dto.bankAccountId,
+        lines: dto.lines,
+      );
+      final diff = diffMaps(
+        await _groupSnapshot(result.before, entityId),
+        await _groupSnapshot(result.after, entityId),
+      );
+      if (diff.isNotEmpty) _auditChanges(request)?.set(diff);
+      return Response.ok(_listBody(result.after), headers: _jsonHeaders);
+    } on MonthIsLockedException catch (e) {
+      return _locked(e.message);
+    } on TransactionNotFoundException catch (e) {
+      return _notFound(e.message);
+    } on TransactionValidationException catch (e) {
+      return _badRequest(e.message);
+    }
+  }
+
   /// DELETE /transactions/:id
+  ///
+  /// Deleting one line of a split deletes every line of that split.
   Future<Response> handleDelete(Request request, String id) async {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
 
-    Transaction? before;
     try {
-      before = await _get.execute(id, entityId: entityId);
-    } catch (_) {}
-
-    try {
-      await _delete.execute(id, entityId: entityId);
-      if (before != null) {
+      final List<Transaction> deleted =
+          await _delete.execute(id, entityId: entityId);
+      if (deleted.length > 1) {
+        _auditChanges(request)?.set(await _groupSnapshot(deleted, entityId));
+      } else if (deleted.isNotEmpty) {
+        final Transaction before = deleted.first;
         final contactLabel = await _contactLabel(before.contactId, entityId);
         final glLabel = await _glLabel(before.generalLedgerId, entityId);
         _auditChanges(request)?.set(_txSnapshot(before, contactLabel, glLabel));
@@ -364,6 +463,40 @@ class TransactionHandler {
         'description': t.description,
         'transactionDate': t.transactionDate.toIso8601String(),
       };
+
+  /// Audit snapshot of a set of rows saved together — the fields they share,
+  /// plus one entry per general ledger line. A single row yields one line, so
+  /// the before/after of a split conversion diff cleanly against each other.
+  Future<Map<String, dynamic>> _groupSnapshot(
+    List<Transaction> transactions,
+    String entityId,
+  ) async {
+    if (transactions.isEmpty) return {};
+    final Transaction first = transactions.first;
+    final List<Map<String, dynamic>> lines = [];
+    for (final Transaction t in transactions) {
+      lines.add({
+        'generalLedger': await _glLabel(t.generalLedgerId, entityId),
+        'amount': t.amount,
+        'gstAmount': t.gstAmount,
+        'description': t.description,
+      });
+    }
+    return {
+      'contact': await _contactLabel(first.contactId, entityId),
+      'transactionType': first.transactionType.name,
+      'receiptNumber': first.receiptNumber,
+      'paymentReference': first.paymentReference,
+      'transactionDate': first.transactionDate.toIso8601String(),
+      'totalAmount':
+          transactions.fold<int>(0, (int sum, Transaction t) => sum + t.totalAmount),
+      'lines': lines,
+    };
+  }
+
+  static String _listBody(List<Transaction> transactions) => jsonEncode(
+        transactions.map((t) => TransactionResponse.fromEntity(t).toJson()).toList(),
+      );
 
   static Response _orgRequired() => Response.unauthorized(
         jsonEncode({'error': 'Organization authentication required'}),

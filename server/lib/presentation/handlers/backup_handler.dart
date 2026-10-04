@@ -83,7 +83,7 @@ class BackupHandler {
                transaction_type::text AS transaction_type,
                receipt_number, payment_reference, description, transaction_date, is_cash,
                created_at, updated_at, deleted_at, bank_matched,
-               bank_account_id::text
+               bank_account_id::text, split_group_id::text, split_line_no
         FROM transactions WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -606,13 +606,13 @@ class BackupHandler {
                 (id, entity_id, contact_id, general_ledger_id, amount,
                  gst_amount, transaction_type, receipt_number, payment_reference, description,
                  transaction_date, is_cash, created_at, updated_at, deleted_at,
-                 bank_matched, bank_account_id)
+                 bank_matched, bank_account_id, split_group_id, split_line_no)
               VALUES (
                 @id::uuid, @e, @cid::uuid, @glid::uuid,
                 @amt, @gst, @tt::transaction_type,
                 @rcpt, @pref, @desc, @td::date, @ic,
                 @ca::timestamptz, @ua::timestamptz, @da::timestamptz, @bm,
-                @bai::uuid
+                @bai::uuid, @sgid::uuid, @sln
               )
             '''),
             parameters: {
@@ -633,6 +633,8 @@ class BackupHandler {
               'da': r['deleted_at'],
               'bm': (r['bank_matched'] as bool?) ?? false,
               'bai': r['bank_account_id'] as String?,
+              'sgid': r['split_group_id'] as String?,
+              'sln': r['split_line_no'] as int?,
             },
           );
         }

@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import '../../domain/entities/transaction.dart';
 import '../../domain/exceptions/locked_month_exception.dart';
 import '../../domain/exceptions/transaction_exception.dart';
 import '../../domain/repositories/i_locked_month_repository.dart';
@@ -27,7 +28,10 @@ class DeleteTransactionUseCase {
 
   const DeleteTransactionUseCase(this._repository, this._lockedMonths);
 
-  Future<void> execute(String id, {required String entityId}) async {
+  /// Soft-deletes the transaction [id]. When it is one line of a split, every
+  /// line of that split is deleted with it — they are a single payment.
+  /// Returns the rows that were deleted.
+  Future<List<Transaction>> execute(String id, {required String entityId}) async {
     final existing = await _repository.findById(id, entityId: entityId);
     if (existing == null) throw TransactionNotFoundException(id);
 
@@ -36,7 +40,16 @@ class DeleteTransactionUseCase {
       throw MonthIsLockedException(monthYear);
     }
 
-    await _repository.delete(id, entityId: entityId);
+    final String? splitGroupId = existing.splitGroupId;
+    if (splitGroupId == null) {
+      await _repository.delete(id, entityId: entityId);
+      return [existing];
+    }
+
+    final List<Transaction> group =
+        await _repository.findBySplitGroup(splitGroupId, entityId: entityId);
+    await _repository.deleteSplitGroup(splitGroupId, entityId: entityId);
+    return group;
   }
 
   static String _monthYear(DateTime date) =>

@@ -103,6 +103,13 @@ Example: `P-?YY###` matches `P-26062` or `P26062` (dash optional); `example()` r
 
 Asset numbers use a separate but token-compatible format: `entity_details.asset_no_format` (default `YYYY-{S}-####`), where `{S}` resolves to the first letter (upper-cased) of the asset's selected Section. Generated server-side by `GetNextAssetNoUseCase` (mirrors `GetNextInvoiceNumberUseCase`'s stateless max-scan approach, scoped by the resolved prefix via `IAssetRepository.findAssetNosLike`).
 
+## Split Transactions (one payment, several GL codes)
+A Money-Out payment coded to several GL accounts is stored as **one ordinary `transactions` row per GL line**, tied together by `split_group_id` (+ `split_line_no` for order; migration 063). The lines share contact, date, receipt number, payment reference, bank account and cash flag.
+
+- **Reports work per row** — P&L, BAS, monthly report, dashboard and exports group on each row's `general_ledger_id`, so split lines need no special handling there.
+- **Anything about money actually moving works per payment** — ABA export, bank reconciliation / CBA import matching and the manual-match dialog must treat a split as a single amount (the sum of its lines). Use `client/lib/utils/split_payments.dart` (`groupIntoPayments`, `splitLinesOf`, `TransactionPayment`) rather than iterating rows.
+- **API**: `POST /transactions` and `PUT /transactions/:id` accept a `lines[]` array (and then return an array of rows). A PUT with `lines` replaces every line of the split atomically (soft-delete + re-insert, so row ids change); one line collapses it back to an ordinary transaction. A plain PUT on one line of a split is rejected, DELETE removes the whole split, and `bankMatch` / `stampAbaBatch` extend to sibling lines server-side.
+
 ## PostgreSQL / Dart Package Notes
 - Use `Sql.named()` for parameterised queries. Cast JSONB parameters explicitly: `@param::jsonb`.
 - Pass JSONB as `jsonEncode(map)` in parameters; on read, handle both `Map` (already decoded) and `String` (decode manually).

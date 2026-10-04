@@ -37,6 +37,8 @@ class TransactionResponse {
   final bool isCash;
   final String? abaBatchName;
   final String? bankAccountId;
+  final String? splitGroupId;
+  final int? splitLineNo;
 
   const TransactionResponse({
     required this.id,
@@ -56,6 +58,8 @@ class TransactionResponse {
     required this.isCash,
     this.abaBatchName,
     this.bankAccountId,
+    this.splitGroupId,
+    this.splitLineNo,
   });
 
   factory TransactionResponse.fromEntity(Transaction entity) {
@@ -77,6 +81,8 @@ class TransactionResponse {
       isCash: entity.isCash,
       abaBatchName: entity.abaBatchName,
       bankAccountId: entity.bankAccountId,
+      splitGroupId: entity.splitGroupId,
+      splitLineNo: entity.splitLineNo,
     );
   }
 
@@ -98,6 +104,8 @@ class TransactionResponse {
         'isCash': isCash,
         if (abaBatchName != null) 'abaBatchName': abaBatchName,
         if (bankAccountId != null) 'bankAccountId': bankAccountId,
+        if (splitGroupId != null) 'splitGroupId': splitGroupId,
+        if (splitLineNo != null) 'splitLineNo': splitLineNo,
       };
 
   String toJsonString() => jsonEncode(toJson());

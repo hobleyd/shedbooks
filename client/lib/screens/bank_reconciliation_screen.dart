@@ -163,19 +163,21 @@ RecRowMatchResult matchRecDebitRow({
     }
   }
 
-  final candidates = allTransactions
-      .where((t) =>
+  // A split transaction is compared at the total of its lines — it is one
+  // amount on the bank statement — and matched as a whole.
+  final candidatePayments = paymentsTotalling(
+      allTransactions.where((t) =>
           !t.bankMatched &&
           !reservedIds.contains(t.id) &&
           (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
           t.transactionType == 'debit' &&
-          t.transactionDate == processDate &&
-          t.totalAmount == amountCents)
-      .toList();
+          t.transactionDate == processDate),
+      amountCents);
+  final candidates = [for (final p in candidatePayments) ...p.lines];
 
-  if (candidates.length == 1) {
+  if (candidatePayments.length == 1) {
     return (status: BankMatchStatus.autoMatched, matched: candidates, invoiceMatch: null);
-  } else if (candidates.length > 1) {
+  } else if (candidatePayments.length > 1) {
     final disambiguated = disambiguateByContactName(candidates, description, contactNames);
     return disambiguated != null
         ? (status: BankMatchStatus.autoMatched, matched: disambiguated, invoiceMatch: null)
@@ -257,19 +259,21 @@ RecRowMatchResult matchRecCreditRow({
     }
   }
 
-  final candidates = allTransactions
-      .where((t) =>
+  // A split transaction is compared at the total of its lines — it is one
+  // amount on the bank statement — and matched as a whole.
+  final candidatePayments = paymentsTotalling(
+      allTransactions.where((t) =>
           !t.bankMatched &&
           !reservedIds.contains(t.id) &&
           (t.bankAccountId == null || t.bankAccountId == selectedBankAccountId) &&
           t.transactionType == 'credit' &&
-          t.transactionDate == processDate &&
-          t.totalAmount == amountCents)
-      .toList();
+          t.transactionDate == processDate),
+      amountCents);
+  final candidates = [for (final p in candidatePayments) ...p.lines];
 
-  if (candidates.length == 1) {
+  if (candidatePayments.length == 1) {
     return (status: BankMatchStatus.autoMatched, matched: candidates, invoiceMatch: null);
-  } else if (candidates.length > 1) {
+  } else if (candidatePayments.length > 1) {
     final disambiguated = disambiguateByContactName(candidates, description, contactNames);
     return disambiguated != null
         ? (status: BankMatchStatus.autoMatched, matched: disambiguated, invoiceMatch: null)

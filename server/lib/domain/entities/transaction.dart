@@ -75,6 +75,14 @@ class Transaction {
   /// legacy transactions recorded before this was tracked.
   final String? bankAccountId;
 
+  /// Shared by every row of one split transaction (a single payment coded to
+  /// several general ledger accounts); null for an ordinary transaction.
+  final String? splitGroupId;
+
+  /// 1-based position of this row within its split; null for an ordinary
+  /// transaction.
+  final int? splitLineNo;
+
   const Transaction({
     required this.id,
     required this.contactId,
@@ -93,9 +101,14 @@ class Transaction {
     this.isCash = false,
     this.abaBatchName,
     this.bankAccountId,
+    this.splitGroupId,
+    this.splitLineNo,
   });
 
   bool get isDeleted => deletedAt != null;
+
+  /// Whether this row is one line of a split transaction.
+  bool get isSplit => splitGroupId != null;
 
   /// Total value of the transaction including GST, in cents.
   int get totalAmount => amount + gstAmount;

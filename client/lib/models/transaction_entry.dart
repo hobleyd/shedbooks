@@ -33,6 +33,13 @@ class TransactionEntry {
   final String? abaBatchName;
   final String? bankAccountId;
 
+  /// Shared by every row of one split transaction (a single payment coded to
+  /// several GL accounts); null for an ordinary transaction.
+  final String? splitGroupId;
+
+  /// 1-based position of this row within its split; null when not split.
+  final int? splitLineNo;
+
   const TransactionEntry({
     required this.id,
     required this.contactId,
@@ -49,6 +56,8 @@ class TransactionEntry {
     this.isCash = false,
     this.abaBatchName,
     this.bankAccountId,
+    this.splitGroupId,
+    this.splitLineNo,
   });
 
   factory TransactionEntry.fromJson(Map<String, dynamic> json) => TransactionEntry(
@@ -67,9 +76,14 @@ class TransactionEntry {
         isCash: (json['isCash'] as bool?) ?? false,
         abaBatchName: json['abaBatchName'] as String?,
         bankAccountId: json['bankAccountId'] as String?,
+        splitGroupId: json['splitGroupId'] as String?,
+        splitLineNo: json['splitLineNo'] as int?,
       );
 
   bool get isCredit => transactionType == 'credit';
+
+  /// Whether this row is one line of a split transaction.
+  bool get isSplit => splitGroupId != null;
 
   TransactionEntry copyWith({
     bool? bankMatched,
@@ -92,5 +106,7 @@ class TransactionEntry {
         isCash: isCash,
         abaBatchName: abaBatchName,
         bankAccountId: bankAccountId ?? this.bankAccountId,
+        splitGroupId: splitGroupId,
+        splitLineNo: splitLineNo,
       );
 }

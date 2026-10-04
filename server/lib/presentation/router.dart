@@ -119,11 +119,13 @@ import '../application/locked_month/list_locked_months_use_case.dart';
 import '../application/locked_month/lock_month_use_case.dart';
 import '../application/locked_month/unlock_month_use_case.dart';
 import '../application/transaction/bank_match_transactions_use_case.dart';
+import '../application/transaction/create_split_transaction_use_case.dart';
 import '../application/transaction/create_transaction_use_case.dart';
 import '../application/transaction/delete_transaction_use_case.dart';
 import '../application/transaction/get_transaction_use_case.dart';
 import '../application/transaction/list_transactions_use_case.dart';
 import '../application/transaction/stamp_aba_batch_use_case.dart';
+import '../application/transaction/update_split_transaction_use_case.dart';
 import '../application/transaction/update_transaction_use_case.dart';
 import '../application/capex_request/create_capex_request_use_case.dart';
 import '../application/capex_request/decide_capex_request_use_case.dart';
@@ -236,9 +238,11 @@ Handler buildRouter({
   final transactionRepository = PostgresTransactionRepository(pool);
   final transactionHandler = TransactionHandler(
     create: CreateTransactionUseCase(transactionRepository, lockedMonthRepository),
+    createSplit: CreateSplitTransactionUseCase(transactionRepository, lockedMonthRepository),
     get: GetTransactionUseCase(transactionRepository),
     list: ListTransactionsUseCase(transactionRepository),
     update: UpdateTransactionUseCase(transactionRepository, lockedMonthRepository),
+    updateSplit: UpdateSplitTransactionUseCase(transactionRepository, lockedMonthRepository),
     delete: DeleteTransactionUseCase(transactionRepository, lockedMonthRepository),
     bankMatch: BankMatchTransactionsUseCase(transactionRepository, lockedMonthRepository),
     stampAbaBatch: StampAbaBatchUseCase(transactionRepository),

@@ -191,7 +191,168 @@ Future<void> _selectContact(WidgetTester tester, String name) async {
   await tester.pumpAndSettle();
 }
 
+/// Compact edit harness for [_tx] with optional further split lines, capturing
+/// what the form passes to its save handler.
+Widget _splitHarness({
+  List<TransactionEntry> splitLines = const [],
+  void Function(TransactionFormData)? onSave,
+}) =>
+    _withGstRateCache(MaterialApp(
+      home: Scaffold(
+        body: TransactionForm(
+          contacts: _contacts,
+          glEntries: const [_gl, _glOther, _glNoGst],
+          bankAccounts: const [_bankCash, _bankA],
+          nextMoneyOutReceipt: 'P-26002',
+          initial: _tx,
+          initialSplitLines: splitLines,
+          compact: true,
+          isSaving: false,
+          onSave: onSave ?? (_) {},
+        ),
+      ),
+    ));
+
 void main() {
+  group('Split across GL codes', () {
+    final TransactionEntry secondLine = TransactionEntry(
+      id: 't2',
+      contactId: 'c1',
+      generalLedgerId: 'gl2',
+      receiptNumber: 'P-26001',
+      description: 'Labour',
+      transactionType: 'debit',
+      amount: 5000,
+      gstAmount: 0,
+      totalAmount: 5000,
+      transactionDate: '2026-04-01',
+      splitGroupId: 'g1',
+      splitLineNo: 2,
+    );
+
+    testWidgets('an ordinary Money-Out transaction saves with no extra lines',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(_splitHarness(onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(find.text('Split across GL codes'), findsOneWidget);
+      expect(find.byKey(const ValueKey('split-payment-total')), findsNothing);
+      expect(saved, isNotNull);
+      expect(saved!.isSplit, isFalse);
+      expect(saved!.lines.length, 1);
+    });
+
+    testWidgets('loads the other lines of a split and saves every line',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(
+          _splitHarness(splitLines: [secondLine], onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(find.text('Payment total \$160.00  (incl. GST \$10.00)'), findsOneWidget);
+      expect(saved!.isSplit, isTrue);
+      expect(saved!.lines.map((l) => l.gl.id), ['gl1', 'gl2']);
+      expect(saved!.lines.map((l) => l.amountCents), [10000, 5000]);
+      expect(saved!.lines.map((l) => l.gstCents), [1000, 0]);
+      expect(saved!.extraLines.single.description, 'Labour');
+      expect(saved!.extraLines.single.toJson(), {
+        'generalLedgerId': 'gl2',
+        'amount': 5000,
+        'gstAmount': 0,
+        'description': 'Labour',
+      });
+    });
+
+    testWidgets('adding a line without a GL account blocks the save',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(_splitHarness(onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(find.text('Split across GL codes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(find.text('Add GL line'), findsOneWidget);
+      expect(saved, isNull);
+      expect(
+        find.text('Split line 2: please select a general ledger account'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a new line calculates its own GST and updates the payment total',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(_splitHarness(onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Split across GL codes'));
+      await tester.pumpAndSettle();
+
+      // Act — second line: GST-applicable Postage, $22.00 inc GST.
+      await tester.tap(find.byType(DropdownButton<GeneralLedgerEntry>).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Postage').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(_fieldLabeled('Total').last, '22.00');
+      await tester.pump();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(find.text('Payment total \$132.00  (incl. GST \$12.00)'), findsOneWidget);
+      expect(saved!.lines.map((l) => l.gl.id), ['gl1', 'gl3']);
+      expect(saved!.extraLines.single.amountCents, 2000);
+      expect(saved!.extraLines.single.gstCents, 200);
+    });
+
+    testWidgets('removing the extra line turns the split back into one line',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(
+          _splitHarness(splitLines: [secondLine], onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(find.byTooltip('Remove this GL line'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(saved!.isSplit, isFalse);
+      expect(saved!.lines.single.gl.id, 'gl1');
+    });
+
+    testWidgets('Money-In offers no split option', (tester) async {
+      // Arrange / Act
+      await tester.pumpWidget(_multiAccountHarness(GlDirection.moneyIn));
+      await tester.pumpAndSettle();
+
+      // Assert
+      expect(find.text('Split across GL codes'), findsNothing);
+    });
+  });
+
   testWidgets('editing GST after Total was set recalculates Amount ex GST',
       (tester) async {
     await tester.pumpWidget(_editHarness());

@@ -292,6 +292,45 @@ void main() {
       expect(result.transactionType, equals(TransactionType.debit));
     });
 
+    test('throws TransactionValidationException when the transaction is one line of a split',
+        () async {
+      // Arrange
+      final tSplitLine = Transaction(
+        id: tId,
+        contactId: tExisting.contactId,
+        generalLedgerId: tExisting.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        description: '',
+        transactionDate: tDate,
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 1),
+        splitGroupId: 'group-1',
+        splitLineNo: 1,
+      );
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tSplitLine);
+
+      // Act / Assert
+      await expectLater(
+        () => sut.execute(
+          id: tId,
+          entityId: tEntityId,
+          contactId: 'c1',
+          generalLedgerId: 'g1',
+          amount: 1000,
+          gstAmount: 0,
+          transactionType: TransactionType.debit,
+          receiptNumber: 'REC-001',
+          description: '',
+          transactionDate: tDate,
+        ),
+        throwsA(isA<TransactionValidationException>()),
+      );
+    });
+
     test('throws MonthIsLockedException when existing transaction month is locked',
         () async {
       // Arrange

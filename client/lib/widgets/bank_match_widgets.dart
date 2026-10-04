@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 
 import '../models/invoice_entry.dart';
 import '../models/transaction_entry.dart';
+import '../utils/split_payments.dart';
 
 // ── Shared matching status ────────────────────────────────────────────────────
 
@@ -61,33 +62,52 @@ String formatAmount(int cents) {
 /// total) and duplicate full-amount entries (two entries for the same receipt
 /// both carrying the full amount — only one is selected).
 ///
-/// Uses bitmask enumeration: safe for up to 20 records (2^20 ≈ 1 M iterations).
+/// The lines of a split transaction (one payment coded to several GL
+/// accounts, see [TransactionPayment]) are never separated: a split is either
+/// wholly in the returned subset or wholly out of it, counted at the total of
+/// its lines — it is a single amount on the bank statement.
+///
+/// Uses bitmask enumeration: safe for up to 20 payments (2^20 ≈ 1 M iterations).
 /// Returns `null` for larger inputs rather than blocking.
 List<TransactionEntry>? findMatchingSubset(
     List<TransactionEntry> records, int target) {
-  final n = records.length;
+  final List<TransactionPayment> payments = groupIntoPayments(records);
+  final n = payments.length;
   if (n > 20) return null;
   for (int mask = 1; mask < (1 << n); mask++) {
     int sum = 0;
     for (int i = 0; i < n; i++) {
-      if ((mask >> i) & 1 == 1) sum += records[i].totalAmount;
+      if ((mask >> i) & 1 == 1) sum += payments[i].totalAmount;
     }
     if (sum == target) {
       return [
         for (int i = 0; i < n; i++)
-          if ((mask >> i) & 1 == 1) records[i],
+          if ((mask >> i) & 1 == 1) ...payments[i].lines,
       ];
     }
   }
   return null;
 }
 
+/// The payments among [transactions] — single transactions, or whole split
+/// transactions — whose total equals [amountCents]. Used for date + amount
+/// matching, where a split must be compared at the total of its lines rather
+/// than line by line.
+List<TransactionPayment> paymentsTotalling(
+  Iterable<TransactionEntry> transactions,
+  int amountCents,
+) =>
+    groupIntoPayments(transactions)
+        .where((TransactionPayment p) => p.totalAmount == amountCents)
+        .toList();
+
 /// When [candidates] contains more than one transaction, attempts to narrow
 /// the list to a single entry by looking for a contact name inside
 /// [bankDescription]. Returns that one entry as a single-element list if
 /// exactly one candidate's contact name is found in the description;
 /// returns `null` if zero or more than one match (caller falls back to
-/// `needsSelection`).
+/// `needsSelection`). The lines of one split transaction count as a single
+/// candidate and are returned together.
 ///
 /// [contactNames] is a map from transaction `contactId` to display name.
 List<TransactionEntry>? disambiguateByContactName(
@@ -100,7 +120,7 @@ List<TransactionEntry>? disambiguateByContactName(
     final name = (contactNames[t.contactId] ?? '').toLowerCase().trim();
     return name.isNotEmpty && desc.contains(name);
   }).toList();
-  return matches.length == 1 ? matches : null;
+  return groupIntoPayments(matches).length == 1 ? matches : null;
 }
 
 // ── Widgets ───────────────────────────────────────────────────────────────────
@@ -444,11 +464,18 @@ class _ManualMatchDialogState extends State<ManualMatchDialog> {
                           dense: true,
                           value: _selected.contains(t.id),
                           onChanged: (v) => setState(() {
+                            // A split is one payment on the statement, so
+                            // its lines are ticked and unticked together.
+                            final List<String> ids = [
+                              for (final TransactionEntry line
+                                  in splitLinesOf(t, widget.candidates))
+                                line.id,
+                            ];
                             if (v == true) {
-                              _selected.add(t.id);
+                              _selected.addAll(ids);
                               _selectedInvoice = null;
                             } else {
-                              _selected.remove(t.id);
+                              _selected.removeAll(ids);
                             }
                           }),
                           title: Row(

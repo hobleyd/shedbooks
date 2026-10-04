@@ -28,6 +28,52 @@ import 'gl_account_dropdown.dart';
 
 enum _AmountAnchor { total, amount }
 
+/// One general ledger line of a transaction form — the part of the payment
+/// coded to a single general ledger account.
+class TransactionFormLine {
+  final GeneralLedgerEntry gl;
+  final int amountCents;
+  final int gstCents;
+  final String description;
+
+  const TransactionFormLine({
+    required this.gl,
+    required this.amountCents,
+    required this.gstCents,
+    required this.description,
+  });
+
+  /// JSON shape of one entry in the API's `lines` array.
+  Map<String, dynamic> toJson() => {
+        'generalLedgerId': gl.id,
+        'amount': amountCents,
+        'gstAmount': gstCents,
+        'description': description,
+      };
+}
+
+/// The text controllers and selection backing one general ledger line of the
+/// form: the always-present first line, or an additional split line.
+class _LineFields {
+  GeneralLedgerEntry? gl;
+  final TextEditingController amount = TextEditingController();
+  final TextEditingController gst = TextEditingController();
+  final TextEditingController total = TextEditingController();
+  final TextEditingController description = TextEditingController();
+
+  /// Which of Total / Amount-ex-GST the user last edited directly.
+  /// When GST is then edited, the *other* one is recalculated so the field
+  /// the user just set is preserved.
+  _AmountAnchor anchor = _AmountAnchor.total;
+
+  void dispose() {
+    amount.dispose();
+    gst.dispose();
+    total.dispose();
+    description.dispose();
+  }
+}
+
 /// Validated form data passed to the parent's save handler.
 class TransactionFormData {
   final DateTime date;
@@ -42,6 +88,12 @@ class TransactionFormData {
   final bool isCash;
   final String? bankAccountId;
 
+  /// Additional general ledger lines when a Money-Out payment is split
+  /// across several GL codes. Empty for an ordinary transaction, where
+  /// [gl] / [amountCents] / [gstCents] / [description] are the whole of it;
+  /// when non-empty those fields describe the first line only.
+  final List<TransactionFormLine> extraLines;
+
   const TransactionFormData({
     required this.date,
     this.existingContactId,
@@ -54,7 +106,22 @@ class TransactionFormData {
     required this.description,
     this.isCash = false,
     this.bankAccountId,
+    this.extraLines = const [],
   });
+
+  /// Whether the payment is coded to more than one general ledger account.
+  bool get isSplit => extraLines.isNotEmpty;
+
+  /// Every general ledger line of the transaction, first line first.
+  List<TransactionFormLine> get lines => [
+        TransactionFormLine(
+          gl: gl,
+          amountCents: amountCents,
+          gstCents: gstCents,
+          description: description,
+        ),
+        ...extraLines,
+      ];
 }
 
 /// Shared transaction form for both new-transaction and inline-edit modes.
@@ -70,6 +137,10 @@ class TransactionForm extends StatefulWidget {
   final List<BankAccountSummary> bankAccounts;
   final String nextMoneyOutReceipt;
   final TransactionEntry? initial;
+
+  /// When [initial] is the first line of a split transaction, the remaining
+  /// lines of that split in line order. Empty for an ordinary transaction.
+  final List<TransactionEntry> initialSplitLines;
   final GlDirection? initialDirection;
   final bool compact;
   final bool isSaving;
@@ -83,6 +154,7 @@ class TransactionForm extends StatefulWidget {
     this.bankAccounts = const [],
     required this.nextMoneyOutReceipt,
     this.initial,
+    this.initialSplitLines = const [],
     this.initialDirection,
     required this.compact,
     required this.isSaving,
@@ -101,18 +173,27 @@ class TransactionFormState extends State<TransactionForm> {
   String _contactTypedText = '';
   int _contactResetKey = 0;
 
-  GeneralLedgerEntry? _selectedGl;
   GlDirection? _selectedDirection;
 
-  final TextEditingController _amountController = TextEditingController();
-  final TextEditingController _gstController = TextEditingController();
-  final TextEditingController _totalController = TextEditingController();
-  final TextEditingController _descriptionController = TextEditingController();
+  /// The first general ledger line — the whole transaction unless it's split.
+  final _LineFields _primary = _LineFields();
 
-  /// Which of Total / Amount-ex-GST the user last edited directly.
-  /// When GST is then edited, the *other* one is recalculated so the field
-  /// the user just set is preserved.
-  _AmountAnchor _anchor = _AmountAnchor.total;
+  /// Additional general ledger lines of a split Money-Out payment. Empty for
+  /// an ordinary transaction.
+  final List<_LineFields> _extraLines = [];
+
+  /// Mirrors the server's cap on the number of lines in one split.
+  static const int _maxLines = 50;
+
+  GeneralLedgerEntry? get _selectedGl => _primary.gl;
+  set _selectedGl(GeneralLedgerEntry? gl) => _primary.gl = gl;
+  TextEditingController get _amountController => _primary.amount;
+  TextEditingController get _gstController => _primary.gst;
+  TextEditingController get _totalController => _primary.total;
+  TextEditingController get _descriptionController => _primary.description;
+  set _anchor(_AmountAnchor anchor) => _primary.anchor = anchor;
+
+  List<_LineFields> get _allLines => [_primary, ..._extraLines];
 
   /// The account (or the entity's system Cash account) this transaction
   /// relates to. Null means "not yet chosen" — only auto-defaulted when
@@ -164,6 +245,17 @@ class TransactionFormState extends State<TransactionForm> {
       } else if (t.isCash) {
         _cashReceiptController.text = t.receiptNumber;
       }
+      for (final TransactionEntry extra in widget.initialSplitLines) {
+        final _LineFields line = _LineFields()
+          ..gl = widget.glEntries
+              .where((g) => g.id == extra.generalLedgerId)
+              .firstOrNull;
+        line.amount.text = _centsToString(extra.amount);
+        line.gst.text = _centsToString(extra.gstAmount);
+        line.total.text = _centsToString(extra.totalAmount);
+        line.description.text = extra.description;
+        _extraLines.add(line);
+      }
     } else {
       _date = DateTime.now();
       _receiptOutController.text = widget.nextMoneyOutReceipt;
@@ -174,10 +266,9 @@ class TransactionFormState extends State<TransactionForm> {
 
   @override
   void dispose() {
-    _amountController.dispose();
-    _gstController.dispose();
-    _totalController.dispose();
-    _descriptionController.dispose();
+    for (final _LineFields line in _allLines) {
+      line.dispose();
+    }
     _cashReceiptController.dispose();
     _receiptOutController.dispose();
     _paymentReferenceController.dispose();
@@ -202,8 +293,12 @@ class TransactionFormState extends State<TransactionForm> {
   /// This only governs the *default* auto-calculated value — the GST field
   /// itself stays editable regardless, so an unusual case can be entered
   /// manually by overriding it (see [_buildAmountsRow] / compact GST field).
-  bool get _gstApplicable {
-    if (!(_selectedGl?.gstApplicable ?? false)) return false;
+  bool get _gstApplicable => _gstApplicableFor(_selectedGl);
+
+  /// [_gstApplicable] for an arbitrary line's GL account — each line of a
+  /// split follows its own account's `gstApplicable` flag.
+  bool _gstApplicableFor(GeneralLedgerEntry? gl) {
+    if (!(gl?.gstApplicable ?? false)) return false;
     if (!_isMoneyOut) return true;
     return _selectedContact?.gstRegistered ?? false;
   }
@@ -267,6 +362,7 @@ class TransactionFormState extends State<TransactionForm> {
       _receiptOutController.clear();
       _paymentReferenceController.clear();
       _anchor = _AmountAnchor.total;
+      _clearExtraLines();
     });
     // Full-layout forms are long-lived (the parent calls reset() after each
     // save rather than remounting the widget via GlobalKey), so initState's
@@ -303,6 +399,15 @@ class TransactionFormState extends State<TransactionForm> {
       description: _descriptionController.text.trim(),
       isCash: _isCash,
       bankAccountId: _selectedBankAccountId,
+      extraLines: [
+        for (final _LineFields line in _extraLines)
+          TransactionFormLine(
+            gl: line.gl!,
+            amountCents: _dollarsToCents(_parseAmount(line.amount.text)!),
+            gstCents: _dollarsToCents(_parseAmount(line.gst.text)!),
+            description: line.description.text.trim(),
+          ),
+      ],
     ));
   }
 
@@ -319,6 +424,21 @@ class TransactionFormState extends State<TransactionForm> {
       return 'Amount must be greater than zero';
     final gst = _parseAmount(_gstController.text);
     if (gst == null || gst < 0) return 'GST amount must be zero or more';
+    for (int i = 0; i < _extraLines.length; i++) {
+      final _LineFields line = _extraLines[i];
+      final String label = 'Split line ${i + 2}';
+      if (line.gl == null) {
+        return '$label: please select a general ledger account';
+      }
+      final lineAmount = _parseAmount(line.amount.text);
+      if (lineAmount == null || lineAmount <= 0) {
+        return '$label: amount must be greater than zero';
+      }
+      final lineGst = _parseAmount(line.gst.text);
+      if (lineGst == null || lineGst < 0) {
+        return '$label: GST amount must be zero or more';
+      }
+    }
     if (_isMoneyOut) {
       if (_isCash) {
         if (_cashReceiptController.text.trim().isEmpty) {
@@ -355,97 +475,144 @@ class TransactionFormState extends State<TransactionForm> {
   int _dollarsToCents(double d) => (d * 100).round();
   String _centsToString(int cents) => (cents / 100).toStringAsFixed(2);
 
-  void _handleAmountChanged(String value) {
-    _anchor = _AmountAnchor.amount;
+  void _handleAmountChanged(String value) => _lineAmountChanged(_primary, value);
+  void _handleTotalChanged(String value) => _lineTotalChanged(_primary, value);
+  void _handleGstChanged(String value) => _lineGstChanged(_primary, value);
+
+  void _lineAmountChanged(_LineFields line, String value) {
+    line.anchor = _AmountAnchor.amount;
+    final bool gstApplicable = _gstApplicableFor(line.gl);
     final amount = _parseAmount(value);
     if (amount == null) {
-      _gstController.text = _gstApplicable ? '' : '0.00';
-      _totalController.clear();
+      line.gst.text = gstApplicable ? '' : '0.00';
+      line.total.clear();
       return;
     }
     final amountCents = _dollarsToCents(amount);
-    if (_gstApplicable) {
+    if (gstApplicable) {
       final gstCents = (amountCents * _gstRate).round();
-      _gstController.text = _centsToString(gstCents);
-      _totalController.text = _centsToString(amountCents + gstCents);
+      line.gst.text = _centsToString(gstCents);
+      line.total.text = _centsToString(amountCents + gstCents);
     } else {
-      _gstController.text = '0.00';
-      _totalController.text = value;
+      line.gst.text = '0.00';
+      line.total.text = value;
     }
   }
 
-  void _handleTotalChanged(String value) {
-    _anchor = _AmountAnchor.total;
+  void _lineTotalChanged(_LineFields line, String value) {
+    line.anchor = _AmountAnchor.total;
+    final bool gstApplicable = _gstApplicableFor(line.gl);
     final total = _parseAmount(value);
     if (total == null) {
-      _amountController.clear();
-      _gstController.text = _gstApplicable ? '' : '0.00';
+      line.amount.clear();
+      line.gst.text = gstApplicable ? '' : '0.00';
       return;
     }
     final totalCents = _dollarsToCents(total);
-    if (_gstApplicable) {
+    if (gstApplicable) {
       final rate = _gstRate;
       final gstCents = (totalCents * rate / (1 + rate)).round();
-      _amountController.text = _centsToString(totalCents - gstCents);
-      _gstController.text = _centsToString(gstCents);
+      line.amount.text = _centsToString(totalCents - gstCents);
+      line.gst.text = _centsToString(gstCents);
     } else {
-      _amountController.text = value;
-      _gstController.text = '0.00';
+      line.amount.text = value;
+      line.gst.text = '0.00';
     }
   }
 
   /// Recalculates whichever of Total / Amount-ex-GST was *not* last edited
   /// directly by the user, so the field they just set is preserved.
-  void _handleGstChanged(String value) {
+  void _lineGstChanged(_LineFields line, String value) {
     final gst = _parseAmount(value);
     if (gst == null) return;
     final gstCents = _dollarsToCents(gst);
-    if (_anchor == _AmountAnchor.total) {
-      final total = _parseAmount(_totalController.text);
+    if (line.anchor == _AmountAnchor.total) {
+      final total = _parseAmount(line.total.text);
       if (total == null) return;
-      _amountController.text =
-          _centsToString(_dollarsToCents(total) - gstCents);
+      line.amount.text = _centsToString(_dollarsToCents(total) - gstCents);
     } else {
-      final amount = _parseAmount(_amountController.text);
+      final amount = _parseAmount(line.amount.text);
       if (amount == null) return;
-      _totalController.text =
-          _centsToString(_dollarsToCents(amount) + gstCents);
+      line.total.text = _centsToString(_dollarsToCents(amount) + gstCents);
     }
   }
 
-  /// Recomputes the GST/Amount/Total trio after something that can flip
-  /// [_gstApplicable] changes — the GL account, or (Money-Out only) the
-  /// selected contact's GST-registration status. Mirrors whichever of
-  /// [_handleAmountChanged] / [_handleTotalChanged] matches the field the
-  /// user last edited, so that field's value is preserved.
-  void _recalculateGstFields() {
-    if (_gstApplicable) {
+  /// Recomputes the GST/Amount/Total trio of every line after something that
+  /// can flip GST applicability changes for all of them at once — the
+  /// (Money-Out only) selected contact's GST-registration status, or the
+  /// date's effective rate.
+  void _recalculateGstFields() => _allLines.forEach(_recalculateLine);
+
+  /// Recomputes one line's GST/Amount/Total trio after its GST applicability
+  /// may have changed (e.g. its GL account). Mirrors whichever of
+  /// [_lineAmountChanged] / [_lineTotalChanged] matches the field the user
+  /// last edited, so that field's value is preserved.
+  void _recalculateLine(_LineFields line) {
+    if (_gstApplicableFor(line.gl)) {
       final rate = _gstRate;
-      if (_anchor == _AmountAnchor.total) {
-        final total = _parseAmount(_totalController.text);
+      if (line.anchor == _AmountAnchor.total) {
+        final total = _parseAmount(line.total.text);
         if (total == null) return;
         final totalCents = _dollarsToCents(total);
         final gstCents = (totalCents * rate / (1 + rate)).round();
-        _amountController.text = _centsToString(totalCents - gstCents);
-        _gstController.text = _centsToString(gstCents);
+        line.amount.text = _centsToString(totalCents - gstCents);
+        line.gst.text = _centsToString(gstCents);
       } else {
-        final amount = _parseAmount(_amountController.text);
+        final amount = _parseAmount(line.amount.text);
         if (amount == null) return;
         final amountCents = _dollarsToCents(amount);
         final gstCents = (amountCents * rate).round();
-        _gstController.text = _centsToString(gstCents);
-        _totalController.text = _centsToString(amountCents + gstCents);
+        line.gst.text = _centsToString(gstCents);
+        line.total.text = _centsToString(amountCents + gstCents);
       }
     } else {
-      _gstController.text = '0.00';
-      if (_anchor == _AmountAnchor.total) {
-        final total = _parseAmount(_totalController.text);
-        if (total != null) _amountController.text = _totalController.text;
+      line.gst.text = '0.00';
+      if (line.anchor == _AmountAnchor.total) {
+        final total = _parseAmount(line.total.text);
+        if (total != null) line.amount.text = line.total.text;
       } else {
-        final amount = _parseAmount(_amountController.text);
-        if (amount != null) _totalController.text = _amountController.text;
+        final amount = _parseAmount(line.amount.text);
+        if (amount != null) line.total.text = line.amount.text;
       }
     }
+  }
+
+  // ── Split lines ────────────────────────────────────────────────────────────
+
+  void _addSplitLine() => setState(() => _extraLines.add(_LineFields()));
+
+  void _removeSplitLine(_LineFields line) {
+    setState(() => _extraLines.remove(line));
+    // Dispose after the frame that drops the row's fields, not before —
+    // they still hold the controllers until then.
+    WidgetsBinding.instance.addPostFrameCallback((_) => line.dispose());
+  }
+
+  /// Drops every additional line — a split only applies to Money-Out, so it
+  /// can't survive the form being reset or switched to Money-In. Must be
+  /// called inside [setState].
+  void _clearExtraLines() {
+    final List<_LineFields> removed = List.of(_extraLines);
+    _extraLines.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final _LineFields line in removed) {
+        line.dispose();
+      }
+    });
+  }
+
+  /// Sum of every line's Total (inc GST) and GST, in cents, ignoring lines
+  /// whose amounts aren't filled in yet.
+  ({int totalCents, int gstCents}) get _paymentTotals {
+    int totalCents = 0;
+    int gstCents = 0;
+    for (final _LineFields line in _allLines) {
+      final total = _parseAmount(line.total.text);
+      final gst = _parseAmount(line.gst.text);
+      if (total != null) totalCents += _dollarsToCents(total);
+      if (gst != null) gstCents += _dollarsToCents(gst);
+    }
+    return (totalCents: totalCents, gstCents: gstCents);
   }
 
   void _onGlChangedFull(GeneralLedgerEntry? gl) {
@@ -459,6 +626,7 @@ class TransactionFormState extends State<TransactionForm> {
           ? widget.nextMoneyOutReceipt
           : '';
       _anchor = _AmountAnchor.total;
+      if (gl?.direction != GlDirection.moneyOut) _clearExtraLines();
     });
   }
 
@@ -473,6 +641,7 @@ class TransactionFormState extends State<TransactionForm> {
         _receiptOutController.clear();
         _paymentReferenceController.clear();
         _anchor = _AmountAnchor.total;
+        _clearExtraLines();
       }
     });
   }
@@ -542,6 +711,7 @@ class TransactionFormState extends State<TransactionForm> {
         _buildDescriptionField(),
         const SizedBox(height: 16),
         _buildAmountsRow(),
+        if (_isMoneyOut) _buildSplitSection(),
         const SizedBox(height: 16),
         if (_selectedGl != null) _buildReceiptSection(),
       ],
@@ -954,6 +1124,170 @@ class TransactionFormState extends State<TransactionForm> {
     );
   }
 
+  // ── Split across GL codes (Money-Out) ──────────────────────────────────────
+
+  /// The additional general ledger lines of a split payment, the button that
+  /// adds one, and — once there is more than one line — the payment total.
+  /// The first line is the form's ordinary GL / Description / amount fields.
+  Widget _buildSplitSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final _LineFields line in _extraLines) _buildSplitLineRow(line),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            children: [
+              TextButton.icon(
+                onPressed: widget.isSaving || _allLines.length >= _maxLines
+                    ? null
+                    : _addSplitLine,
+                icon: const Icon(Icons.call_split, size: 16),
+                label: Text(
+                  _extraLines.isEmpty ? 'Split across GL codes' : 'Add GL line',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const Spacer(),
+              if (_extraLines.isNotEmpty) _buildPaymentTotal(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Running total across every line — what will actually be paid to the
+  /// contact. Listens to the amount fields directly so it updates as the
+  /// user types without the handlers needing to call [setState].
+  Widget _buildPaymentTotal() {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        for (final _LineFields line in _allLines) ...[line.total, line.gst],
+      ]),
+      builder: (context, _) {
+        final totals = _paymentTotals;
+        return Text(
+          'Payment total \$${_centsToString(totals.totalCents)}'
+          '  (incl. GST \$${_centsToString(totals.gstCents)})',
+          key: const ValueKey('split-payment-total'),
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        );
+      },
+    );
+  }
+
+  /// One additional general ledger line: Remove | GL Account | Description |
+  /// Total | Amt ex GST | GST. The amount columns use the same widths as the
+  /// compact layout's first-line fields so they line up beneath them.
+  Widget _buildSplitLineRow(_LineFields line) {
+    const dec = InputDecoration(
+      border: OutlineInputBorder(),
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      floatingLabelBehavior: FloatingLabelBehavior.always,
+    );
+    final bool gstApplicable = _gstApplicableFor(line.gl);
+
+    Widget amountField({
+      required TextEditingController controller,
+      required String label,
+      required void Function(_LineFields, String) onChanged,
+      required double width,
+      bool greyed = false,
+    }) =>
+        SizedBox(
+          width: width,
+          child: _stretch(TextFormField(
+            controller: controller,
+            enabled: !widget.isSaving,
+            expands: true,
+            maxLines: null,
+            textAlignVertical: TextAlignVertical.center,
+            style: const TextStyle(fontSize: 13),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+            ],
+            onChanged: (value) => onChanged(line, value),
+            decoration: dec.copyWith(
+              labelText: label,
+              prefixText: '\$ ',
+              fillColor: greyed ? Colors.grey.shade100 : null,
+              filled: greyed,
+            ),
+          )),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            IconButton(
+              tooltip: 'Remove this GL line',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.remove_circle_outline, size: 18),
+              onPressed:
+                  widget.isSaving ? null : () => _removeSplitLine(line),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _stretch(GlAccountDropdown(
+                allEntries: widget.glEntries,
+                value: line.gl,
+                decoration: dec.copyWith(labelText: 'GL Account'),
+                directionFilter: GlDirection.moneyOut,
+                compact: true,
+                onChanged: widget.isSaving
+                    ? null
+                    : (gl) => setState(() {
+                          line.gl = gl;
+                          _recalculateLine(line);
+                        }),
+              )),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _stretch(TextFormField(
+                controller: line.description,
+                enabled: !widget.isSaving,
+                expands: true,
+                maxLines: null,
+                textAlignVertical: TextAlignVertical.center,
+                style: const TextStyle(fontSize: 13),
+                decoration: dec.copyWith(labelText: 'Description'),
+              )),
+            ),
+            const SizedBox(width: 8),
+            amountField(
+              controller: line.total,
+              label: 'Total',
+              onChanged: _lineTotalChanged,
+              width: 110,
+            ),
+            const SizedBox(width: 8),
+            amountField(
+              controller: line.amount,
+              label: 'Amt ex GST',
+              onChanged: _lineAmountChanged,
+              width: 110,
+            ),
+            const SizedBox(width: 8),
+            amountField(
+              controller: line.gst,
+              label: 'GST',
+              onChanged: _lineGstChanged,
+              width: 90,
+              greyed: !gstApplicable,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Compact (inline edit) layout ───────────────────────────────────────────
 
   /// Forces [child] to fill whatever height the ambient stretched Row gives
@@ -1155,6 +1489,7 @@ class TransactionFormState extends State<TransactionForm> {
               ],
             ),
           ),
+          if (isMoneyOut) _buildSplitSection(),
           const SizedBox(height: 10),
           // Save / Cancel
           Row(

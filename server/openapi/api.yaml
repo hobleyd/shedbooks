@@ -180,6 +180,68 @@ components:
         updatedAt:
           type: string
           format: date-time
+        splitGroupId:
+          type: string
+          format: uuid
+          description: Shared by every row of one split transaction (one payment coded to several general ledger accounts). Absent for an ordinary transaction.
+        splitLineNo:
+          type: integer
+          minimum: 1
+          description: 1-based position of this row within its split. Absent for an ordinary transaction.
+
+    TransactionLine:
+      type: object
+      required: [generalLedgerId, amount, gstAmount]
+      properties:
+        generalLedgerId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+          description: Line value in cents, excluding GST
+        gstAmount:
+          type: integer
+          minimum: 0
+          description: GST component of the line in cents (must not exceed amount)
+        description:
+          type: string
+
+    SplitTransactionRequest:
+      type: object
+      description: >
+        One payment coded to several general ledger accounts. Stored as one
+        Transaction row per line; the rows share contact, date, receipt number,
+        payment reference, bank account and cash flag.
+      required: [contactId, transactionType, receiptNumber, transactionDate, lines]
+      properties:
+        contactId:
+          type: string
+          format: uuid
+        transactionType:
+          type: string
+          enum: [debit, credit]
+        receiptNumber:
+          type: string
+          maxLength: 100
+          minLength: 1
+        paymentReference:
+          type: string
+        transactionDate:
+          type: string
+          format: date
+        isCash:
+          type: boolean
+        bankAccountId:
+          type: string
+          format: uuid
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: At least 2 lines on create. On update, exactly 1 line collapses the split back into an ordinary transaction.
+          items:
+            $ref: '#/components/schemas/TransactionLine'
 
     CreateTransactionRequest:
       type: object
@@ -1014,14 +1076,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTransactionRequest'
+              oneOf:
+                - $ref: '#/components/schemas/CreateTransactionRequest'
+                - $ref: '#/components/schemas/SplitTransactionRequest'
       responses:
         '201':
-          description: Created
+          description: Created. A split request (body with `lines`) returns the array of created rows, one per line.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Transaction'
+                oneOf:
+                  - $ref: '#/components/schemas/Transaction'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
         '400':
           description: Bad request (invalid amounts, missing FK targets, empty receiptNumber)
           content:
@@ -1077,14 +1145,24 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateTransactionRequest'
+              oneOf:
+                - $ref: '#/components/schemas/UpdateTransactionRequest'
+                - $ref: '#/components/schemas/SplitTransactionRequest'
       responses:
         '200':
-          description: Updated
+          description: >
+            Updated. A split request (body with `lines`) replaces the
+            transaction and every other line of its split, and returns the
+            array of resulting rows. One line of a split cannot be updated
+            without `lines` (400).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Transaction'
+                oneOf:
+                  - $ref: '#/components/schemas/Transaction'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
         '400':
           description: Bad request
           content:
@@ -1106,6 +1184,7 @@ paths:
 
     delete:
       summary: Delete a transaction
+      description: Deleting one line of a split transaction deletes every line of that split.
       operationId: deleteTransaction
       tags: [Transaction]
       responses:

@@ -16,51 +16,59 @@
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 import '../../domain/entities/transaction.dart';
+import '../../domain/entities/transaction_line.dart';
 import '../../domain/exceptions/locked_month_exception.dart';
 import '../../domain/exceptions/transaction_exception.dart';
 import '../../domain/repositories/i_locked_month_repository.dart';
 import '../../domain/repositories/i_transaction_repository.dart';
 import '_transaction_validator.dart';
 
-/// Updates an existing transaction.
-class UpdateTransactionUseCase {
+/// The rows a split update replaced ([before]) and wrote ([after]).
+typedef SplitUpdateResult = ({List<Transaction> before, List<Transaction> after});
+
+/// Replaces a transaction — and, when it is one line of a split, every line
+/// of that split — with a new set of general ledger lines.
+///
+/// This is how an ordinary transaction becomes a split (more than one line
+/// supplied), how a split is edited, and how a split collapses back into an
+/// ordinary transaction (exactly one line supplied).
+class UpdateSplitTransactionUseCase {
   final ITransactionRepository _repository;
   final ILockedMonthRepository _lockedMonths;
 
-  const UpdateTransactionUseCase(this._repository, this._lockedMonths);
+  const UpdateSplitTransactionUseCase(this._repository, this._lockedMonths);
 
-  Future<Transaction> execute({
+  /// Replaces the transaction [id] (with its split siblings, if any) by
+  /// [lines]. Both the existing month and the new target month must be
+  /// unlocked. Bank-matched state, ABA batch name and — unless overridden —
+  /// the cash flag and bank account carry over from the replaced rows.
+  /// Throws [TransactionNotFoundException] if [id] does not exist within [entityId].
+  Future<SplitUpdateResult> execute({
     required String id,
     required String entityId,
     required String contactId,
-    required String generalLedgerId,
-    required int amount,
-    required int gstAmount,
     required TransactionType transactionType,
     required String receiptNumber,
     String? paymentReference,
-    required String description,
     required DateTime transactionDate,
     bool? isCash,
     String? bankAccountId,
+    required List<TransactionLine> lines,
   }) async {
-    TransactionValidator.validate(
-      amount: amount,
-      gstAmount: gstAmount,
+    TransactionValidator.validateLines(
+      lines: lines,
       receiptNumber: receiptNumber,
+      minLines: 1,
     );
 
-    // Check both the existing transaction's month and the new target month.
-    final existing = await _repository.findById(id, entityId: entityId);
+    final Transaction? existing =
+        await _repository.findById(id, entityId: entityId);
     if (existing == null) throw TransactionNotFoundException(id);
 
-    // One line of a split can't be edited on its own — the lines share their
-    // contact, date and receipt number, and must be saved together.
-    if (existing.isSplit) {
-      throw const TransactionValidationException(
-        'This transaction is part of a split and must be updated with all of its lines',
-      );
-    }
+    final String? splitGroupId = existing.splitGroupId;
+    final List<Transaction> before = splitGroupId == null
+        ? [existing]
+        : await _repository.findBySplitGroup(splitGroupId, entityId: entityId);
 
     final existingMonth = _monthYear(existing.transactionDate);
     if (await _lockedMonths.isLocked(entityId, existingMonth)) {
@@ -73,28 +81,25 @@ class UpdateTransactionUseCase {
       throw MonthIsLockedException(newMonth);
     }
 
-    return _repository.update(
-      id: id,
+    final bool cash = isCash ?? existing.isCash;
+    final List<Transaction> after = await _repository.replaceWithLines(
+      replacedIds: [for (final Transaction t in before) t.id],
       entityId: entityId,
       contactId: contactId,
-      generalLedgerId: generalLedgerId,
-      amount: amount,
-      gstAmount: gstAmount,
       transactionType: transactionType,
       receiptNumber: receiptNumber.trim(),
-      paymentReference: paymentReference?.trim().isEmpty ?? true
-          ? null
-          : paymentReference!.trim(),
-      description: description.trim(),
+      paymentReference:
+          TransactionValidator.normalisePaymentReference(paymentReference),
       transactionDate: transactionDate,
-      isCash: isCash ?? existing.isCash,
+      isCash: cash,
       // Cash transactions are pre-matched; otherwise preserve existing bank_matched state.
-      bankMatched: (isCash ?? existing.isCash) || existing.bankMatched,
-      // The account a transaction relates to can now be set directly by the
-      // caller (e.g. the transaction form's account dropdown); when omitted,
-      // preserve whatever was already recorded (including reconciliation matches).
+      bankMatched: cash || before.any((Transaction t) => t.bankMatched),
+      abaBatchName: existing.abaBatchName,
       bankAccountId: bankAccountId ?? existing.bankAccountId,
+      lines: TransactionValidator.normaliseLines(lines),
     );
+
+    return (before: before, after: after);
   }
 
   static String _monthYear(DateTime date) =>
