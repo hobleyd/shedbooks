@@ -93,6 +93,18 @@ void main() {
       expect(result, isNull);
     });
 
+    test('returns null when the script reports an empty-string role',
+        () async {
+      // Arrange
+      final sut = serviceReturning('');
+
+      // Act
+      final result = await act(sut, null);
+
+      // Assert
+      expect(result, isNull);
+    });
+
     test('throws GraphAppRoleException on a non-zero exit code', () async {
       // Arrange
       final sut = GraphAppRoleAssignmentService(

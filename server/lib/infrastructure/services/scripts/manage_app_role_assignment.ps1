@@ -89,7 +89,9 @@ $RoleIds = @{
 
 function Write-Result {
     param([string]$Role)
-    $payload = [ordered]@{ role = $Role }
+    # [string] coerces $null to '' — emit a real JSON null for "no role" so
+    # the caller never caches an empty string as a role.
+    $payload = [ordered]@{ role = if ($Role) { $Role } else { $null } }
     Set-Content -Path $OutputPath -Value ($payload | ConvertTo-Json -Depth 3) -Encoding utf8
 }
 

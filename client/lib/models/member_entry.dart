@@ -116,7 +116,10 @@ class MemberEntry {
           ? DateTime.parse(json['o365SyncFailedAt'] as String)
           : null,
       o365MailboxUpn: json['o365MailboxUpn'] as String?,
-      shedbooksAppRole: json['shedbooksAppRole'] as String?,
+      // '' is treated as "no access", same as null.
+      shedbooksAppRole: json['shedbooksAppRole'] == ''
+          ? null
+          : json['shedbooksAppRole'] as String?,
       etag: json['etag'] as String,
     );
   }

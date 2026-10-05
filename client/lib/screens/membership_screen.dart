@@ -1334,7 +1334,9 @@ class _MemberTableState extends State<_MemberTable> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Text(
-          role == null ? '—' : '${role[0].toUpperCase()}${role.substring(1)}',
+          role == null || role.isEmpty
+              ? '—'
+              : '${role[0].toUpperCase()}${role.substring(1)}',
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodySmall,
         ),

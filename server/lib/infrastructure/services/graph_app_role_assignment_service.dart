@@ -106,7 +106,10 @@ class GraphAppRoleAssignmentService implements IGraphAppRoleService {
       }
 
       final decoded = jsonDecode(await outputFile.readAsString()) as Map<String, dynamic>;
-      return decoded['role'] as String?;
+      // An empty string means "no role" just as null does (PowerShell
+      // serialises a [string] \$null as '').
+      final String? role = decoded['role'] as String?;
+      return role == null || role.isEmpty ? null : role;
     } finally {
       await tempDir.delete(recursive: true).catchError((_) => tempDir);
     }
