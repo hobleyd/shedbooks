@@ -51,7 +51,17 @@ FROM debian:bookworm-slim
 # "term 'Get-MgUserAppRoleAssignment' is not recognized" (2026-09-28) — see
 # that script's header for the same "don't trust a guessed cmdlet" caution
 # create_o365_mailbox.ps1 already documents.
+#
+# Module versions are pinned, not "latest": an image rebuilt after
+# Microsoft.Graph 2.41.0 shipped (2026-09-29) silently picked it up and every
+# Connect-MgGraph then failed with "Could not load file or assembly
+# 'System.Text.Json, Version=10.0.0.0'" — 2.41.x needs .NET 10, PowerShell
+# 7.4 runs on .NET 8. Reproduced with 2.41.0 and 2.41.1; 2.40.0 is the last
+# release that works on PS 7.4. Bump GRAPH_VERSION only together with a
+# PS_VERSION whose .NET runtime it supports, and re-test Connect-MgGraph.
 ARG PS_VERSION=7.4.6
+ARG GRAPH_VERSION=2.40.0
+ARG EXO_VERSION=3.10.1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates wget libicu72 openssl \
     && rm -rf /var/lib/apt/lists/* \
@@ -68,12 +78,12 @@ RUN apt-get update \
     && ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh \
     && pwsh -NoProfile -Command " \
          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; \
-         Install-Module -Name ExchangeOnlineManagement -Force -Scope AllUsers; \
-         Install-Module -Name Microsoft.Graph.Authentication -Force -Scope AllUsers; \
-         Install-Module -Name Microsoft.Graph.Identity.DirectoryManagement -Force -Scope AllUsers; \
-         Install-Module -Name Microsoft.Graph.Users -Force -Scope AllUsers; \
-         Install-Module -Name Microsoft.Graph.Users.Actions -Force -Scope AllUsers; \
-         Install-Module -Name Microsoft.Graph.Applications -Force -Scope AllUsers"
+         Install-Module -Name ExchangeOnlineManagement -RequiredVersion ${EXO_VERSION} -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Authentication -RequiredVersion ${GRAPH_VERSION} -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Identity.DirectoryManagement -RequiredVersion ${GRAPH_VERSION} -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Users -RequiredVersion ${GRAPH_VERSION} -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Users.Actions -RequiredVersion ${GRAPH_VERSION} -Force -Scope AllUsers; \
+         Install-Module -Name Microsoft.Graph.Applications -RequiredVersion ${GRAPH_VERSION} -Force -Scope AllUsers"
 
 WORKDIR /app
 COPY --from=build /app/bin/server ./bin/server
