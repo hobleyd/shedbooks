@@ -1102,7 +1102,6 @@ class _MembershipScreenState extends State<MembershipScreen> {
               : r.o365SyncedAt != null
                   ? _isoDate(r.o365SyncedAt!.toLocal())
                   : '',
-          14 => r.shedbooksAppRole ?? '',
           _ => '',
         };
       }
@@ -1267,32 +1266,30 @@ class _Toolbar extends StatelessWidget {
 
 // Fixed widths for always-visible primary columns.
 const double _kExpandW = 32;
-const double _kFirstNameW = 120;
-const double _kLastNameW = 130;
-const double _kRoleW = 100;
-const double _kDateJoinedW = 100;
-const double _kStatusW = 80;
-const double _kPhoneW = 120;
-const double _kWoodworkingW = 280;
-const double _kMetalworkingW = 280;
-const double _kGymWaiverW = 100;
-const double _kO365W = 56;
+const double _kFirstNameW = 96;
+const double _kLastNameW = 110;
+const double _kDateJoinedW = 82;
+const double _kStatusW = 60;
+const double _kPhoneW = 100;
+const double _kGymWaiverW = 82;
+const double _kO365W = 40;
 const double _kActionsW = 148;
 
-// Minimum width of the edit panel — equals the sum of all column widths so the
-// panel always spans the full table regardless of content width.
-const double _kTableMinWidth = _kExpandW +
+// The two training columns share whatever width is left after the fixed
+// columns, between these bounds, so the table fits the screen without
+// horizontal scrolling wherever the viewport allows.
+const double _kTrainingMinW = 170;
+const double _kTrainingMaxW = 280;
+
+const double _kFixedColumnsW = _kExpandW +
     _kFirstNameW +
     _kLastNameW +
-    _kRoleW +
     _kDateJoinedW +
     _kStatusW +
     _kPhoneW +
-    _kWoodworkingW +
-    _kMetalworkingW +
     _kGymWaiverW +
     _kO365W +
-    _kActionsW; // 1378
+    _kActionsW; // 750
 
 class _MemberTable extends StatefulWidget {
   final List<_MemberRow> rows;
@@ -1345,6 +1342,12 @@ class _MemberTableState extends State<_MemberTable> {
   final Set<String> _expanded = {};
   final Set<String> _editing = {};
   final ScrollController _scrollController = ScrollController();
+
+  /// Width of each training column, set from the viewport in [build].
+  double _trainingW = _kTrainingMinW;
+
+  /// Total width of the table's columns.
+  double get _tableW => _kFixedColumnsW + 2 * _trainingW;
 
   @override
   void dispose() {
@@ -1405,26 +1408,6 @@ class _MemberTableState extends State<_MemberTable> {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Text(
           ctrl.text.isEmpty ? '—' : ctrl.text,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ),
-    );
-  }
-
-  /// Displays [_MemberRow.shedbooksAppRole] (capitalised), or '—' if the
-  /// member has no Shedbooks access — mirrors [_appRoleAction]'s source of
-  /// truth, but read-only; role changes still go through that action icon.
-  Widget _readRoleCell(BuildContext context, _MemberRow row, double width) {
-    final role = row.shedbooksAppRole;
-    return SizedBox(
-      width: width,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          role == null || role.isEmpty
-              ? '—'
-              : '${role[0].toUpperCase()}${role.substring(1)}',
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -1844,10 +1827,10 @@ class _MemberTableState extends State<_MemberTable> {
         _buildDateField(context, label, ctrl, baseDec);
 
     // Minimum inner width so the panel spans the full table (32px = L+R padding).
-    const double innerW = _kTableMinWidth - 32;
+    final double innerW = _tableW - 32;
 
     return Container(
-      constraints: const BoxConstraints(minWidth: _kTableMinWidth),
+      constraints: BoxConstraints(minWidth: _tableW),
       color: Theme.of(context).colorScheme.surfaceContainerLowest,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
@@ -1855,33 +1838,34 @@ class _MemberTableState extends State<_MemberTable> {
         children: [
           Row(children: [
             SizedBox(
-                width: _kFirstNameW + 8,
+                width: 128,
                 child: tf('First Name', row.firstNameCtrl,
                     focusNode: row.firstNameFocus)),
             const SizedBox(width: 8),
             SizedBox(
-                width: _kLastNameW + 8,
+                width: 138,
                 child: tf('Last Name', row.lastNameCtrl,
                     focusNode: row.lastNameFocus)),
             const SizedBox(width: 8),
             // 140px minimum so "DD/MM/YYYY" + icon never wraps.
             SizedBox(width: 140, child: df('Date Joined', row.dateJoinedCtrl)),
             const SizedBox(width: 8),
-            SizedBox(width: _kStatusW + 8, child: tf('Status', row.statusCtrl)),
+            SizedBox(width: 88, child: tf('Status', row.statusCtrl)),
             const SizedBox(width: 8),
-            SizedBox(width: _kPhoneW + 8, child: tf('Phone', row.phoneCtrl)),
+            SizedBox(width: 128, child: tf('Phone', row.phoneCtrl)),
             const SizedBox(width: 8),
             SizedBox(width: 140, child: df('Date of Birth', row.dobCtrl)),
           ]),
           const SizedBox(height: 8),
-          // Street and Email expand to fill innerW.
-          // 300 + 8 + 90 + 8 + 584 = 990 (innerW).
+          // Email takes whatever of innerW the street and PO box leave.
           Row(children: [
             SizedBox(width: 300, child: tf('Street Address', row.streetCtrl)),
             const SizedBox(width: 8),
             SizedBox(width: 90, child: tf('PO Box', row.poBoxCtrl)),
             const SizedBox(width: 8),
-            SizedBox(width: 584, child: tf('Email', row.emailCtrl)),
+            SizedBox(
+                width: innerW - 300 - 90 - 16,
+                child: tf('Email', row.emailCtrl)),
           ]),
           const SizedBox(height: 8),
           // 180 + 8 + 180 = 368 (name and phone side by side).
@@ -2000,12 +1984,11 @@ class _MemberTableState extends State<_MemberTable> {
           const SizedBox(width: _kExpandW),
           _headerCell(context, 'First Name', 0, _kFirstNameW),
           _headerCell(context, 'Last Name', 1, _kLastNameW),
-          _headerCell(context, 'Role', 14, _kRoleW),
           _headerCell(context, 'Date Joined', 2, _kDateJoinedW),
           _headerCell(context, 'Status', 3, _kStatusW),
           _headerCell(context, 'Phone', 7, _kPhoneW),
-          _headerCell(context, 'Woodworking', 10, _kWoodworkingW),
-          _headerCell(context, 'Metalworking', 11, _kMetalworkingW),
+          _headerCell(context, 'Woodworking', 10, _trainingW),
+          _headerCell(context, 'Metalworking', 11, _trainingW),
           _headerCell(context, 'Gym Waiver', 12, _kGymWaiverW),
           _headerCell(context, 'O365', 13, _kO365W),
           const SizedBox(width: _kActionsW),
@@ -2071,14 +2054,13 @@ class _MemberTableState extends State<_MemberTable> {
                 ),
                 _readCell(context, row.firstNameCtrl, _kFirstNameW),
                 _readCell(context, row.lastNameCtrl, _kLastNameW),
-                _readRoleCell(context, row, _kRoleW),
                 _readCell(context, row.dateJoinedCtrl, _kDateJoinedW),
                 _readCell(context, row.statusCtrl, _kStatusW),
                 _readPhoneCell(context, row.phoneCtrl, _kPhoneW),
                 _trainingCell(context, row.trainingIn(kWoodShopSection),
-                    row.woodworkingInduction, _kWoodworkingW),
+                    row.woodworkingInduction, _trainingW),
                 _trainingCell(context, row.trainingIn(kMetalShopSection),
-                    row.metalworkingInduction, _kMetalworkingW),
+                    row.metalworkingInduction, _trainingW),
                 _readDateCell(context, row.gymWaiverCtrl, _kGymWaiverW),
                 _o365StatusCell(context, row, _kO365W),
                 SizedBox(
@@ -2241,6 +2223,17 @@ class _MemberTableState extends State<_MemberTable> {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        _trainingW = ((constraints.maxWidth - _kFixedColumnsW) / 2)
+            .clamp(_kTrainingMinW, _kTrainingMaxW)
+            .floorToDouble();
+        return _buildTable(context);
+      },
+    );
+  }
+
+  Widget _buildTable(BuildContext context) {
     return SingleChildScrollView(
       controller: _scrollController,
       scrollDirection: Axis.vertical,

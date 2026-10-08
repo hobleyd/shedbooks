@@ -60,7 +60,8 @@ void main() {
   /// Pumps the Members screen for a user with members write access and one
   /// member (already trained on the band saw, with a legacy metalworking
   /// induction date).
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(WidgetTester tester,
+      {Size size = const Size(1800, 1000)}) async {
     sent = [];
     mock = MockClient((http.Request req) async {
       final String path = req.url.path;
@@ -99,7 +100,7 @@ void main() {
       return http.Response(jsonEncode({'id': 'm1'}), 200);
     });
 
-    tester.view.physicalSize = const Size(1800, 1000);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
@@ -142,6 +143,22 @@ void main() {
             of: find.text('Band Saw - 14 inch'), matching: find.byType(InkWell)),
         findsNothing,
       );
+    });
+
+    testWidgets(
+        'table has no Role column and fits a 1100-wide viewport without '
+        'horizontal scrolling', (WidgetTester tester) async {
+      // Arrange / Act
+      await pumpScreen(tester, size: const Size(1100, 800));
+
+      // Assert
+      expect(find.text('Role'), findsNothing);
+      expect(find.text('Woodworking'), findsOneWidget);
+      final ScrollableState horizontal = tester
+          .stateList<ScrollableState>(find.byType(Scrollable))
+          .firstWhere((s) => s.position.axis == Axis.horizontal);
+      expect(horizontal.position.maxScrollExtent, 0);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets(
