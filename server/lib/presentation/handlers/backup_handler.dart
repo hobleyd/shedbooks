@@ -204,6 +204,12 @@ class BackupHandler {
         FROM capex_requests WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
+      final memberEquipmentTraining = await _queryRows('''
+        SELECT id::text, entity_id, member_id::text, asset_id::text,
+               trained_on::text AS trained_on, created_at, deleted_at
+        FROM member_equipment_training WHERE entity_id = @entityId
+      ''', {'entityId': entityId});
+
       // certificate_pfx / certificate_password are already ciphertext
       // (app-level AES-256-GCM via FieldEncryptor) — pass them through
       // as opaque strings, do not decrypt/re-encrypt.
@@ -256,6 +262,7 @@ class BackupHandler {
         'members': members,
         'assets': assets,
         'capex_requests': capexRequests,
+        'member_equipment_training': memberEquipmentTraining,
         'o365_sync_settings': o365SyncSettings,
         'entity_page_permission_overrides': pagePermissionOverrides,
         'entity_action_permission_overrides': actionPermissionOverrides,
@@ -344,6 +351,8 @@ class BackupHandler {
         await _del(tx, 'locked_months', entityId);
         await _del(tx, 'bank_imports', entityId);
         await _del(tx, 'bank_accounts', entityId);
+        // Before members/assets — it references both.
+        await _del(tx, 'member_equipment_training', entityId);
         await _del(tx, 'members', entityId);
         await _del(tx, 'assets', entityId);
         await _del(tx, 'capex_requests', entityId);
@@ -892,6 +901,31 @@ class BackupHandler {
               'val': r['estimated_market_value_cents'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
+              'da': r['deleted_at'],
+            },
+          );
+        }
+
+        // After members and assets — it references both. Absent from
+        // backups taken before migration 066 (_rows then yields nothing).
+        for (final r in _rows(backup, 'member_equipment_training')) {
+          await tx.execute(
+            Sql.named('''
+              INSERT INTO member_equipment_training
+                (id, entity_id, member_id, asset_id, trained_on,
+                 created_at, deleted_at)
+              VALUES (
+                @id::uuid, @e, @mid::uuid, @aid::uuid, @on::date,
+                @ca::timestamptz, @da::timestamptz
+              )
+            '''),
+            parameters: {
+              'id': r['id'] as String,
+              'e': entityId,
+              'mid': r['member_id'] as String,
+              'aid': r['asset_id'] as String,
+              'on': r['trained_on'] as String,
+              'ca': r['created_at'] as String,
               'da': r['deleted_at'],
             },
           );

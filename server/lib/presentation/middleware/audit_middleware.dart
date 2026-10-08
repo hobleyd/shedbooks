@@ -179,6 +179,7 @@ String? _recordId(String path) {
     'next-number', 'mark-paid', 'decision', 'generate', 'sync-o365',
     'generate-certificate', 'sections', 'available-licenses',
     'create-mailbox', 'executed-date', 'app-role', 'role', 'permissions',
+    'equipment-training', 'training-equipment',
   };
   final last = parts.last;
   if (nonIdSegments.contains(last)) return null;

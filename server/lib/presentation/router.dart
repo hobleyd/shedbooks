@@ -143,8 +143,12 @@ import '../application/asset/import_assets_use_case.dart';
 import '../application/asset/list_asset_sections_use_case.dart';
 import '../application/asset/list_assets_use_case.dart';
 import '../application/asset/update_asset_use_case.dart';
+import '../application/member/list_member_equipment_training_use_case.dart';
+import '../application/member/list_training_equipment_use_case.dart';
+import '../application/member/set_member_equipment_training_use_case.dart';
 import '../infrastructure/repositories/postgres_capex_request_repository.dart';
 import '../infrastructure/repositories/postgres_asset_repository.dart';
+import '../infrastructure/repositories/postgres_member_equipment_training_repository.dart';
 import '../infrastructure/repositories/postgres_invoice_repository.dart';
 import '../infrastructure/repositories/postgres_user_api_key_repository.dart';
 import '../application/api_key/generate_api_key_use_case.dart';
@@ -376,6 +380,8 @@ Handler buildRouter({
     o365ContactSyncService,
   );
 
+  final memberTrainingRepository =
+      PostgresMemberEquipmentTrainingRepository(pool);
   final memberHandler = MemberHandler(
     create: CreateMemberUseCase(memberRepository, memberO365AutoSync),
     get: GetMemberUseCase(memberRepository),
@@ -406,6 +412,12 @@ Handler buildRouter({
       o365SettingsRepository,
       graphAppRoleService,
       entraLoginServicePrincipalId,
+    ),
+    trainingEquipment: ListTrainingEquipmentUseCase(memberTrainingRepository),
+    listTraining: ListMemberEquipmentTrainingUseCase(memberTrainingRepository),
+    setTraining: SetMemberEquipmentTrainingUseCase(
+      memberRepository,
+      memberTrainingRepository,
     ),
   );
   final assetRepository = PostgresAssetRepository(pool);
@@ -838,9 +850,13 @@ Router _memberRouter(MemberHandler h, IRolePermissionRepository permissions) {
         _action(permissions, PermissionAction.membersSyncO365, h.handleSyncO365))
     ..get('/available-licenses',
         _action(permissions, PermissionAction.membersCreateMailbox, h.handleAvailableLicenses))
+    ..get('/training-equipment',
+        _page(permissions, page, PermissionAccess.read, h.handleTrainingEquipment))
     ..get('/<id>', _pageId(permissions, page, PermissionAccess.read, h.handleGet))
     ..put('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleUpdate))
     ..delete('/<id>', _pageId(permissions, page, PermissionAccess.write, h.handleDelete))
+    ..put('/<id>/equipment-training',
+        _pageId(permissions, page, PermissionAccess.write, h.handleSetEquipmentTraining))
     ..post(
       '/<id>/create-mailbox',
       (Request req, String id) => _action(

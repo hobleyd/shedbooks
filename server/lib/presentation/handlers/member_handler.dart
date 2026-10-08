@@ -25,13 +25,17 @@ import '../../application/member/create_member_use_case.dart';
 import '../../application/member/delete_member_use_case.dart';
 import '../../application/member/get_member_use_case.dart';
 import '../../application/member/import_members_use_case.dart';
+import '../../application/member/list_member_equipment_training_use_case.dart';
 import '../../application/member/list_members_use_case.dart';
+import '../../application/member/list_training_equipment_use_case.dart';
+import '../../application/member/set_member_equipment_training_use_case.dart';
 import '../../application/member/update_member_use_case.dart';
 import '../../application/o365/create_member_mailbox_use_case.dart';
 import '../../application/o365/list_available_o365_licenses_use_case.dart';
 import '../../application/o365/set_member_app_role_use_case.dart';
 import '../../application/o365/sync_members_to_o365_use_case.dart';
 import '../../domain/entities/member.dart';
+import '../../domain/entities/member_equipment_training.dart';
 import '../../domain/exceptions/app_role_exception.dart';
 import '../../domain/exceptions/member_exception.dart';
 import '../../domain/exceptions/o365_sync_exception.dart';
@@ -40,10 +44,12 @@ import '../dto/create_mailbox_request.dart';
 import '../dto/create_mailbox_response.dart';
 import '../dto/create_member_request.dart';
 import '../dto/import_member_request.dart';
+import '../dto/member_equipment_training_response.dart';
 import '../dto/member_response.dart';
 import '../dto/o365_available_licenses_response.dart';
 import '../dto/o365_sync_result_response.dart';
 import '../dto/set_app_role_request.dart';
+import '../dto/set_equipment_training_request.dart';
 import 'handler_diff.dart';
 
 /// Shelf request handlers for the /members REST resource.
@@ -58,6 +64,9 @@ class MemberHandler {
   final ListAvailableO365LicensesUseCase _availableLicenses;
   final CreateMemberMailboxUseCase _createMailbox;
   final SetMemberAppRoleUseCase _setAppRole;
+  final ListTrainingEquipmentUseCase _trainingEquipment;
+  final ListMemberEquipmentTrainingUseCase _listTraining;
+  final SetMemberEquipmentTrainingUseCase _setTraining;
 
   const MemberHandler({
     required CreateMemberUseCase create,
@@ -70,6 +79,9 @@ class MemberHandler {
     required ListAvailableO365LicensesUseCase availableLicenses,
     required CreateMemberMailboxUseCase createMailbox,
     required SetMemberAppRoleUseCase setAppRole,
+    required ListTrainingEquipmentUseCase trainingEquipment,
+    required ListMemberEquipmentTrainingUseCase listTraining,
+    required SetMemberEquipmentTrainingUseCase setTraining,
   })  : _create = create,
         _get = get,
         _list = list,
@@ -79,18 +91,97 @@ class MemberHandler {
         _syncO365 = syncO365,
         _availableLicenses = availableLicenses,
         _createMailbox = createMailbox,
-        _setAppRole = setAppRole;
+        _setAppRole = setAppRole,
+        _trainingEquipment = trainingEquipment,
+        _listTraining = listTraining,
+        _setTraining = setTraining;
 
   /// GET /members
   Future<Response> handleList(Request request) async {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
     final members = await _list.execute(entityId: entityId);
+    final Map<String, List<MemberEquipmentTraining>> training =
+        await _listTraining.execute(entityId: entityId);
     return Response.ok(
-      jsonEncode(members.map((m) => MemberResponse.fromEntity(m).toJson()).toList()),
+      jsonEncode(members
+          .map((m) => MemberResponse.fromEntity(
+                m,
+                equipmentTraining: training[m.id] ?? const [],
+              ).toJson())
+          .toList()),
       headers: _jsonHeaders,
     );
   }
+
+  /// GET /members/training-equipment — the Wood Shop / Metal Shop equipment
+  /// from the Asset register that a member can be trained on. Served under
+  /// /members (not /assets) so it follows the Members page permission.
+  Future<Response> handleTrainingEquipment(Request request) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+    final List<TrainingEquipment> equipment =
+        await _trainingEquipment.execute(entityId: entityId);
+    return Response.ok(
+      jsonEncode(equipment.map(TrainingEquipmentResponse.toJson).toList()),
+      headers: _jsonHeaders,
+    );
+  }
+
+  /// PUT /members/:id/equipment-training — replaces the full list of
+  /// equipment the member is trained on. Body: `{assetIds: [...],
+  /// trainedOn?: 'YYYY-MM-DD'}`; newly listed equipment is dated
+  /// `trainedOn`, equipment already recorded keeps its original date.
+  Future<Response> handleSetEquipmentTraining(Request request, String id) async {
+    final entityId = _entityId(request);
+    if (entityId == null) return _orgRequired();
+
+    final SetEquipmentTrainingRequest dto;
+    try {
+      final json = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      dto = SetEquipmentTrainingRequest.fromJson(json);
+    } on FormatException catch (e) {
+      return _badRequest(e.message);
+    } catch (_) {
+      return _badRequest('Request body must be valid JSON');
+    }
+
+    try {
+      final List<MemberEquipmentTraining> before =
+          await _listTraining.executeForMember(id, entityId: entityId);
+      final List<MemberEquipmentTraining> after = await _setTraining.execute(
+        memberId: id,
+        entityId: entityId,
+        assetIds: dto.assetIds,
+        trainedOn: dto.trainedOn ?? DateTime.now(),
+      );
+      final Map<String, dynamic> diff = diffMaps(
+        {'equipmentTraining': _trainingSnapshot(before)},
+        {'equipmentTraining': _trainingSnapshot(after)},
+      );
+      if (diff.isNotEmpty) {
+        _auditChanges(request)?.set({'memberId': id, ...diff});
+      }
+      return Response.ok(
+        jsonEncode({
+          'memberId': id,
+          'equipmentTraining': MemberEquipmentTrainingResponse.listToJson(after),
+        }),
+        headers: _jsonHeaders,
+      );
+    } on MemberNotFoundException catch (e) {
+      return _notFound(e.message);
+    } on MemberValidationException catch (e) {
+      return _badRequest(e.message);
+    }
+  }
+
+  /// One audit-friendly line per record: `<asset no> <description> (<date>)`.
+  static String _trainingSnapshot(List<MemberEquipmentTraining> training) =>
+      training
+          .map((t) => '${t.equipment.assetNo} ${t.equipment.description ?? ''} '
+              '(${t.trainedOn.toIso8601String().substring(0, 10)})')
+          .join('; ');
 
   /// POST /members
   Future<Response> handleCreate(Request request) async {
@@ -142,8 +233,11 @@ class MemberHandler {
     if (entityId == null) return _orgRequired();
     try {
       final member = await _get.execute(id, entityId: entityId);
+      final List<MemberEquipmentTraining> training =
+          await _listTraining.executeForMember(id, entityId: entityId);
       return Response.ok(
-        MemberResponse.fromEntity(member).toJsonString(),
+        MemberResponse.fromEntity(member, equipmentTraining: training)
+            .toJsonString(),
         headers: _jsonHeaders,
       );
     } on MemberNotFoundException catch (e) {

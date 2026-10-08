@@ -110,6 +110,12 @@ A Money-Out payment coded to several GL accounts is stored as **one ordinary `tr
 - **Anything about money actually moving works per payment** — ABA export, bank reconciliation / CBA import matching and the manual-match dialog must treat a split as a single amount (the sum of its lines). Use `client/lib/utils/split_payments.dart` (`groupIntoPayments`, `splitLinesOf`, `TransactionPayment`) rather than iterating rows.
 - **API**: `POST /transactions` and `PUT /transactions/:id` accept a `lines[]` array (and then return an array of rows). A PUT with `lines` replaces every line of the split atomically (soft-delete + re-insert, so row ids change); one line collapses it back to an ordinary transaction. A plain PUT on one line of a split is rejected, DELETE removes the whole split, and `bankMatch` / `stampAbaBatch` extend to sibling lines server-side.
 
+## Member Equipment Training
+Which Wood Shop / Metal Shop equipment (Asset register Sections, matched case-insensitively — `TrainingSection`) each member is trained on lives in `member_equipment_training` (migration 066): one active row per member + asset, with `trained_on` = the day the tick was saved.
+
+- **API**: `GET /members` returns `equipmentTraining[]` per member; `GET /members/training-equipment` lists the tickable equipment (under `/members`, not `/assets`, so it follows the Members page permission); `PUT /members/:id/equipment-training` takes the *complete* `assetIds[]` — new ticks get `trainedOn`, existing ones keep their original date, missing ones are soft-deleted.
+- **Legacy columns**: `members.woodworking_induction` / `metalworking_induction` are no longer editable in the UI but are still carried by CardDAV, import and backup. `PUT /members/:id` is a full replace, so the Members screen must keep passing them through unchanged (`_MemberRow.toRequestJson`).
+
 ## PostgreSQL / Dart Package Notes
 - Use `Sql.named()` for parameterised queries. Cast JSONB parameters explicitly: `@param::jsonb`.
 - Pass JSONB as `jsonEncode(map)` in parameters; on read, handle both `Map` (already decoded) and `String` (decode manually).

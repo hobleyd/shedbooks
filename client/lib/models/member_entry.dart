@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'equipment_training.dart';
+
 /// A member entry returned from the API.
 class MemberEntry {
   final String id;
@@ -39,6 +41,10 @@ class MemberEntry {
   final String? emergencyContactPhone;
   final String? woodworkingInduction;
   final String? metalworkingInduction;
+
+  /// Equipment this member has been trained on (empty when none, or when
+  /// the endpoint did not include it).
+  final List<EquipmentTraining> equipmentTraining;
   final String? gymWaiver;
 
   /// Timestamp of the last successful O365 GAL sync, or null if this
@@ -78,6 +84,7 @@ class MemberEntry {
     this.emergencyContactPhone,
     this.woodworkingInduction,
     this.metalworkingInduction,
+    this.equipmentTraining = const [],
     this.gymWaiver,
     this.o365SyncedAt,
     this.o365SyncFailedAt,
@@ -108,6 +115,9 @@ class MemberEntry {
       emergencyContactPhone: json['emergencyContactPhone'] as String?,
       woodworkingInduction: json['woodworkingInduction'] as String?,
       metalworkingInduction: json['metalworkingInduction'] as String?,
+      equipmentTraining: ((json['equipmentTraining'] as List<dynamic>?) ?? [])
+          .map((e) => EquipmentTraining.fromJson(e as Map<String, dynamic>))
+          .toList(),
       gymWaiver: json['gymWaiver'] as String?,
       o365SyncedAt: json['o365SyncedAt'] != null
           ? DateTime.parse(json['o365SyncedAt'] as String)

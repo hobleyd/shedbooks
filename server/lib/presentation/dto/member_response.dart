@@ -18,6 +18,8 @@
 import 'dart:convert';
 
 import '../../domain/entities/member.dart';
+import '../../domain/entities/member_equipment_training.dart';
+import 'member_equipment_training_response.dart';
 
 /// JSON response shape for a member.
 class MemberResponse {
@@ -42,6 +44,10 @@ class MemberResponse {
   final String? o365MailboxCreatedAt;
   final String? shedbooksAppRole;
   final String? shedbooksAppRoleSetAt;
+
+  /// The equipment this member has been trained on, or null when the
+  /// endpoint did not load it (the key is then omitted from the JSON).
+  final List<Map<String, dynamic>>? equipmentTraining;
   final String etag;
   final String createdAt;
   final String updatedAt;
@@ -68,12 +74,16 @@ class MemberResponse {
     this.o365MailboxCreatedAt,
     this.shedbooksAppRole,
     this.shedbooksAppRoleSetAt,
+    this.equipmentTraining,
     required this.etag,
     required this.createdAt,
     required this.updatedAt,
   });
 
-  factory MemberResponse.fromEntity(Member entity) {
+  factory MemberResponse.fromEntity(
+    Member entity, {
+    List<MemberEquipmentTraining>? equipmentTraining,
+  }) {
     return MemberResponse(
       id: entity.id,
       firstName: entity.firstName,
@@ -98,6 +108,9 @@ class MemberResponse {
       o365MailboxCreatedAt: entity.o365MailboxCreatedAt?.toUtc().toIso8601String(),
       shedbooksAppRole: entity.shedbooksAppRole,
       shedbooksAppRoleSetAt: entity.shedbooksAppRoleSetAt?.toUtc().toIso8601String(),
+      equipmentTraining: equipmentTraining == null
+          ? null
+          : MemberEquipmentTrainingResponse.listToJson(equipmentTraining),
       etag: entity.etag,
       createdAt: entity.createdAt.toUtc().toIso8601String(),
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
@@ -126,6 +139,7 @@ class MemberResponse {
         'o365MailboxCreatedAt': o365MailboxCreatedAt,
         'shedbooksAppRole': shedbooksAppRole,
         'shedbooksAppRoleSetAt': shedbooksAppRoleSetAt,
+        if (equipmentTraining != null) 'equipmentTraining': equipmentTraining,
         'etag': etag,
         'createdAt': createdAt,
         'updatedAt': updatedAt,

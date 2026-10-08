@@ -16,6 +16,7 @@
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shedbooks_client/models/equipment_training.dart';
 import 'package:shedbooks_client/models/member_entry.dart';
 
 void main() {
@@ -50,6 +51,58 @@ void main() {
 
       // Assert
       expect(sut.shedbooksAppRole, isNull);
+    });
+  });
+
+  group('MemberEntry.fromJson equipmentTraining', () {
+    Map<String, dynamic> json(Object? training) => <String, dynamic>{
+          'id': 'm1',
+          'firstName': 'Ada',
+          'lastName': 'Lovelace',
+          'etag': 'e1',
+          if (training != null) 'equipmentTraining': training,
+        };
+
+    test('parses each trained item with its equipment and date', () {
+      // Arrange / Act
+      final MemberEntry sut = MemberEntry.fromJson(json([
+        {
+          'assetId': 'a1',
+          'assetNo': '2026-W-0002',
+          'section': 'Wood Shop',
+          'description': 'Band Saw - 14 inch',
+          'brand': null,
+          'trainedOn': '2026-10-08',
+        },
+      ]));
+
+      // Assert
+      expect(sut.equipmentTraining, hasLength(1));
+      expect(sut.equipmentTraining.single.equipment.label, 'Band Saw - 14 inch');
+      expect(sut.equipmentTraining.single.equipment.isInSection(kWoodShopSection),
+          isTrue);
+      expect(sut.equipmentTraining.single.trainedOn, '2026-10-08');
+    });
+
+    test('is empty when the key is absent', () {
+      // Arrange / Act
+      final MemberEntry sut = MemberEntry.fromJson(json(null));
+
+      // Assert
+      expect(sut.equipmentTraining, isEmpty);
+    });
+  });
+
+  group('TrainingEquipment', () {
+    test('label falls back to the asset number without a description', () {
+      // Arrange
+      const TrainingEquipment sut = TrainingEquipment(
+          assetId: 'a1', assetNo: '2026-M-0001', section: 'metal shop ');
+
+      // Act / Assert
+      expect(sut.label, '2026-M-0001');
+      expect(sut.isInSection(kMetalShopSection), isTrue);
+      expect(sut.isInSection(kWoodShopSection), isFalse);
     });
   });
 }

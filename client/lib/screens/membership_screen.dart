@@ -17,7 +17,7 @@
 
 import 'dart:convert';
 
-import 'package:excel/excel.dart' hide Border;
+import 'package:excel/excel.dart' hide Border, TextSpan;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +25,7 @@ import 'package:provider/provider.dart';
 
 import '../auth/app_role.dart';
 import '../auth/auth_state.dart';
+import '../models/equipment_training.dart';
 import '../models/member_entry.dart';
 import '../models/permission_action.dart';
 import '../models/permission_page.dart';
@@ -69,8 +70,6 @@ class _MemberRow {
   final TextEditingController dobCtrl;
   final TextEditingController emergencyNameCtrl;
   final TextEditingController emergencyPhoneCtrl;
-  final TextEditingController woodworkingCtrl;
-  final TextEditingController metalworkingCtrl;
   final TextEditingController gymWaiverCtrl;
   final FocusNode firstNameFocus;
   final FocusNode lastNameFocus;
@@ -81,6 +80,19 @@ class _MemberRow {
   final DateTime? o365SyncFailedAt;
   final String? o365MailboxUpn;
   final String? shedbooksAppRole;
+
+  /// Saved equipment training (equipment + date), as shown in the table.
+  final List<EquipmentTraining> training;
+
+  /// Asset ids ticked as trained in the edit panel. Starts as the saved set;
+  /// saved through its own endpoint (not [toRequestJson]).
+  final Set<String> trainedAssetIds;
+
+  // Legacy per-shop induction dates (ISO, or null). No longer editable —
+  // replaced by per-equipment [training] — but PUT /members/:id replaces
+  // every field, so they are passed through unchanged in [toRequestJson].
+  final String? woodworkingInduction;
+  final String? metalworkingInduction;
 
   // Originals for dirty-check
   final String _origLastName;
@@ -94,8 +106,7 @@ class _MemberRow {
   final String _origDob;
   final String _origEmergencyName;
   final String _origEmergencyPhone;
-  final String _origWoodworking;
-  final String _origMetalworking;
+  final Set<String> _origTrainedAssetIds;
   final String _origGymWaiver;
 
   _MemberRow.blank()
@@ -111,8 +122,6 @@ class _MemberRow {
         dobCtrl = TextEditingController(),
         emergencyNameCtrl = TextEditingController(),
         emergencyPhoneCtrl = TextEditingController(),
-        woodworkingCtrl = TextEditingController(),
-        metalworkingCtrl = TextEditingController(),
         gymWaiverCtrl = TextEditingController(),
         firstNameFocus = FocusNode(),
         lastNameFocus = FocusNode(),
@@ -120,6 +129,10 @@ class _MemberRow {
         o365SyncFailedAt = null,
         o365MailboxUpn = null,
         shedbooksAppRole = null,
+        training = const [],
+        trainedAssetIds = {},
+        woodworkingInduction = null,
+        metalworkingInduction = null,
         _origLastName = '',
         _origFirstName = '',
         _origDateJoined = '',
@@ -131,8 +144,7 @@ class _MemberRow {
         _origDob = '',
         _origEmergencyName = '',
         _origEmergencyPhone = '',
-        _origWoodworking = '',
-        _origMetalworking = '',
+        _origTrainedAssetIds = const {},
         _origGymWaiver = '';
 
   _MemberRow.fromEntry(MemberEntry e)
@@ -154,10 +166,6 @@ class _MemberRow {
             TextEditingController(text: e.emergencyContactName ?? ''),
         emergencyPhoneCtrl =
             TextEditingController(text: e.emergencyContactPhone ?? ''),
-        woodworkingCtrl = TextEditingController(
-            text: _isoToDisplay(e.woodworkingInduction ?? '')),
-        metalworkingCtrl = TextEditingController(
-            text: _isoToDisplay(e.metalworkingInduction ?? '')),
         gymWaiverCtrl =
             TextEditingController(text: _isoToDisplay(e.gymWaiver ?? '')),
         firstNameFocus = FocusNode(),
@@ -166,6 +174,11 @@ class _MemberRow {
         o365SyncFailedAt = e.o365SyncFailedAt,
         o365MailboxUpn = e.o365MailboxUpn,
         shedbooksAppRole = e.shedbooksAppRole,
+        training = e.equipmentTraining,
+        trainedAssetIds =
+            e.equipmentTraining.map((t) => t.equipment.assetId).toSet(),
+        woodworkingInduction = e.woodworkingInduction,
+        metalworkingInduction = e.metalworkingInduction,
         _origLastName = e.lastName,
         _origFirstName = e.firstName,
         _origDateJoined = _isoToDisplay(e.dateJoined ?? ''),
@@ -177,8 +190,8 @@ class _MemberRow {
         _origDob = _isoToDisplay(e.dateOfBirth ?? ''),
         _origEmergencyName = e.emergencyContactName ?? '',
         _origEmergencyPhone = e.emergencyContactPhone ?? '',
-        _origWoodworking = _isoToDisplay(e.woodworkingInduction ?? ''),
-        _origMetalworking = _isoToDisplay(e.metalworkingInduction ?? ''),
+        _origTrainedAssetIds =
+            e.equipmentTraining.map((t) => t.equipment.assetId).toSet(),
         _origGymWaiver = _isoToDisplay(e.gymWaiver ?? '');
 
   bool get isDirty =>
@@ -193,9 +206,18 @@ class _MemberRow {
       dobCtrl.text != _origDob ||
       emergencyNameCtrl.text != _origEmergencyName ||
       emergencyPhoneCtrl.text != _origEmergencyPhone ||
-      woodworkingCtrl.text != _origWoodworking ||
-      metalworkingCtrl.text != _origMetalworking ||
+      isTrainingDirty ||
       gymWaiverCtrl.text != _origGymWaiver;
+
+  /// Whether the ticked equipment differs from what is saved.
+  bool get isTrainingDirty =>
+      trainedAssetIds.length != _origTrainedAssetIds.length ||
+      !trainedAssetIds.containsAll(_origTrainedAssetIds);
+
+  /// Saved training for equipment in [sectionName], for the table chips.
+  List<EquipmentTraining> trainingIn(String sectionName) => training
+      .where((t) => t.equipment.isInSection(sectionName))
+      .toList();
 
   Map<String, dynamic> toRequestJson() => {
         'lastName': lastNameCtrl.text.trim(),
@@ -220,12 +242,8 @@ class _MemberRow {
         'emergencyContactPhone': emergencyPhoneCtrl.text.trim().isEmpty
             ? null
             : emergencyPhoneCtrl.text.trim(),
-        'woodworkingInduction': woodworkingCtrl.text.trim().isEmpty
-            ? null
-            : _displayToIso(woodworkingCtrl.text.trim()),
-        'metalworkingInduction': metalworkingCtrl.text.trim().isEmpty
-            ? null
-            : _displayToIso(metalworkingCtrl.text.trim()),
+        'woodworkingInduction': woodworkingInduction,
+        'metalworkingInduction': metalworkingInduction,
         'gymWaiver': gymWaiverCtrl.text.trim().isEmpty
             ? null
             : _displayToIso(gymWaiverCtrl.text.trim()),
@@ -243,8 +261,9 @@ class _MemberRow {
     dobCtrl.text = _origDob;
     emergencyNameCtrl.text = _origEmergencyName;
     emergencyPhoneCtrl.text = _origEmergencyPhone;
-    woodworkingCtrl.text = _origWoodworking;
-    metalworkingCtrl.text = _origMetalworking;
+    trainedAssetIds
+      ..clear()
+      ..addAll(_origTrainedAssetIds);
     gymWaiverCtrl.text = _origGymWaiver;
   }
 
@@ -260,8 +279,6 @@ class _MemberRow {
     dobCtrl.dispose();
     emergencyNameCtrl.dispose();
     emergencyPhoneCtrl.dispose();
-    woodworkingCtrl.dispose();
-    metalworkingCtrl.dispose();
     gymWaiverCtrl.dispose();
     firstNameFocus.dispose();
     lastNameFocus.dispose();
@@ -278,6 +295,7 @@ class MembershipScreen extends StatefulWidget {
 
 class _MembershipScreenState extends State<MembershipScreen> {
   List<_MemberRow> _rows = [];
+  List<TrainingEquipment> _equipment = [];
   bool _loading = true;
   String? _error;
   bool _saving = false;
@@ -314,8 +332,10 @@ class _MembershipScreenState extends State<MembershipScreen> {
         final entries =
             data.map((e) => MemberEntry.fromJson(e as Map<String, dynamic>)).toList();
         final newRows = entries.map(_MemberRow.fromEntry).toList();
+        final equipment = await _loadEquipment(client);
         if (mounted) {
           setState(() {
+            _equipment = equipment;
             for (final r in _rows) {
               r.dispose();
             }
@@ -338,6 +358,43 @@ class _MembershipScreenState extends State<MembershipScreen> {
         });
       }
     }
+  }
+
+  /// Loads the Wood Shop / Metal Shop equipment for the training
+  /// dropdowns. A failure only empties the dropdowns — it must not take
+  /// the whole Members page down with it.
+  Future<List<TrainingEquipment>> _loadEquipment(ApiClient client) async {
+    try {
+      final res = await client.get('/members/training-equipment');
+      if (res.statusCode != 200) return _equipment;
+      final List<dynamic> data = jsonDecode(res.body);
+      return data
+          .map((e) => TrainingEquipment.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return _equipment;
+    }
+  }
+
+  /// Saves [row]'s ticked equipment for [memberId]. Newly ticked items are
+  /// dated today (the user's local date). Returns an error message, or null
+  /// on success.
+  Future<String?> _saveTraining(
+      ApiClient client, String memberId, _MemberRow row) async {
+    final res = await client.put(
+      '/members/$memberId/equipment-training',
+      jsonEncode({
+        'assetIds': row.trainedAssetIds.toList(),
+        'trainedOn': _isoDate(DateTime.now()),
+      }),
+    );
+    if (res.statusCode == 200) return null;
+    String? error;
+    try {
+      error = (jsonDecode(res.body) as Map<String, dynamic>)['error'] as String?;
+    } catch (_) {}
+    return 'Member saved, but equipment training was not: '
+        '${error ?? 'error ${res.statusCode}'}';
   }
 
   void _addRow() {
@@ -366,10 +423,20 @@ class _MembershipScreenState extends State<MembershipScreen> {
       final res =
           await client.post('/members', jsonEncode(row.toRequestJson()));
       if (res.statusCode == 201) {
+        String? trainingError;
+        if (row.isTrainingDirty) {
+          final String newId =
+              (jsonDecode(res.body) as Map<String, dynamic>)['id'] as String;
+          trainingError = await _saveTraining(client, newId, row);
+        }
         _pendingNewRow?.dispose();
         setState(() => _pendingNewRow = null);
         await _load();
         _updateDirty();
+        if (trainingError != null && mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(trainingError)));
+        }
       } else {
         final msg =
             (jsonDecode(res.body) as Map<String, dynamic>)['error'] as String? ??
@@ -404,8 +471,18 @@ class _MembershipScreenState extends State<MembershipScreen> {
           ? await client.post('/members', body)
           : await client.put('/members/${row.id}', body);
       if (res.statusCode == 200 || res.statusCode == 201) {
+        String? trainingError;
+        if (row.isTrainingDirty) {
+          final String memberId = row.id ??
+              (jsonDecode(res.body) as Map<String, dynamic>)['id'] as String;
+          trainingError = await _saveTraining(client, memberId, row);
+        }
         await _load();
         _updateDirty();
+        if (trainingError != null && mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(trainingError)));
+        }
       } else {
         final msg =
             (jsonDecode(res.body) as Map<String, dynamic>)['error'] as String? ??
@@ -996,6 +1073,11 @@ class _MembershipScreenState extends State<MembershipScreen> {
     }
   }
 
+  static String _trainingSortKey(_MemberRow r, String section) {
+    final int n = r.trainingIn(section).length;
+    return n == 0 ? '' : n.toString().padLeft(4, '0');
+  }
+
   void _applySort() {
     if (_sortColumn == null) return;
     _rows.sort((a, b) {
@@ -1011,8 +1093,9 @@ class _MembershipScreenState extends State<MembershipScreen> {
           7 => r.phoneCtrl.text,
           8 => r.dobCtrl.text,
           9 => r.emergencyNameCtrl.text,
-          10 => r.woodworkingCtrl.text,
-          11 => r.metalworkingCtrl.text,
+          // Training columns sort by how many items the member has.
+          10 => _trainingSortKey(r, kWoodShopSection),
+          11 => _trainingSortKey(r, kMetalShopSection),
           12 => r.gymWaiverCtrl.text,
           13 => r.o365SyncFailedAt != null
               ? _isoDate(r.o365SyncFailedAt!.toLocal())
@@ -1094,6 +1177,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
                   ? const Center(child: CircularProgressIndicator())
                   : _MemberTable(
                         rows: _rows,
+                        equipment: _equipment,
                         canEdit: canEdit,
                         canCreateMailbox:
                             permissions.canPerform(PermissionAction.membersCreateMailbox),
@@ -1189,8 +1273,8 @@ const double _kRoleW = 100;
 const double _kDateJoinedW = 100;
 const double _kStatusW = 80;
 const double _kPhoneW = 120;
-const double _kWoodworkingW = 130;
-const double _kMetalworkingW = 130;
+const double _kWoodworkingW = 280;
+const double _kMetalworkingW = 280;
 const double _kGymWaiverW = 100;
 const double _kO365W = 56;
 const double _kActionsW = 148;
@@ -1208,10 +1292,13 @@ const double _kTableMinWidth = _kExpandW +
     _kMetalworkingW +
     _kGymWaiverW +
     _kO365W +
-    _kActionsW; // 1078
+    _kActionsW; // 1378
 
 class _MemberTable extends StatefulWidget {
   final List<_MemberRow> rows;
+
+  /// Wood Shop / Metal Shop equipment offered in the training dropdowns.
+  final List<TrainingEquipment> equipment;
   final bool canEdit;
   final bool canCreateMailbox;
   final bool canSetRole;
@@ -1231,6 +1318,7 @@ class _MemberTable extends StatefulWidget {
 
   const _MemberTable({
     required this.rows,
+    required this.equipment,
     required this.canEdit,
     this.canCreateMailbox = false,
     this.canSetRole = false,
@@ -1451,6 +1539,77 @@ class _MemberTableState extends State<_MemberTable> {
     );
   }
 
+  /// The equipment a member is trained on, one pill per item showing the
+  /// equipment and the date trained. Display only — not tappable.
+  /// [legacyInduction] is the old single per-shop induction date (ISO), shown
+  /// as an outlined pill so dates recorded before per-equipment training
+  /// stay visible.
+  Widget _trainingCell(BuildContext context, List<EquipmentTraining> training,
+      String? legacyInduction, double width) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextStyle? style = Theme.of(context).textTheme.bodySmall;
+
+    Widget pill(String label, String date, {required bool filled}) {
+      final Color fg =
+          filled ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
+      return Tooltip(
+        message: '$label — $date',
+        child: Container(
+          constraints: BoxConstraints(maxWidth: width - 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: ShapeDecoration(
+            color: filled ? scheme.secondaryContainer : null,
+            shape: StadiumBorder(
+              side: filled
+                  ? BorderSide.none
+                  : BorderSide(color: scheme.outlineVariant),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(label,
+                    overflow: TextOverflow.ellipsis,
+                    style: style?.copyWith(
+                        color: fg, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 6),
+              Text(date, style: style?.copyWith(color: fg)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final bool hasLegacy = legacyInduction != null && legacyInduction.isNotEmpty;
+    if (training.isEmpty && !hasLegacy) {
+      return SizedBox(
+        width: width,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text('—', style: style),
+        ),
+      );
+    }
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: [
+            for (final EquipmentTraining t in training)
+              pill(t.equipment.label, _isoToDisplay(t.trainedOn), filled: true),
+            if (hasLegacy)
+              pill('Induction', _isoToDisplay(legacyInduction), filled: false),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Blank if this member has never been synced to O365; a green check if
   /// the most recent attempt succeeded; a red cross if it failed.
   /// [_MemberRow.o365SyncFailedAt] is always cleared server-side on the
@@ -1576,6 +1735,90 @@ class _MemberTableState extends State<_MemberTable> {
     );
   }
 
+  /// A dropdown listing the [sectionName] equipment from the Asset
+  /// register, each with a "trained" checkbox. Ticks are held on
+  /// [_MemberRow.trainedAssetIds] and written when the member is saved.
+  Widget _buildTrainingField(BuildContext context, String label,
+      String sectionName, _MemberRow row, InputDecoration baseDec) {
+    final List<TrainingEquipment> items = widget.equipment
+        .where((e) => e.isInSection(sectionName))
+        .toList();
+    final Map<String, String> savedDates = {
+      for (final EquipmentTraining t in row.training)
+        t.equipment.assetId: t.trainedOn,
+    };
+    final int trainedCount =
+        items.where((e) => row.trainedAssetIds.contains(e.assetId)).length;
+    final TextTheme text = Theme.of(context).textTheme;
+    final Color muted = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    return MenuAnchor(
+      style: const MenuStyle(
+        maximumSize: WidgetStatePropertyAll(Size(460, 360)),
+      ),
+      menuChildren: [
+        if (items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text('No $sectionName equipment in the Asset register',
+                style: text.bodySmall),
+          ),
+        for (final TrainingEquipment e in items)
+          CheckboxMenuButton(
+            value: row.trainedAssetIds.contains(e.assetId),
+            closeOnActivate: false,
+            onChanged: (bool? trained) {
+              setState(() {
+                if (trained ?? false) {
+                  row.trainedAssetIds.add(e.assetId);
+                } else {
+                  row.trainedAssetIds.remove(e.assetId);
+                }
+              });
+              widget.onChanged();
+            },
+            child: Text.rich(
+              TextSpan(
+                text: e.label,
+                children: [
+                  TextSpan(
+                    text: savedDates.containsKey(e.assetId)
+                        ? '  ${e.assetNo} · trained '
+                            '${_isoToDisplay(savedDates[e.assetId]!)}'
+                        : '  ${e.assetNo}',
+                    style: text.bodySmall?.copyWith(color: muted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+      builder: (BuildContext context, MenuController menu, Widget? _) {
+        return InkWell(
+          onTap: () => menu.isOpen ? menu.close() : menu.open(),
+          child: InputDecorator(
+            decoration: baseDec.copyWith(labelText: '$label — trained on'),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    trainedCount == 0
+                        ? 'Select equipment'
+                        : '$trainedCount of ${items.length} trained',
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodyLarge?.copyWith(
+                        color: trainedCount == 0 ? muted : null),
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down, size: 20, color: muted),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildEditPanel(BuildContext context, _MemberRow row,
       {required String key, bool isPending = false}) {
     final baseDec = InputDecoration(
@@ -1653,9 +1896,15 @@ class _MemberTableState extends State<_MemberTable> {
           ]),
           const SizedBox(height: 8),
           Row(children: [
-            SizedBox(width: 150, child: df('Woodworking Induction', row.woodworkingCtrl)),
+            SizedBox(
+                width: 300,
+                child: _buildTrainingField(
+                    context, 'Woodworking', kWoodShopSection, row, baseDec)),
             const SizedBox(width: 8),
-            SizedBox(width: 150, child: df('Metalworking Induction', row.metalworkingCtrl)),
+            SizedBox(
+                width: 300,
+                child: _buildTrainingField(
+                    context, 'Metalworking', kMetalShopSection, row, baseDec)),
             const SizedBox(width: 8),
             SizedBox(width: 140, child: df('Gym Waiver', row.gymWaiverCtrl)),
           ]),
@@ -1798,8 +2047,9 @@ class _MemberTableState extends State<_MemberTable> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 48,
+          // At least 48 high; grows when the training chips wrap.
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -1825,8 +2075,10 @@ class _MemberTableState extends State<_MemberTable> {
                 _readCell(context, row.dateJoinedCtrl, _kDateJoinedW),
                 _readCell(context, row.statusCtrl, _kStatusW),
                 _readPhoneCell(context, row.phoneCtrl, _kPhoneW),
-                _readDateCell(context, row.woodworkingCtrl, _kWoodworkingW),
-                _readDateCell(context, row.metalworkingCtrl, _kMetalworkingW),
+                _trainingCell(context, row.trainingIn(kWoodShopSection),
+                    row.woodworkingInduction, _kWoodworkingW),
+                _trainingCell(context, row.trainingIn(kMetalShopSection),
+                    row.metalworkingInduction, _kMetalworkingW),
                 _readDateCell(context, row.gymWaiverCtrl, _kGymWaiverW),
                 _o365StatusCell(context, row, _kO365W),
                 SizedBox(
