@@ -20,12 +20,19 @@
 /// [executedDate] is null to clear a previously-recorded executed date.
 class SetCapexRequestExecutedDateRequest {
   final DateTime? executedDate;
+  final int? actualSpentCents;
 
-  const SetCapexRequestExecutedDateRequest({this.executedDate});
+  const SetCapexRequestExecutedDateRequest({this.executedDate, this.actualSpentCents});
 
   factory SetCapexRequestExecutedDateRequest.fromJson(Map<String, dynamic> json) {
+    final actualSpentCents = json['actualSpentCents'];
+    if (actualSpentCents != null && actualSpentCents is! int) {
+      throw const FormatException('actualSpentCents must be a whole number of cents or null');
+    }
     final raw = json['executedDate'];
-    if (raw == null) return const SetCapexRequestExecutedDateRequest();
+    if (raw == null) {
+      return SetCapexRequestExecutedDateRequest(actualSpentCents: actualSpentCents as int?);
+    }
     if (raw is! String) {
       throw const FormatException('executedDate must be a date string or null');
     }
@@ -33,6 +40,7 @@ class SetCapexRequestExecutedDateRequest {
     if (parsed == null) {
       throw const FormatException('executedDate must be a valid date string');
     }
-    return SetCapexRequestExecutedDateRequest(executedDate: parsed);
+    return SetCapexRequestExecutedDateRequest(
+        executedDate: parsed, actualSpentCents: actualSpentCents as int?);
   }
 }

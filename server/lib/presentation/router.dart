@@ -421,14 +421,15 @@ Handler buildRouter({
   );
   final capexRequestRepository = PostgresCapexRequestRepository(pool);
   final capexRequestHandler = CapexRequestHandler(
-    create: CreateCapexRequestUseCase(capexRequestRepository),
+    create: CreateCapexRequestUseCase(capexRequestRepository, invoiceRepository),
     get: GetCapexRequestUseCase(capexRequestRepository),
     list: ListCapexRequestsUseCase(capexRequestRepository),
-    update: UpdateCapexRequestUseCase(capexRequestRepository),
+    update: UpdateCapexRequestUseCase(capexRequestRepository, invoiceRepository),
     delete: DeleteCapexRequestUseCase(capexRequestRepository),
     decide: DecideCapexRequestUseCase(capexRequestRepository),
     nextNumber: GetNextCapexRequestNoUseCase(capexRequestRepository),
     setExecutedDate: SetCapexRequestExecutedDateUseCase(capexRequestRepository),
+    permissions: rolePermissionRepository,
   );
 
   final cardDavPathPrefix =
@@ -875,7 +876,9 @@ Router _assetRouter(AssetHandler h, IRolePermissionRepository permissions) {
 }
 
 // Viewers can read; contributors and admins can create/edit/delete;
-// only administrators can approve/reject (record the decision).
+// only administrators can approve/reject (record the decision) or edit a
+// request once decided (capex-edit-decided, checked inside handleUpdate
+// because it depends on the request's current status).
 // Fixed paths (next-number) must be registered before /<id> to avoid shadowing.
 Router _capexRequestRouter(CapexRequestHandler h, IRolePermissionRepository permissions) {
   const page = PermissionPage.capexRequests;

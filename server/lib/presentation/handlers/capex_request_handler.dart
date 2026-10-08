@@ -30,12 +30,15 @@ import '../../application/capex_request/list_capex_requests_use_case.dart';
 import '../../application/capex_request/set_capex_request_executed_date_use_case.dart';
 import '../../application/capex_request/update_capex_request_use_case.dart';
 import '../../domain/entities/capex_request.dart';
+import '../../domain/enums/permission_action.dart';
 import '../../domain/exceptions/capex_request_exception.dart';
+import '../../domain/repositories/i_role_permission_repository.dart';
 import '../audit_changes.dart';
 import '../dto/capex_request_response.dart';
 import '../dto/create_capex_request_request.dart';
 import '../dto/decide_capex_request_request.dart';
 import '../dto/set_capex_request_executed_date_request.dart';
+import '../middleware/role_guard.dart';
 import 'handler_diff.dart';
 
 /// Shelf request handlers for the /capex-requests REST resource.
@@ -48,6 +51,7 @@ class CapexRequestHandler {
   final DecideCapexRequestUseCase _decide;
   final GetNextCapexRequestNoUseCase _nextNumber;
   final SetCapexRequestExecutedDateUseCase _setExecutedDate;
+  final IRolePermissionRepository _permissions;
 
   const CapexRequestHandler({
     required CreateCapexRequestUseCase create,
@@ -58,6 +62,7 @@ class CapexRequestHandler {
     required DecideCapexRequestUseCase decide,
     required GetNextCapexRequestNoUseCase nextNumber,
     required SetCapexRequestExecutedDateUseCase setExecutedDate,
+    required IRolePermissionRepository permissions,
   })  : _create = create,
         _get = get,
         _list = list,
@@ -65,7 +70,8 @@ class CapexRequestHandler {
         _delete = delete,
         _decide = decide,
         _nextNumber = nextNumber,
-        _setExecutedDate = setExecutedDate;
+        _setExecutedDate = setExecutedDate,
+        _permissions = permissions;
 
   /// GET /capex-requests/next-number — returns the next request number.
   Future<Response> handleNextNumber(Request request) async {
@@ -122,6 +128,7 @@ class CapexRequestHandler {
         costNotes: dto.costNotes,
         totalAmountCents: dto.totalAmountCents,
         quotesReceivedCount: dto.quotesReceivedCount,
+        invoiceId: dto.invoiceId,
       );
       _auditChanges(request)?.set(_snapshot(capexRequest));
       return Response(
@@ -150,6 +157,9 @@ class CapexRequestHandler {
   }
 
   /// PUT /capex-requests/:id
+  ///
+  /// A request that has already been approved or rejected is only editable
+  /// by a role holding [PermissionAction.capexEditDecided].
   Future<Response> handleUpdate(Request request, String id) async {
     final entityId = _entityId(request);
     if (entityId == null) return _orgRequired();
@@ -169,6 +179,10 @@ class CapexRequestHandler {
       before = await _get.execute(id, entityId: entityId);
     } catch (_) {}
 
+    final bool allowDecided = (await _permissions.getEffective(
+            entityId: entityId, role: roleFromRequest(request)))
+        .canPerform(PermissionAction.capexEditDecided);
+
     try {
       final capexRequest = await _update.execute(
         id: id,
@@ -186,6 +200,8 @@ class CapexRequestHandler {
         costNotes: dto.costNotes,
         totalAmountCents: dto.totalAmountCents,
         quotesReceivedCount: dto.quotesReceivedCount,
+        invoiceId: dto.invoiceId,
+        allowDecided: allowDecided,
       );
       if (before != null) {
         final diff = diffMaps(_snapshot(before), _snapshot(capexRequest));
@@ -262,10 +278,12 @@ class CapexRequestHandler {
         id: id,
         entityId: entityId,
         executedDate: dto.executedDate,
+        actualSpentCents: dto.actualSpentCents,
       );
       _auditChanges(request)?.set({
         'requestNo': capexRequest.requestNo,
         'executedDate': capexRequest.executedDate?.toIso8601String().substring(0, 10),
+        'actualSpentCents': capexRequest.actualSpentCents,
       });
       return Response.ok(
         CapexRequestResponse.fromEntity(capexRequest).toJsonString(),
@@ -273,6 +291,8 @@ class CapexRequestHandler {
       );
     } on CapexRequestNotFoundException catch (e) {
       return _notFound(e.message);
+    } on CapexRequestValidationException catch (e) {
+      return _badRequest(e.message);
     }
   }
 
@@ -317,6 +337,7 @@ class CapexRequestHandler {
         'totalAmountCents': r.totalAmountCents,
         'quotesReceivedCount': r.quotesReceivedCount,
         'status': r.status.name,
+        'invoiceNumber': r.invoiceNumber,
       };
 
   static Response _orgRequired() => Response.unauthorized(

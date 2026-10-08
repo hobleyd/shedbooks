@@ -30,6 +30,7 @@ class CreateCapexRequestRequest {
   final String? costNotes;
   final int totalAmountCents;
   final int? quotesReceivedCount;
+  final String? invoiceId;
 
   const CreateCapexRequestRequest({
     required this.requestNo,
@@ -45,6 +46,7 @@ class CreateCapexRequestRequest {
     this.costNotes,
     required this.totalAmountCents,
     this.quotesReceivedCount,
+    this.invoiceId,
   });
 
   factory CreateCapexRequestRequest.fromJson(Map<String, dynamic> json) {
@@ -78,6 +80,10 @@ class CreateCapexRequestRequest {
     }
     final purchaseCostCents = _requiredInt(json, 'purchaseCostCents');
     final totalAmountCents = _requiredInt(json, 'totalAmountCents');
+    final invoiceId = json['invoiceId'];
+    if (invoiceId != null && (invoiceId is! String || !_uuidPattern.hasMatch(invoiceId))) {
+      throw const FormatException('invoiceId must be a UUID or null');
+    }
 
     return CreateCapexRequestRequest(
       requestNo: requestNo,
@@ -93,8 +99,12 @@ class CreateCapexRequestRequest {
       costNotes: _optionalString(json, 'costNotes'),
       totalAmountCents: totalAmountCents,
       quotesReceivedCount: _optionalInt(json, 'quotesReceivedCount'),
+      invoiceId: invoiceId as String?,
     );
   }
+
+  static final RegExp _uuidPattern = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
   static int _requiredInt(Map<String, dynamic> json, String key) {
     final v = _optionalInt(json, key);

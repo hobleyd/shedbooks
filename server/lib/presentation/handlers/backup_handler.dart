@@ -199,7 +199,8 @@ class BackupHandler {
                alternatives_considered, purchase_cost_cents, ongoing_costs_cents,
                other_costs_cents, cost_notes, total_amount_cents,
                quotes_received_count, status, decision_by_name, decision_at,
-               decision_notes, executed_date, created_at, updated_at, deleted_at
+               decision_notes, executed_date, actual_spent_cents, invoice_id::text,
+               created_at, updated_at, deleted_at
         FROM capex_requests WHERE entity_id = @entityId
       ''', {'entityId': entityId});
 
@@ -905,14 +906,16 @@ class BackupHandler {
                  alternatives_considered, purchase_cost_cents, ongoing_costs_cents,
                  other_costs_cents, cost_notes, total_amount_cents,
                  quotes_received_count, status, decision_by_name, decision_at,
-                 decision_notes, executed_date, created_at, updated_at, deleted_at)
+                 decision_notes, executed_date, actual_spent_cents, invoice_id,
+                 created_at, updated_at, deleted_at)
               VALUES (
                 @id::uuid, @e, @no, @date::date, @prep,
                 @desc, @what, @need,
                 @alt, @purchase, @ongoing,
                 @other, @notes, @total,
                 @quotes, @status, @decBy, @decAt::timestamptz,
-                @decNotes, @execDate::date, @ca::timestamptz, @ua::timestamptz, @da::timestamptz
+                @decNotes, @execDate::date, @actualSpent, @invoiceId::uuid,
+                @ca::timestamptz, @ua::timestamptz, @da::timestamptz
               )
             '''),
             parameters: {
@@ -938,6 +941,8 @@ class BackupHandler {
               'execDate': r['executed_date'] == null
                   ? null
                   : _dateString(r['executed_date']),
+              'actualSpent': r['actual_spent_cents'],
+              'invoiceId': r['invoice_id'],
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],

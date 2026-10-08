@@ -90,6 +90,21 @@ class CapexRequest {
   /// the corresponding decision is finalised.
   final DateTime? executedDate;
 
+  /// What the purchase actually cost, GST-inclusive, in cents — recorded
+  /// alongside [executedDate]; null until known.
+  final int? actualSpentCents;
+
+  /// The invoice this request depends on (raised to fund the purchase);
+  /// null when there is no such dependency.
+  final String? invoiceId;
+
+  /// Number of the linked invoice; null when [invoiceId] is null.
+  final String? invoiceNumber;
+
+  /// GST-inclusive total of the linked invoice, in cents — comparable with
+  /// [totalAmountCents]; null when [invoiceId] is null.
+  final int? invoiceTotalCents;
+
   /// Timestamp when the record was created.
   final DateTime createdAt;
 
@@ -120,6 +135,10 @@ class CapexRequest {
     this.decisionAt,
     this.decisionNotes,
     this.executedDate,
+    this.actualSpentCents,
+    this.invoiceId,
+    this.invoiceNumber,
+    this.invoiceTotalCents,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -127,4 +146,14 @@ class CapexRequest {
 
   bool get isDeleted => deletedAt != null;
   bool get isPending => status == CapexRequestStatus.pending;
+
+  /// The amount spent on this request, in cents: [actualSpentCents] once
+  /// recorded, otherwise the requested [totalAmountCents].
+  int get amountSpentCents => actualSpentCents ?? totalAmountCents;
+
+  /// Linked invoice total minus [amountSpentCents], in cents (both
+  /// GST-inclusive): positive when the invoice more than covers the spend,
+  /// negative when it falls short. Null when no invoice is linked.
+  int? get invoiceDeltaCents =>
+      invoiceTotalCents == null ? null : invoiceTotalCents! - amountSpentCents;
 }

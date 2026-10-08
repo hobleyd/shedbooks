@@ -20,13 +20,18 @@ import 'package:test/test.dart';
 
 import 'package:shedbooks_server/application/capex_request/create_capex_request_use_case.dart';
 import 'package:shedbooks_server/domain/entities/capex_request.dart';
+import 'package:shedbooks_server/domain/entities/invoice.dart';
 import 'package:shedbooks_server/domain/exceptions/capex_request_exception.dart';
 import 'package:shedbooks_server/domain/repositories/i_capex_request_repository.dart';
+import 'package:shedbooks_server/domain/repositories/i_invoice_repository.dart';
 
 class MockCapexRequestRepository extends Mock implements ICapexRequestRepository {}
 
+class MockInvoiceRepository extends Mock implements IInvoiceRepository {}
+
 void main() {
   late MockCapexRequestRepository repository;
+  late MockInvoiceRepository invoices;
   late CreateCapexRequestUseCase sut;
 
   const tEntityId = 'entity-1';
@@ -49,9 +54,23 @@ void main() {
     updatedAt: tDate,
   );
 
+  const tInvoiceId = '00000000-0000-0000-0000-0000000000aa';
+  final Invoice tInvoice = Invoice(
+    id: tInvoiceId,
+    entityId: tEntityId,
+    invoiceNumber: 'WMS-26-001',
+    invoiceDate: DateTime.utc(2026, 7, 1),
+    contactId: 'contact-1',
+    totalAmountCents: 50000,
+    totalGstCents: 5000,
+    createdAt: DateTime.utc(2026, 7, 1),
+    updatedAt: DateTime.utc(2026, 7, 1),
+  );
+
   setUp(() {
     repository = MockCapexRequestRepository();
-    sut = CreateCapexRequestUseCase(repository);
+    invoices = MockInvoiceRepository();
+    sut = CreateCapexRequestUseCase(repository, invoices);
     registerFallbackValue(tDate);
   });
 
@@ -179,6 +198,95 @@ void main() {
         ),
         throwsA(isA<CapexRequestValidationException>()),
       );
+    });
+
+    Future<CapexRequest> create({String? invoiceId}) => sut.execute(
+          entityId: tEntityId,
+          requestNo: 'CER 26-012',
+          requestDate: tDate,
+          preparedByName: 'Rob Purves',
+          description: 'Signs',
+          whatIsRequested: 'Signs',
+          needOrBenefit: 'Visibility',
+          purchaseCostCents: 54450,
+          totalAmountCents: 54450,
+          invoiceId: invoiceId,
+        );
+
+    test('passes a linked invoice belonging to the entity to the repository',
+        () async {
+      // Arrange
+      when(() => invoices.findById(tInvoiceId, entityId: tEntityId))
+          .thenAnswer((_) async => tInvoice);
+      when(() => repository.create(
+            entityId: any(named: 'entityId'),
+            requestNo: any(named: 'requestNo'),
+            requestDate: any(named: 'requestDate'),
+            preparedByName: any(named: 'preparedByName'),
+            description: any(named: 'description'),
+            whatIsRequested: any(named: 'whatIsRequested'),
+            needOrBenefit: any(named: 'needOrBenefit'),
+            alternativesConsidered: any(named: 'alternativesConsidered'),
+            purchaseCostCents: any(named: 'purchaseCostCents'),
+            ongoingCostsCents: any(named: 'ongoingCostsCents'),
+            otherCostsCents: any(named: 'otherCostsCents'),
+            costNotes: any(named: 'costNotes'),
+            totalAmountCents: any(named: 'totalAmountCents'),
+            quotesReceivedCount: any(named: 'quotesReceivedCount'),
+            invoiceId: any(named: 'invoiceId'),
+          )).thenAnswer((_) async => tRequest);
+
+      // Act
+      await create(invoiceId: tInvoiceId);
+
+      // Assert
+      verify(() => repository.create(
+            entityId: any(named: 'entityId'),
+            requestNo: any(named: 'requestNo'),
+            requestDate: any(named: 'requestDate'),
+            preparedByName: any(named: 'preparedByName'),
+            description: any(named: 'description'),
+            whatIsRequested: any(named: 'whatIsRequested'),
+            needOrBenefit: any(named: 'needOrBenefit'),
+            alternativesConsidered: any(named: 'alternativesConsidered'),
+            purchaseCostCents: any(named: 'purchaseCostCents'),
+            ongoingCostsCents: any(named: 'ongoingCostsCents'),
+            otherCostsCents: any(named: 'otherCostsCents'),
+            costNotes: any(named: 'costNotes'),
+            totalAmountCents: any(named: 'totalAmountCents'),
+            quotesReceivedCount: any(named: 'quotesReceivedCount'),
+            invoiceId: tInvoiceId,
+          )).called(1);
+    });
+
+    test('throws CapexRequestValidationException when the linked invoice is not in the entity',
+        () async {
+      // Arrange
+      when(() => invoices.findById(tInvoiceId, entityId: tEntityId))
+          .thenAnswer((_) async => null);
+
+      // Act + Assert
+      await expectLater(
+        () => create(invoiceId: tInvoiceId),
+        throwsA(isA<CapexRequestValidationException>()),
+      );
+      verifyNever(() => repository.create(
+            entityId: any(named: 'entityId'),
+            requestNo: any(named: 'requestNo'),
+            requestDate: any(named: 'requestDate'),
+            preparedByName: any(named: 'preparedByName'),
+            description: any(named: 'description'),
+            whatIsRequested: any(named: 'whatIsRequested'),
+            needOrBenefit: any(named: 'needOrBenefit'),
+            alternativesConsidered: any(named: 'alternativesConsidered'),
+            purchaseCostCents: any(named: 'purchaseCostCents'),
+            ongoingCostsCents: any(named: 'ongoingCostsCents'),
+            otherCostsCents: any(named: 'otherCostsCents'),
+            costNotes: any(named: 'costNotes'),
+            totalAmountCents: any(named: 'totalAmountCents'),
+            quotesReceivedCount: any(named: 'quotesReceivedCount'),
+            invoiceId: any(named: 'invoiceId'),
+          ));
     });
   });
 }

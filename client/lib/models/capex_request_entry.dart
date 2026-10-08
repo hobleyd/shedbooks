@@ -37,6 +37,16 @@ class CapexRequestEntry {
   final String? decisionNotes;
   final String? executedDate;
 
+  /// What the purchase actually cost (GST-inclusive), recorded with the
+  /// executed date; null until known.
+  final int? actualSpentCents;
+  final String? invoiceId;
+  final String? invoiceNumber;
+
+  /// GST-inclusive total of the linked invoice, comparable with
+  /// [totalAmountCents]; null when no invoice is linked.
+  final int? invoiceTotalCents;
+
   const CapexRequestEntry({
     required this.id,
     required this.requestNo,
@@ -57,11 +67,25 @@ class CapexRequestEntry {
     this.decisionAt,
     this.decisionNotes,
     this.executedDate,
+    this.actualSpentCents,
+    this.invoiceId,
+    this.invoiceNumber,
+    this.invoiceTotalCents,
   });
 
   bool get isPending => status == 'pending';
   bool get isApproved => status == 'approved';
   bool get isRejected => status == 'rejected';
+
+  /// The amount spent on this request: [actualSpentCents] once recorded,
+  /// otherwise the requested [totalAmountCents].
+  int get amountSpentCents => actualSpentCents ?? totalAmountCents;
+
+  /// Linked invoice total minus [amountSpentCents]: positive when the
+  /// invoice more than covers the spend, negative when it falls short. Null
+  /// when no invoice is linked.
+  int? get invoiceDeltaCents =>
+      invoiceTotalCents == null ? null : invoiceTotalCents! - amountSpentCents;
 
   factory CapexRequestEntry.fromJson(Map<String, dynamic> json) {
     return CapexRequestEntry(
@@ -84,6 +108,10 @@ class CapexRequestEntry {
       decisionAt: json['decisionAt'] as String?,
       decisionNotes: json['decisionNotes'] as String?,
       executedDate: json['executedDate'] as String?,
+      actualSpentCents: json['actualSpentCents'] as int?,
+      invoiceId: json['invoiceId'] as String?,
+      invoiceNumber: json['invoiceNumber'] as String?,
+      invoiceTotalCents: json['invoiceTotalCents'] as int?,
     );
   }
 }

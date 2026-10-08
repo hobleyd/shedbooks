@@ -32,15 +32,27 @@ class SetCapexRequestExecutedDateUseCase {
   const SetCapexRequestExecutedDateUseCase(this._repository);
 
   /// Sets (or clears, when [executedDate] is null) the executed date on the
-  /// capex request with [id].
+  /// capex request with [id], together with [actualSpentCents] — what the
+  /// purchase actually cost, GST-inclusive (null if not known).
   ///
-  /// Throws [CapexRequestNotFoundException] if the request does not exist
-  /// or belongs to a different entity.
+  /// Throws [CapexRequestValidationException] if [actualSpentCents] is
+  /// negative or given without an [executedDate]. Throws
+  /// [CapexRequestNotFoundException] if the request does not exist or
+  /// belongs to a different entity.
   Future<CapexRequest> execute({
     required String id,
     required String entityId,
     DateTime? executedDate,
+    int? actualSpentCents,
   }) async {
+    if (actualSpentCents != null && actualSpentCents < 0) {
+      throw const CapexRequestValidationException('Actual amount spent must not be negative');
+    }
+    if (actualSpentCents != null && executedDate == null) {
+      throw const CapexRequestValidationException(
+          'Actual amount spent requires an executed date');
+    }
+
     final existing = await _repository.findById(id, entityId: entityId);
     if (existing == null) throw CapexRequestNotFoundException(id);
 
@@ -48,6 +60,7 @@ class SetCapexRequestExecutedDateUseCase {
       id: id,
       entityId: entityId,
       executedDate: executedDate,
+      actualSpentCents: actualSpentCents,
     );
   }
 }

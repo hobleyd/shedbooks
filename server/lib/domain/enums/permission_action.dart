@@ -37,6 +37,7 @@ enum PermissionAction {
   membersCreateMailbox('members-create-mailbox', PermissionPage.members),
   membersSetRole('members-set-role', PermissionPage.members),
   capexApproveReject('capex-approve-reject', PermissionPage.capexRequests),
+  capexEditDecided('capex-edit-decided', PermissionPage.capexRequests),
   contactsRevealBankDetails('contacts-reveal-bank-details', PermissionPage.adminContacts),
   contactsTogglePaymentMethod('contacts-toggle-payment-method', PermissionPage.adminContacts);
 

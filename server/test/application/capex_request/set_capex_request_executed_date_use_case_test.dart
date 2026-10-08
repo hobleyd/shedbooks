@@ -159,5 +159,58 @@ void main() {
             executedDate: any(named: 'executedDate'),
           ));
     });
+
+    test('passes the actual amount spent to the repository', () async {
+      // Arrange
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => makeRequest());
+      when(() => repository.setExecutedDate(
+            id: tId,
+            entityId: tEntityId,
+            executedDate: tExecutedDate,
+            actualSpentCents: 49900,
+          )).thenAnswer((_) async => makeRequest(executedDate: tExecutedDate));
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: tEntityId,
+        executedDate: tExecutedDate,
+        actualSpentCents: 49900,
+      );
+
+      // Assert
+      verify(() => repository.setExecutedDate(
+            id: tId,
+            entityId: tEntityId,
+            executedDate: tExecutedDate,
+            actualSpentCents: 49900,
+          )).called(1);
+    });
+
+    test('throws CapexRequestValidationException when actual amount spent is negative',
+        () async {
+      // Act + Assert
+      await expectLater(
+        () => sut.execute(
+          id: tId,
+          entityId: tEntityId,
+          executedDate: tExecutedDate,
+          actualSpentCents: -1,
+        ),
+        throwsA(isA<CapexRequestValidationException>()),
+      );
+      verifyNever(() => repository.findById(any(), entityId: any(named: 'entityId')));
+    });
+
+    test('throws CapexRequestValidationException when actual amount spent has no executed date',
+        () async {
+      // Act + Assert
+      await expectLater(
+        () => sut.execute(id: tId, entityId: tEntityId, actualSpentCents: 49900),
+        throwsA(isA<CapexRequestValidationException>()),
+      );
+      verifyNever(() => repository.findById(any(), entityId: any(named: 'entityId')));
+    });
   });
 }

@@ -17,15 +17,20 @@
 
 import '../../domain/entities/capex_request.dart';
 import '../../domain/repositories/i_capex_request_repository.dart';
+import '../../domain/repositories/i_invoice_repository.dart';
 import 'validate_capex_request_fields.dart';
 
 /// Creates a new capex request record.
 class CreateCapexRequestUseCase {
   final ICapexRequestRepository _repository;
+  final IInvoiceRepository _invoices;
 
-  const CreateCapexRequestUseCase(this._repository);
+  const CreateCapexRequestUseCase(this._repository, this._invoices);
 
   /// Validates required fields then persists and returns the new [CapexRequest].
+  ///
+  /// Throws [CapexRequestValidationException] if a field is invalid or
+  /// [invoiceId] does not name an invoice belonging to [entityId].
   Future<CapexRequest> execute({
     required String entityId,
     required String requestNo,
@@ -41,6 +46,7 @@ class CreateCapexRequestUseCase {
     String? costNotes,
     required int totalAmountCents,
     int? quotesReceivedCount,
+    String? invoiceId,
   }) async {
     validateCapexRequestFields(
       requestNo: requestNo,
@@ -54,6 +60,8 @@ class CreateCapexRequestUseCase {
       totalAmountCents: totalAmountCents,
       quotesReceivedCount: quotesReceivedCount,
     );
+    await validateCapexRequestInvoice(_invoices, invoiceId: invoiceId, entityId: entityId);
+
     return _repository.create(
       entityId: entityId,
       requestNo: requestNo.trim(),
@@ -69,6 +77,7 @@ class CreateCapexRequestUseCase {
       costNotes: _blankToNull(costNotes),
       totalAmountCents: totalAmountCents,
       quotesReceivedCount: quotesReceivedCount,
+      invoiceId: invoiceId,
     );
   }
 }

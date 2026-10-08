@@ -38,6 +38,8 @@ enum PermissionAction {
   membersSetRole('members-set-role', 'Grant/change Shedbooks access', PermissionPage.members),
   capexApproveReject(
       'capex-approve-reject', 'Approve/reject requests', PermissionPage.capexRequests),
+  capexEditDecided(
+      'capex-edit-decided', 'Edit approved/rejected requests', PermissionPage.capexRequests),
   contactsRevealBankDetails('contacts-reveal-bank-details', 'Reveal masked bank details',
       PermissionPage.adminContacts),
   contactsTogglePaymentMethod('contacts-toggle-payment-method',

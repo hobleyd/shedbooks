@@ -35,7 +35,19 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
       'what_is_requested, need_or_benefit, alternatives_considered, '
       'purchase_cost_cents, ongoing_costs_cents, other_costs_cents, cost_notes, '
       'total_amount_cents, quotes_received_count, status, decision_by_name, '
-      'decision_at, decision_notes, executed_date, created_at, updated_at, deleted_at';
+      'decision_at, decision_notes, executed_date, actual_spent_cents, invoice_id, '
+      'created_at, '
+      'updated_at, deleted_at';
+
+  // Reads a request (from [source], a table or a writing CTE aliased `c`)
+  // together with its linked invoice's number and GST-inclusive total. The
+  // join repeats the entity_id match so a row can never surface another
+  // tenant's invoice.
+  static String _selectFrom(String source) => '''
+        SELECT c.*, i.invoice_number,
+               (i.total_amount_cents + i.total_gst_cents) AS invoice_total_cents
+        FROM $source c
+        LEFT JOIN invoices i ON i.id = c.invoice_id AND i.entity_id = c.entity_id''';
 
   @override
   Future<CapexRequest> create({
@@ -53,22 +65,26 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
     String? costNotes,
     required int totalAmountCents,
     int? quotesReceivedCount,
+    String? invoiceId,
   }) async {
     final id = _uuid.v4();
     final result = await _pool.execute(
       Sql.named('''
+        WITH written AS (
         INSERT INTO capex_requests
           (id, entity_id, request_no, request_date, prepared_by_name, description,
            what_is_requested, need_or_benefit, alternatives_considered,
            purchase_cost_cents, ongoing_costs_cents, other_costs_cents, cost_notes,
-           total_amount_cents, quotes_received_count)
+           total_amount_cents, quotes_received_count, invoice_id)
         VALUES (
           @id::uuid, @entityId, @requestNo, @requestDate::date, @preparedByName, @description,
           @whatIsRequested, @needOrBenefit, @alternativesConsidered,
           @purchaseCostCents, @ongoingCostsCents, @otherCostsCents, @costNotes,
-          @totalAmountCents, @quotesReceivedCount
+          @totalAmountCents, @quotesReceivedCount, @invoiceId::uuid
         )
         RETURNING $_cols
+        )
+        ${_selectFrom('written')}
       '''),
       parameters: {
         'id': id,
@@ -86,6 +102,7 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
         'costNotes': costNotes,
         'totalAmountCents': totalAmountCents,
         'quotesReceivedCount': quotesReceivedCount,
+        'invoiceId': invoiceId,
       },
     );
     return _mapRow(result.first.toColumnMap());
@@ -95,8 +112,8 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
   Future<CapexRequest?> findById(String id, {required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT $_cols FROM capex_requests
-        WHERE id = @id::uuid AND entity_id = @entityId AND deleted_at IS NULL
+        ${_selectFrom('capex_requests')}
+        WHERE c.id = @id::uuid AND c.entity_id = @entityId AND c.deleted_at IS NULL
       '''),
       parameters: {'id': id, 'entityId': entityId},
     );
@@ -108,9 +125,9 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
   Future<List<CapexRequest>> findAll({required String entityId}) async {
     final result = await _pool.execute(
       Sql.named('''
-        SELECT $_cols FROM capex_requests
-        WHERE entity_id = @entityId AND deleted_at IS NULL
-        ORDER BY request_date DESC, created_at DESC
+        ${_selectFrom('capex_requests')}
+        WHERE c.entity_id = @entityId AND c.deleted_at IS NULL
+        ORDER BY c.request_date DESC, c.created_at DESC
       '''),
       parameters: {'entityId': entityId},
     );
@@ -134,9 +151,11 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
     String? costNotes,
     required int totalAmountCents,
     int? quotesReceivedCount,
+    String? invoiceId,
   }) async {
     final result = await _pool.execute(
       Sql.named('''
+        WITH written AS (
         UPDATE capex_requests
         SET request_no                = @requestNo,
             request_date              = @requestDate::date,
@@ -151,9 +170,12 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
             cost_notes                = @costNotes,
             total_amount_cents        = @totalAmountCents,
             quotes_received_count     = @quotesReceivedCount,
+            invoice_id                = @invoiceId::uuid,
             updated_at                = NOW()
         WHERE id = @id::uuid AND entity_id = @entityId AND deleted_at IS NULL
         RETURNING $_cols
+        )
+        ${_selectFrom('written')}
       '''),
       parameters: {
         'id': id,
@@ -171,6 +193,7 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
         'costNotes': costNotes,
         'totalAmountCents': totalAmountCents,
         'quotesReceivedCount': quotesReceivedCount,
+        'invoiceId': invoiceId,
       },
     );
     if (result.isEmpty) throw CapexRequestNotFoundException(id);
@@ -187,6 +210,7 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
   }) async {
     final result = await _pool.execute(
       Sql.named('''
+        WITH written AS (
         UPDATE capex_requests
         SET status           = @status,
             decision_by_name = @decisionByName,
@@ -195,6 +219,8 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
             updated_at       = NOW()
         WHERE id = @id::uuid AND entity_id = @entityId AND deleted_at IS NULL
         RETURNING $_cols
+        )
+        ${_selectFrom('written')}
       '''),
       parameters: {
         'id': id,
@@ -213,19 +239,25 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
     required String id,
     required String entityId,
     DateTime? executedDate,
+    int? actualSpentCents,
   }) async {
     final result = await _pool.execute(
       Sql.named('''
+        WITH written AS (
         UPDATE capex_requests
-        SET executed_date = @executedDate::date,
-            updated_at    = NOW()
+        SET executed_date      = @executedDate::date,
+            actual_spent_cents = @actualSpentCents,
+            updated_at         = NOW()
         WHERE id = @id::uuid AND entity_id = @entityId AND deleted_at IS NULL
         RETURNING $_cols
+        )
+        ${_selectFrom('written')}
       '''),
       parameters: {
         'id': id,
         'entityId': entityId,
         'executedDate': executedDate == null ? null : _dateStr(executedDate),
+        'actualSpentCents': actualSpentCents,
       },
     );
     if (result.isEmpty) throw CapexRequestNotFoundException(id);
@@ -295,6 +327,14 @@ class PostgresCapexRequestRepository implements ICapexRequestRepository {
       executedDate: executedDate == null
           ? null
           : DateTime.utc(executedDate.year, executedDate.month, executedDate.day),
+      actualSpentCents: row['actual_spent_cents'] == null
+          ? null
+          : (row['actual_spent_cents'] as num).toInt(),
+      invoiceId: row['invoice_id']?.toString(),
+      invoiceNumber: row['invoice_number'] as String?,
+      invoiceTotalCents: row['invoice_total_cents'] == null
+          ? null
+          : (row['invoice_total_cents'] as num).toInt(),
       createdAt: row['created_at'] as DateTime,
       updatedAt: row['updated_at'] as DateTime,
       deletedAt: row['deleted_at'] as DateTime?,

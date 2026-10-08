@@ -24,10 +24,12 @@ import 'package:provider/provider.dart';
 
 import '../auth/auth_state.dart';
 import '../models/capex_request_entry.dart';
+import '../models/invoice_entry.dart';
 import '../models/permission_action.dart';
 import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/permission_service.dart';
+import '../services/reference_data_cache.dart';
 
 /// Capital Expenditure Requests screen — the club's paper CER form, digitised.
 class CapexRequestsScreen extends StatefulWidget {
@@ -89,14 +91,11 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
   void _applySort() {
     if (_sortColumn == null) return;
     _requests.sort((a, b) {
-      if (_sortColumn == 6) {
-        final ad = a.executedDate;
-        final bd = b.executedDate;
-        if (ad == null && bd == null) return 0;
-        if (ad == null) return 1;
-        if (bd == null) return -1;
-        final cmp = ad.compareTo(bd);
-        return _sortAscending ? cmp : -cmp;
+      // Executed date and invoice delta are optional — unset rows sort last
+      // in either direction.
+      if (_sortColumn == 6) return _compareNullsLast(a.executedDate, b.executedDate);
+      if (_sortColumn == 7) {
+        return _compareNullsLast(a.invoiceDeltaCents, b.invoiceDeltaCents);
       }
       final int cmp = switch (_sortColumn) {
         0 => a.requestNo.toLowerCase().compareTo(b.requestNo.toLowerCase()),
@@ -113,6 +112,14 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
     });
   }
 
+  int _compareNullsLast<T extends Comparable<Object>>(T? a, T? b) {
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    final int cmp = a.compareTo(b);
+    return _sortAscending ? cmp : -cmp;
+  }
+
   void _onSort(int col) {
     setState(() {
       if (_sortColumn == col) {
@@ -127,8 +134,7 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
 
   Future<void> _openDialog({CapexRequestEntry? existing}) async {
     final authState = context.read<AuthState>();
-    final canEdit = context.read<PermissionService>().canWritePage(PermissionPage.capexRequests);
-    final readOnly = existing != null && (!existing.isPending || !canEdit);
+    final bool readOnly = existing != null && !_canEditEntry(existing);
     final saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -140,6 +146,14 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
       ),
     );
     if (saved == true) _load();
+  }
+
+  /// Whether the current user may edit [entry]: page write access, plus the
+  /// capex-edit-decided action once the request has been approved/rejected.
+  bool _canEditEntry(CapexRequestEntry entry) {
+    final PermissionService permissions = context.read<PermissionService>();
+    if (!permissions.canWritePage(PermissionPage.capexRequests)) return false;
+    return entry.isPending || permissions.canPerform(PermissionAction.capexEditDecided);
   }
 
   Future<void> _decide(CapexRequestEntry entry, String status) async {
@@ -308,6 +322,7 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
               _sortHeader('Prepared By', 2, width: 140),
               _sortHeader('Description', 3),
               _sortHeader('Total', 4, width: 90, alignment: Alignment.centerRight),
+              _sortHeader('Invoice', 7, width: 120, alignment: Alignment.centerRight),
               _sortHeader('Status', 5, width: 100, alignment: Alignment.center),
               _sortHeader('Executed', 6, width: 90, alignment: Alignment.center),
               const SizedBox(width: 232),
@@ -361,6 +376,7 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
 
   Widget _buildRow(CapexRequestEntry entry,
       {required bool canApproveReject, required bool canEdit}) {
+    final bool canEditEntry = _canEditEntry(entry);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
@@ -390,10 +406,25 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
           ),
           SizedBox(
             width: 90,
-            child: Text(_formatCents(entry.totalAmountCents),
-                textAlign: TextAlign.right,
-                style: Theme.of(context).textTheme.bodyMedium),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(_formatCents(entry.totalAmountCents),
+                    style: Theme.of(context).textTheme.bodyMedium),
+                if (entry.actualSpentCents != null)
+                  Tooltip(
+                    message: 'Actual amount spent',
+                    child: Text('Spent ${_formatCents(entry.actualSpentCents!)}',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.black54)),
+                  ),
+              ],
+            ),
           ),
+          SizedBox(width: 120, child: _invoiceCell(entry)),
           SizedBox(width: 100, child: Center(child: _statusChip(entry.status))),
           SizedBox(
             width: 90,
@@ -409,11 +440,9 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
               children: [
                 IconButton(
                   icon: Icon(
-                      entry.isPending && canEdit
-                          ? Icons.edit_outlined
-                          : Icons.visibility_outlined,
+                      canEditEntry ? Icons.edit_outlined : Icons.visibility_outlined,
                       size: 18),
-                  tooltip: entry.isPending && canEdit ? 'Edit' : 'View',
+                  tooltip: canEditEntry ? 'Edit' : 'View',
                   onPressed: () => _openDialog(existing: entry),
                 ),
                 if (canApproveReject && entry.isPending) ...[
@@ -456,6 +485,36 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
     );
   }
 
+  /// The linked invoice's number with, beneath it, the invoice total minus
+  /// the amount spent — green when the invoice covers the spend, red when
+  /// it falls short.
+  Widget _invoiceCell(CapexRequestEntry entry) {
+    final int? delta = entry.invoiceDeltaCents;
+    if (delta == null) {
+      return Text('—',
+          textAlign: TextAlign.right, style: Theme.of(context).textTheme.bodyMedium);
+    }
+    return Tooltip(
+      message: 'Invoice ${_formatCents(entry.invoiceTotalCents!)} (incl. GST) '
+          'less ${_formatCents(entry.amountSpentCents)} '
+          '${entry.actualSpentCents != null ? 'spent' : 'requested (actual spend not recorded)'}',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(entry.invoiceNumber ?? '',
+              style: Theme.of(context).textTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis),
+          Text(_formatSignedCents(delta),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: _deltaColor(delta), fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
   Widget _statusChip(String status) {
     final Color color;
     final String label;
@@ -483,20 +542,27 @@ class _CapexRequestsScreenState extends State<CapexRequestsScreen> {
               color: color, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
-
-  String _formatCents(int cents) {
-    final dollars = cents / 100;
-    final str = dollars.toStringAsFixed(2).split('.');
-    final buf = StringBuffer();
-    int c = 0;
-    for (int i = str[0].length - 1; i >= 0; i--) {
-      if (c > 0 && c % 3 == 0) buf.write(',');
-      buf.write(str[0][i]);
-      c++;
-    }
-    return '\$${buf.toString().split('').reversed.join()}.${str[1]}';
-  }
 }
+
+String _formatCents(int cents) {
+  final dollars = cents / 100;
+  final str = dollars.toStringAsFixed(2).split('.');
+  final buf = StringBuffer();
+  int c = 0;
+  for (int i = str[0].length - 1; i >= 0; i--) {
+    if (c > 0 && c % 3 == 0) buf.write(',');
+    buf.write(str[0][i]);
+    c++;
+  }
+  return '\$${buf.toString().split('').reversed.join()}.${str[1]}';
+}
+
+/// [_formatCents] with an explicit sign, for an invoice-vs-spend delta.
+String _formatSignedCents(int cents) =>
+    '${cents < 0 ? '−' : '+'}${_formatCents(cents.abs())}';
+
+Color _deltaColor(int deltaCents) =>
+    deltaCents < 0 ? Colors.red.shade700 : Colors.green.shade700;
 
 // ── Add / Edit / View dialog ────────────────────────────────────────────────
 
@@ -533,7 +599,10 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
   late final TextEditingController _costNotesCtrl;
   late final TextEditingController _totalCtrl;
   late final TextEditingController _quotesCtrl;
+  late final TextEditingController _actualSpentCtrl;
   late DateTime _requestDate;
+  String? _invoiceId;
+  DateTime? _executedDate;
 
   bool get _isEditing => widget.existing != null;
 
@@ -558,7 +627,11 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
     _totalCtrl =
         TextEditingController(text: e != null ? _centsToStr(e.totalAmountCents) : '');
     _quotesCtrl = TextEditingController(text: e?.quotesReceivedCount?.toString() ?? '');
+    _actualSpentCtrl = TextEditingController(
+        text: e?.actualSpentCents != null ? _centsToStr(e!.actualSpentCents!) : '');
     _requestDate = e != null ? DateTime.parse(e.requestDate) : DateTime.now();
+    _invoiceId = e?.invoiceId;
+    _executedDate = e?.executedDate != null ? DateTime.parse(e!.executedDate!) : null;
     _totalEdited = e != null;
 
     _purchaseCtrl.addListener(_recomputeTotal);
@@ -566,9 +639,22 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
     _otherCtrl.addListener(_recomputeTotal);
     _totalCtrl.addListener(() {
       if (!_recomputingTotal) _totalEdited = true;
+      // The invoice delta shown under the picker depends on the total.
+      if (_invoiceId != null && mounted) setState(() {});
+    });
+    // ...and on the actual amount spent, once that is entered.
+    _actualSpentCtrl.addListener(() {
+      if (_invoiceId != null && mounted) setState(() {});
     });
 
     if (!_isEditing) _fetchNextNumber();
+    // The picker's options; skipped when it can't be used or the role
+    // can't read invoices (the linked invoice's own details come with the
+    // request, so it still displays).
+    if (!widget.readOnly &&
+        context.read<PermissionService>().canReadPage(PermissionPage.invoices)) {
+      context.read<ReferenceDataCache>().refreshInvoices();
+    }
   }
 
   @override
@@ -585,6 +671,7 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
     _costNotesCtrl.dispose();
     _totalCtrl.dispose();
     _quotesCtrl.dispose();
+    _actualSpentCtrl.dispose();
     super.dispose();
   }
 
@@ -640,6 +727,7 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
         'totalAmountCents': _parseDollarsToCents(_totalCtrl.text),
         'quotesReceivedCount':
             _quotesCtrl.text.trim().isEmpty ? null : int.tryParse(_quotesCtrl.text.trim()),
+        'invoiceId': _invoiceId,
       });
 
       final client = context.read<ApiClient>();
@@ -650,6 +738,9 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
       if (!mounted) return;
 
       if (res.statusCode == 200 || res.statusCode == 201) {
+        final String? executedDateError = await _saveExecutedDate(client);
+        if (!mounted) return;
+        if (executedDateError != null) _showSnackbar(executedDateError);
         Navigator.of(context).pop(true);
       } else {
         String msg = 'Save failed (${res.statusCode})';
@@ -667,6 +758,35 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
     }
   }
 
+  /// The actual amount spent as entered, or null when left blank.
+  int? get _actualSpentCents => _actualSpentCtrl.text.trim().isEmpty
+      ? null
+      : _parseDollarsToCents(_actualSpentCtrl.text);
+
+  /// Persists the executed date and actual amount spent when either was
+  /// changed (or cleared) in this dialog. Returns an error message if that
+  /// write fails, else null.
+  Future<String?> _saveExecutedDate(ApiClient client) async {
+    final CapexRequestEntry? e = widget.existing;
+    if (e == null) return null;
+    final String? executedDate =
+        _executedDate == null ? null : DateFormat('yyyy-MM-dd').format(_executedDate!);
+    final int? actualSpentCents = _actualSpentCents;
+    if (executedDate == e.executedDate && actualSpentCents == e.actualSpentCents) {
+      return null;
+    }
+    try {
+      final res = await client.put(
+          '/capex-requests/${e.id}/executed-date',
+          jsonEncode(
+              {'executedDate': executedDate, 'actualSpentCents': actualSpentCents}));
+      if (res.statusCode == 200) return null;
+      return 'Request saved, but the execution details were not updated (${res.statusCode})';
+    } catch (err) {
+      return 'Request saved, but the execution details were not updated: $err';
+    }
+  }
+
   void _showSnackbar(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -674,9 +794,21 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
     );
   }
 
+  /// The GST-inclusive total of the selected invoice: from [invoices] when
+  /// it's loaded, else from the request itself if the link is unchanged.
+  int? _selectedInvoiceTotalCents(List<InvoiceEntry> invoices) {
+    if (_invoiceId == null) return null;
+    for (final InvoiceEntry invoice in invoices) {
+      if (invoice.id == _invoiceId) return invoice.totalWithGstCents;
+    }
+    final CapexRequestEntry? e = widget.existing;
+    return e?.invoiceId == _invoiceId ? e?.invoiceTotalCents : null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = widget.existing;
+    final List<InvoiceEntry> invoices = context.watch<ReferenceDataCache>().invoices;
     final title = !_isEditing
         ? 'New Capex Request'
         : (widget.readOnly ? 'View Capex Request' : 'Edit Capex Request');
@@ -697,14 +829,31 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
                   _decisionBanner(e),
                   const SizedBox(height: 14),
                 ],
-                if (e != null && e.executedDate != null) ...[
+                if (e != null && !widget.readOnly) ...[
+                  Row(
+                    children: [
+                      Expanded(child: _executedDateField(disabled)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _currencyField(
+                          label: 'Actual Amount Spent',
+                          controller: _actualSpentCtrl,
+                          // Recorded with the execution, so needs a date.
+                          enabled: !disabled && _executedDate != null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                ] else if (e != null && e.executedDate != null) ...[
                   Row(
                     children: [
                       Icon(Icons.event_available_outlined,
                           size: 16, color: Colors.blueGrey.shade700),
                       const SizedBox(width: 6),
                       Text(
-                          'Executed on ${DateFormat('dd/MM/yyyy').format(DateTime.parse(e.executedDate!))}'),
+                          'Executed on ${DateFormat('dd/MM/yyyy').format(DateTime.parse(e.executedDate!))}'
+                          '${e.actualSpentCents != null ? ' — ${_formatCents(e.actualSpentCents!)} spent' : ''}'),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -832,6 +981,9 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 14),
+                _invoiceField(invoices, disabled),
+                ..._invoiceDelta(invoices),
               ],
             ),
           ),
@@ -880,6 +1032,135 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
             Text(e.decisionNotes!),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Optional link to an invoice raised to fund this request.
+  Widget _invoiceField(List<InvoiceEntry> invoices, bool disabled) {
+    final CapexRequestEntry? e = widget.existing;
+    final bool selectedIsListed = invoices.any((i) => i.id == _invoiceId);
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'Linked Invoice (optional)',
+        border: OutlineInputBorder(),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      child: DropdownButton<String>(
+        // '' stands for "no invoice" — DropdownButton treats a null value
+        // as "nothing selected" and would show the hint instead.
+        value: _invoiceId ?? '',
+        isExpanded: true,
+        isDense: true,
+        underline: const SizedBox.shrink(),
+        items: [
+          const DropdownMenuItem(value: '', child: Text('None')),
+          // Keeps the current link selectable while invoices are still
+          // loading (or when this role can't list them).
+          if (_invoiceId != null && !selectedIsListed)
+            DropdownMenuItem(
+              value: _invoiceId,
+              child: Text(e?.invoiceId == _invoiceId ? (e?.invoiceNumber ?? '') : ''),
+            ),
+          for (final InvoiceEntry invoice in invoices)
+            DropdownMenuItem(
+              value: invoice.id,
+              child: Text(
+                '${invoice.invoiceNumber} — '
+                '${DateFormat('dd/MM/yyyy').format(DateTime.parse(invoice.invoiceDate))} — '
+                '${_formatCents(invoice.totalWithGstCents)}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: disabled
+            ? null
+            : (String? value) => setState(
+                () => _invoiceId = (value == null || value.isEmpty) ? null : value),
+      ),
+    );
+  }
+
+  /// The linked invoice's total (incl. GST) minus the amount spent — the
+  /// actual amount once entered, otherwise the total being requested; empty
+  /// when no invoice is linked.
+  List<Widget> _invoiceDelta(List<InvoiceEntry> invoices) {
+    final int? invoiceTotalCents = _selectedInvoiceTotalCents(invoices);
+    if (invoiceTotalCents == null) return const [];
+    final bool spendRecorded = _actualSpentCents != null;
+    final int delta = invoiceTotalCents -
+        (_actualSpentCents ?? _parseDollarsToCents(_totalCtrl.text));
+    final String amount = spendRecorded ? 'amount spent' : 'amount requested';
+    final String summary = delta == 0
+        ? 'Invoice covers the $amount exactly'
+        : delta > 0
+            ? 'Invoice exceeds the $amount by ${_formatCents(delta)}'
+            : 'Invoice falls short of the $amount by ${_formatCents(-delta)}';
+    return [
+      const SizedBox(height: 6),
+      Text(
+        '$summary  (${_formatCents(invoiceTotalCents)} invoiced incl. GST)',
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: _deltaColor(delta), fontWeight: FontWeight.w600),
+      ),
+    ];
+  }
+
+  /// Executed date with a clear control, so a date recorded by mistake can
+  /// be removed while editing.
+  Widget _executedDateField(bool disabled) {
+    final bool hasValue = _executedDate != null;
+    return InkWell(
+      onTap: disabled
+          ? null
+          : () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _executedDate ?? DateTime.now(),
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+              );
+              if (picked != null) setState(() => _executedDate = picked);
+            },
+      child: InputDecorator(
+        isEmpty: !hasValue,
+        decoration: const InputDecoration(
+          labelText: 'Executed Date',
+          border: OutlineInputBorder(),
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                  hasValue ? DateFormat('dd/MM/yyyy').format(_executedDate!) : ''),
+            ),
+            Tooltip(
+              message: hasValue ? 'Remove executed date' : '',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: hasValue && !disabled
+                    ? () => setState(() {
+                          _executedDate = null;
+                          _actualSpentCtrl.clear();
+                        })
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Icon(
+                    hasValue ? Icons.clear : Icons.calendar_today_outlined,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1117,6 +1398,7 @@ class _ExecutedDateDialog extends StatefulWidget {
 
 class _ExecutedDateDialogState extends State<_ExecutedDateDialog> {
   DateTime? _executedDate;
+  late final TextEditingController _actualSpentCtrl;
   bool _saving = false;
 
   @override
@@ -1125,6 +1407,15 @@ class _ExecutedDateDialogState extends State<_ExecutedDateDialog> {
     _executedDate = widget.entry.executedDate != null
         ? DateTime.parse(widget.entry.executedDate!)
         : null;
+    final int? actualSpentCents = widget.entry.actualSpentCents;
+    _actualSpentCtrl = TextEditingController(
+        text: actualSpentCents == null ? '' : (actualSpentCents / 100).toStringAsFixed(2));
+  }
+
+  @override
+  void dispose() {
+    _actualSpentCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _pickDate() async {
@@ -1139,11 +1430,15 @@ class _ExecutedDateDialogState extends State<_ExecutedDateDialog> {
 
   Future<void> _submit() async {
     setState(() => _saving = true);
+    final double? actualSpent = double.tryParse(_actualSpentCtrl.text.trim());
     try {
       final body = jsonEncode({
         'executedDate': _executedDate == null
             ? null
             : DateFormat('yyyy-MM-dd').format(_executedDate!),
+        'actualSpentCents': _executedDate == null || actualSpent == null
+            ? null
+            : (actualSpent * 100).round(),
       });
       final res = await context
           .read<ApiClient>()
@@ -1201,6 +1496,26 @@ class _ExecutedDateDialogState extends State<_ExecutedDateDialog> {
                     : DateFormat('dd/MM/yyyy').format(_executedDate!)),
               ),
             ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _actualSpentCtrl,
+              // Recorded with the execution, so needs a date.
+              enabled: !_saving && _executedDate != null,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Actual Amount Spent (optional)',
+                helperText:
+                    'Requested: ${(widget.entry.totalAmountCents / 100).toStringAsFixed(2)}',
+                prefixText: r'$ ',
+                border: const OutlineInputBorder(),
+                isDense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              ),
+            ),
           ],
         ),
       ),
@@ -1213,7 +1528,10 @@ class _ExecutedDateDialogState extends State<_ExecutedDateDialog> {
           TextButton(
             onPressed: _saving
                 ? null
-                : () => setState(() => _executedDate = null),
+                : () => setState(() {
+                      _executedDate = null;
+                      _actualSpentCtrl.clear();
+                    }),
             child: const Text('Clear'),
           ),
         FilledButton(

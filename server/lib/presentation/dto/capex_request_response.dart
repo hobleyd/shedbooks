@@ -40,6 +40,11 @@ class CapexRequestResponse {
   final String? decisionAt;
   final String? decisionNotes;
   final String? executedDate;
+  final int? actualSpentCents;
+  final String? invoiceId;
+  final String? invoiceNumber;
+  final int? invoiceTotalCents;
+  final int? invoiceDeltaCents;
   final String createdAt;
   final String updatedAt;
 
@@ -63,6 +68,11 @@ class CapexRequestResponse {
     this.decisionAt,
     this.decisionNotes,
     this.executedDate,
+    this.actualSpentCents,
+    this.invoiceId,
+    this.invoiceNumber,
+    this.invoiceTotalCents,
+    this.invoiceDeltaCents,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -87,6 +97,11 @@ class CapexRequestResponse {
         decisionAt: entity.decisionAt?.toUtc().toIso8601String(),
         decisionNotes: entity.decisionNotes,
         executedDate: entity.executedDate?.toIso8601String().substring(0, 10),
+        actualSpentCents: entity.actualSpentCents,
+        invoiceId: entity.invoiceId,
+        invoiceNumber: entity.invoiceNumber,
+        invoiceTotalCents: entity.invoiceTotalCents,
+        invoiceDeltaCents: entity.invoiceDeltaCents,
         createdAt: entity.createdAt.toUtc().toIso8601String(),
         updatedAt: entity.updatedAt.toUtc().toIso8601String(),
       );
@@ -111,6 +126,11 @@ class CapexRequestResponse {
         'decisionAt': decisionAt,
         'decisionNotes': decisionNotes,
         'executedDate': executedDate,
+        'actualSpentCents': actualSpentCents,
+        'invoiceId': invoiceId,
+        'invoiceNumber': invoiceNumber,
+        'invoiceTotalCents': invoiceTotalCents,
+        'invoiceDeltaCents': invoiceDeltaCents,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };

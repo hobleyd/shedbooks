@@ -16,6 +16,7 @@
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 import '../../domain/exceptions/capex_request_exception.dart';
+import '../../domain/repositories/i_invoice_repository.dart';
 
 /// Validates the fields shared by create and update, shared here to avoid
 /// the two use cases drifting apart.
@@ -63,5 +64,20 @@ void validateCapexRequestFields({
   }
   if (quotesReceivedCount != null && quotesReceivedCount < 0) {
     throw const CapexRequestValidationException('Number of quotes received must not be negative');
+  }
+}
+
+/// Confirms [invoiceId] (when given) names an invoice belonging to
+/// [entityId], so a request can never be tied to another tenant's invoice.
+///
+/// Throws [CapexRequestValidationException] if no such invoice exists.
+Future<void> validateCapexRequestInvoice(
+  IInvoiceRepository invoices, {
+  required String? invoiceId,
+  required String entityId,
+}) async {
+  if (invoiceId == null) return;
+  if (await invoices.findById(invoiceId, entityId: entityId) == null) {
+    throw const CapexRequestValidationException('Linked invoice was not found');
   }
 }

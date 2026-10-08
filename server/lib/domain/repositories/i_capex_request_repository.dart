@@ -36,6 +36,7 @@ abstract interface class ICapexRequestRepository {
     String? costNotes,
     required int totalAmountCents,
     int? quotesReceivedCount,
+    String? invoiceId,
   });
 
   /// Returns the capex request with [id] scoped to [entityId], or null if not found.
@@ -46,8 +47,8 @@ abstract interface class ICapexRequestRepository {
 
   /// Updates the capex request with [id] and returns the updated entity.
   ///
-  /// Throws [CapexRequestNotFoundException] if the request does not exist,
-  /// belongs to a different entity, or has already been decided.
+  /// Throws [CapexRequestNotFoundException] if the request does not exist
+  /// or belongs to a different entity.
   Future<CapexRequest> update({
     required String id,
     required String entityId,
@@ -64,6 +65,7 @@ abstract interface class ICapexRequestRepository {
     String? costNotes,
     required int totalAmountCents,
     int? quotesReceivedCount,
+    String? invoiceId,
   });
 
   /// Records an approve/reject decision on the capex request with [id].
@@ -79,7 +81,8 @@ abstract interface class ICapexRequestRepository {
   });
 
   /// Records (or clears, when [executedDate] is null) the date the capex
-  /// request with [id] was actually purchased/carried out.
+  /// request with [id] was actually purchased/carried out, together with
+  /// what it actually cost ([actualSpentCents], null if not known).
   ///
   /// Throws [CapexRequestNotFoundException] if the request does not exist
   /// or belongs to a different entity.
@@ -87,6 +90,7 @@ abstract interface class ICapexRequestRepository {
     required String id,
     required String entityId,
     DateTime? executedDate,
+    int? actualSpentCents,
   });
 
   /// Soft-deletes the capex request with [id].

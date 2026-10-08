@@ -18,6 +18,7 @@
 import '../../domain/entities/capex_request.dart';
 import '../../domain/exceptions/capex_request_exception.dart';
 import '../../domain/repositories/i_capex_request_repository.dart';
+import '../../domain/repositories/i_invoice_repository.dart';
 import 'validate_capex_request_fields.dart';
 
 /// Updates an existing capex request record.
@@ -27,13 +28,21 @@ import 'validate_capex_request_fields.dart';
 /// was approved or rejected.
 class UpdateCapexRequestUseCase {
   final ICapexRequestRepository _repository;
+  final IInvoiceRepository _invoices;
 
-  const UpdateCapexRequestUseCase(this._repository);
+  const UpdateCapexRequestUseCase(this._repository, this._invoices);
 
   /// Validates required fields then updates and returns the [CapexRequest].
   ///
-  /// Throws [CapexRequestNotFoundException] if the request does not exist,
-  /// belongs to a different entity, or has already been decided.
+  /// A request that has already been approved or rejected can only be
+  /// edited when [allowDecided] is true (the caller holds the
+  /// `capex-edit-decided` permission); its decision is left untouched.
+  ///
+  /// Throws [CapexRequestNotFoundException] if the request does not exist
+  /// or belongs to a different entity. Throws
+  /// [CapexRequestValidationException] if a field is invalid, [invoiceId]
+  /// does not name an invoice belonging to [entityId], or the request has
+  /// been decided and [allowDecided] is false.
   Future<CapexRequest> execute({
     required String id,
     required String entityId,
@@ -50,6 +59,8 @@ class UpdateCapexRequestUseCase {
     String? costNotes,
     required int totalAmountCents,
     int? quotesReceivedCount,
+    String? invoiceId,
+    bool allowDecided = false,
   }) async {
     validateCapexRequestFields(
       requestNo: requestNo,
@@ -66,10 +77,11 @@ class UpdateCapexRequestUseCase {
 
     final existing = await _repository.findById(id, entityId: entityId);
     if (existing == null) throw CapexRequestNotFoundException(id);
-    if (!existing.isPending) {
+    if (!existing.isPending && !allowDecided) {
       throw CapexRequestValidationException(
           'Capex request ${existing.requestNo} has already been decided and cannot be edited');
     }
+    await validateCapexRequestInvoice(_invoices, invoiceId: invoiceId, entityId: entityId);
 
     return _repository.update(
       id: id,
@@ -87,6 +99,7 @@ class UpdateCapexRequestUseCase {
       costNotes: _blankToNull(costNotes),
       totalAmountCents: totalAmountCents,
       quotesReceivedCount: quotesReceivedCount,
+      invoiceId: invoiceId,
     );
   }
 }
