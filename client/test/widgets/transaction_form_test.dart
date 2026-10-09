@@ -716,4 +716,83 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('Contact dropdown placement', () {
+    // The add form sits below the transaction list, so on a short viewport
+    // (a Windows laptop at 125–150% display scaling) there is almost no room
+    // under the Contact field.
+    testWidgets(
+        'opens upwards with a usable height when the form is at the bottom of the screen',
+        (tester) async {
+      // Arrange
+      tester.view.physicalSize = const Size(1280, 600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final List<ContactEntry> manyContacts = [
+        for (int i = 0; i < 20; i++)
+          ContactEntry(
+            id: 'm$i',
+            name: 'Contact $i',
+            contactType: ContactType.person,
+            gstRegistered: false,
+          ),
+      ];
+
+      await tester.pumpWidget(_withGstRateCache(MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Stands in for the transaction rows above the form: leaves
+                // the Contact field at the very bottom of the viewport.
+                const SizedBox(height: 520),
+                TransactionForm(
+                  contacts: manyContacts,
+                  glEntries: const [_gl],
+                  nextMoneyOutReceipt: 'P-26002',
+                  initialDirection: GlDirection.moneyOut,
+                  compact: true,
+                  isSaving: false,
+                  onSave: (_) {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      )));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(_fieldLabeled('Contact'));
+      await tester.pumpAndSettle();
+
+      // Assert
+      final Rect field = tester.getRect(_fieldLabeled('Contact'));
+      final Rect options = tester.getRect(find
+          .ancestor(of: find.text('Contact 0'), matching: find.byType(ListView))
+          .first);
+      expect(options.height, greaterThanOrEqualTo(200));
+      expect(options.bottom, closeTo(field.top, 1.0));
+      expect(options.top, greaterThanOrEqualTo(0));
+    });
+
+    testWidgets('opens downwards, flush under the field, when there is room below',
+        (tester) async {
+      // Arrange
+      await tester.pumpWidget(_addHarness());
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(_fieldLabeled('Contact'));
+      await tester.pumpAndSettle();
+
+      // Assert
+      final Rect field = tester.getRect(_fieldLabeled('Contact'));
+      final Rect options = tester.getRect(find
+          .ancestor(of: find.text('Acme'), matching: find.byType(ListView))
+          .first);
+      expect(options.top, closeTo(field.bottom, 1.0));
+    });
+  });
 }

@@ -869,6 +869,11 @@ class TransactionFormState extends State<TransactionForm> {
           ? TextEditingValue(text: _contactTypedText)
           : null,
       displayStringForOption: (c) => c.name,
+      // The add form sits below the transaction list, so on a short viewport
+      // (e.g. Windows at 125–150% display scaling) there is next to no room
+      // under the field and a downward-only list is squashed to a single
+      // row. Open towards whichever side has more room instead.
+      optionsViewOpenDirection: OptionsViewOpenDirection.mostSpace,
       optionsBuilder: (textEditingValue) {
         if (textEditingValue.text.isEmpty) return widget.contacts;
         final q = textEditingValue.text.toLowerCase();
@@ -900,31 +905,30 @@ class TransactionFormState extends State<TransactionForm> {
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(4),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 400),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (_, i) {
-                  final c = options.elementAt(i);
-                  return ListTile(
-                    dense: true,
-                    title: Text(c.name),
-                    subtitle: Text(
-                        c.contactType == ContactType.company
-                            ? 'Company'
-                            : 'Person',
-                        style: const TextStyle(fontSize: 11)),
-                    onTap: () => onSelected(c),
-                  );
-                },
-              ),
+        // No Align wrapper: Autocomplete already anchors this to the edge of
+        // the field it opens from (below it, or above it when opening up).
+        return Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(4),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220, maxWidth: 400),
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              itemCount: options.length,
+              itemBuilder: (_, i) {
+                final c = options.elementAt(i);
+                return ListTile(
+                  dense: true,
+                  title: Text(c.name),
+                  subtitle: Text(
+                      c.contactType == ContactType.company
+                          ? 'Company'
+                          : 'Person',
+                      style: const TextStyle(fontSize: 11)),
+                  onTap: () => onSelected(c),
+                );
+              },
             ),
           ),
         );
