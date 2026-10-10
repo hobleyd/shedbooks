@@ -37,6 +37,7 @@ import '../services/reference_data_cache.dart';
 import '../utils/formatters.dart';
 import '../widgets/budget_pdf_report.dart';
 import '../widgets/pdf_report_components.dart';
+import '../utils/read_only_field.dart';
 
 const _monthNames = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -851,17 +852,17 @@ class _BudgetScreenState extends State<BudgetScreen>
           child: TextField(
             controller: ctrl,
             focusNode: focusNode,
-            enabled: isAdmin,
+            readOnly: !isAdmin,
             textAlign: TextAlign.right,
             keyboardType:
                 const TextInputType.numberWithOptions(decimal: true),
             style: const TextStyle(fontSize: 12),
-            decoration: const InputDecoration(
+            decoration: readOnlyDecoration(const InputDecoration(
               isDense: true,
               contentPadding:
                   EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               border: OutlineInputBorder(),
-            ),
+            ), readOnly: !isAdmin),
             onChanged: (_) {
               if (!_hasUnsavedChanges) {
                 setState(() => _hasUnsavedChanges = true);

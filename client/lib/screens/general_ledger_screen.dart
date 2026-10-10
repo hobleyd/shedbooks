@@ -27,6 +27,7 @@ import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/read_only_field.dart';
 
 /// A row in the editable general ledger table.
 class _GlRow {
@@ -480,13 +481,13 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
               child: TextFormField(
                 controller: row.labelController,
                 focusNode: row.labelFocusNode,
-                enabled: !_saving && canEdit,
-                decoration: const InputDecoration(
+                readOnly: _saving || !canEdit,
+                decoration: readOnlyDecoration(const InputDecoration(
                   border: OutlineInputBorder(),
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   isDense: true,
-                ),
+                ), readOnly: _saving || !canEdit),
                 onChanged: (_) => _markDirty(),
               ),
             ),
@@ -495,13 +496,13 @@ class _GeneralLedgerScreenState extends State<GeneralLedgerScreen> {
           Expanded(
             child: TextFormField(
               controller: row.descriptionController,
-              enabled: !_saving && canEdit,
-              decoration: const InputDecoration(
+              readOnly: _saving || !canEdit,
+              decoration: readOnlyDecoration(const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding:
                     EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 isDense: true,
-              ),
+              ), readOnly: _saving || !canEdit),
               onChanged: (_) => _markDirty(),
             ),
           ),

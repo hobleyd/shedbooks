@@ -991,7 +991,7 @@ Write-Host "Setup complete. $clientId can now create/update GAL mail contacts, m
     final isEmpty = isRequired && controller.text.trim().isEmpty;
     return TextFormField(
       controller: controller,
-      enabled: enabled && !_saving && !_generatingCertificate,
+      readOnly: !enabled || _saving || _generatingCertificate,
       obscureText: obscureText,
       keyboardType: keyboardType,
       decoration: InputDecoration(

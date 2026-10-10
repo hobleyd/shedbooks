@@ -28,6 +28,7 @@ import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/read_only_field.dart';
 
 class _GstRow {
   final String? id;
@@ -435,19 +436,19 @@ class _GstManagementScreenState extends State<GstManagementScreen> {
             width: 160,
             child: TextFormField(
               controller: row.rateController,
-              enabled: !_saving && isAdmin,
+              readOnly: _saving || !isAdmin,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
               ],
-              decoration: const InputDecoration(
+              decoration: readOnlyDecoration(const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding:
                     EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 isDense: true,
                 suffixText: '%',
-              ),
+              ), readOnly: _saving || !isAdmin),
               onChanged: (_) => _markDirty(),
             ),
           ),

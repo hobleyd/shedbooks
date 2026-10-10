@@ -29,6 +29,7 @@ import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/read_only_field.dart';
 
 enum _AbnLookupState { idle, loading, found, notFound, error }
 
@@ -774,13 +775,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
             child: TextFormField(
               controller: row.nameController,
               focusNode: row.nameFocusNode,
-              enabled: !_saving && canEdit,
-              decoration: const InputDecoration(
+              readOnly: _saving || !canEdit,
+              decoration: readOnlyDecoration(const InputDecoration(
                 border: OutlineInputBorder(),
                 contentPadding:
                     EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 isDense: true,
-              ),
+              ), readOnly: _saving || !canEdit),
               onChanged: (_) => _markDirty(),
             ),
           ),
@@ -836,19 +837,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
               width: 90,
               child: TextFormField(
                 controller: row.billerCodeController,
-                enabled: !_saving && canEdit,
+                readOnly: _saving || !canEdit,
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(10),
                 ],
-                decoration: const InputDecoration(
+                decoration: readOnlyDecoration(const InputDecoration(
                   border: OutlineInputBorder(),
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   isDense: true,
                   hintText: 'Biller code',
-                ),
+                ), readOnly: _saving || !canEdit),
                 onChanged: (_) => _markDirty(),
               ),
             )
@@ -857,19 +858,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
               width: 90,
               child: TextFormField(
                 controller: row.bsbController,
-                enabled: !_saving && canEdit,
+                readOnly: _saving || !canEdit,
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[\d-]')),
                   LengthLimitingTextInputFormatter(7),
                 ],
-                decoration: const InputDecoration(
+                decoration: readOnlyDecoration(const InputDecoration(
                   border: OutlineInputBorder(),
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   isDense: true,
                   hintText: 'XXX-XXX',
-                ),
+                ), readOnly: _saving || !canEdit),
                 onChanged: (_) => _markDirty(),
               ),
             ),
@@ -881,19 +882,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
               width: 120,
               child: TextFormField(
                 controller: row.referenceController,
-                enabled: !_saving && canEdit,
+                readOnly: _saving || !canEdit,
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(20),
                 ],
-                decoration: const InputDecoration(
+                decoration: readOnlyDecoration(const InputDecoration(
                   border: OutlineInputBorder(),
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   isDense: true,
                   hintText: 'Reference',
-                ),
+                ), readOnly: _saving || !canEdit),
                 onChanged: (_) => _markDirty(),
               ),
             )
@@ -902,18 +903,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
               width: 120,
               child: TextFormField(
                 controller: row.accountNumberController,
-                enabled: !_saving && canEdit,
+                readOnly: _saving || !canEdit,
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(10),
                 ],
-                decoration: const InputDecoration(
+                decoration: readOnlyDecoration(const InputDecoration(
                   border: OutlineInputBorder(),
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   isDense: true,
-                ),
+                ), readOnly: _saving || !canEdit),
                 onChanged: (_) => _markDirty(),
               ),
             ),
@@ -1078,7 +1079,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
       width: 130,
       child: TextFormField(
         controller: row.abnController,
-        enabled: !_saving && isCompany && canEdit,
+        readOnly: _saving || !isCompany || !canEdit,
         keyboardType: TextInputType.number,
         inputFormatters: [
           FilteringTextInputFormatter.digitsOnly,
@@ -1091,14 +1092,14 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 if (value.length == 11) _lookupAbn(row);
               }
             : null,
-        decoration: InputDecoration(
+        decoration: readOnlyDecoration(InputDecoration(
           border: const OutlineInputBorder(),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           isDense: true,
           hintText: isCompany ? '11 digits' : '—',
           suffixIcon: suffixIcon,
-        ),
+        ), readOnly: _saving || !isCompany || !canEdit),
       ),
     );
   }

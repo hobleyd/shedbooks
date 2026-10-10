@@ -64,7 +64,7 @@ void main() {
     expect(find.widgetWithText(TextFormField, 'Address'), findsOneWidget);
     final addressField = _addressTextField(tester);
     expect(addressField.maxLines, greaterThan(1));
-    expect(addressField.enabled, isTrue);
+    expect(addressField.readOnly, isFalse);
   });
 
   testWidgets(
@@ -82,12 +82,15 @@ void main() {
     // Assert
     expect(controller.addressController.text, _existingContact.address);
     final addressField = _addressTextField(tester);
-    expect(addressField.enabled, isTrue,
+    expect(addressField.readOnly, isFalse,
         reason: 'address must stay editable for an existing contact so it '
             'can be captured/updated from the invoice screen');
     final nameField = _nameTextField(tester);
-    expect(nameField.enabled, isFalse,
+    expect(nameField.readOnly, isTrue,
         reason: 'other contact fields remain locked for an existing contact');
+    expect(nameField.enabled, isTrue,
+        reason: 'locked fields are read-only, not disabled, so their text '
+            'can still be selected and copied');
   });
 
   testWidgets('editing the address field updates the controller',

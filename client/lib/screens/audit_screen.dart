@@ -416,8 +416,10 @@ class _AuditScreenState extends State<AuditScreen> {
                       color: Colors.black54)),
             ),
             Expanded(
-              child: RichText(
-                text: TextSpan(
+              // Text.rich, not RichText, so the diff joins the app-wide
+              // SelectionArea and can be selected and copied.
+              child: Text.rich(
+                TextSpan(
                   style: const TextStyle(fontSize: 13, color: Colors.black87),
                   children: [
                     TextSpan(

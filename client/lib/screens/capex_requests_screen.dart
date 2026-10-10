@@ -30,6 +30,7 @@ import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/read_only_field.dart';
 
 /// Capital Expenditure Requests screen — the club's paper CER form, digitised.
 class CapexRequestsScreen extends StatefulWidget {
@@ -1201,18 +1202,18 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
   }) {
     return TextFormField(
       controller: controller,
-      enabled: enabled,
+      readOnly: !enabled,
       maxLines: maxLines,
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       validator: validator,
-      decoration: InputDecoration(
+      decoration: readOnlyDecoration(InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
         isDense: true,
         alignLabelWithHint: maxLines > 1,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      ),
+      ), readOnly: !enabled),
     );
   }
 
@@ -1224,7 +1225,7 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
   }) {
     return TextFormField(
       controller: controller,
-      enabled: enabled,
+      readOnly: !enabled,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
@@ -1232,13 +1233,13 @@ class _CapexRequestDialogState extends State<_CapexRequestDialog> {
       validator: required
           ? (v) => (v?.trim().isEmpty ?? true) ? 'Required' : null
           : null,
-      decoration: InputDecoration(
+      decoration: readOnlyDecoration(InputDecoration(
         labelText: label,
         prefixText: r'$ ',
         border: const OutlineInputBorder(),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      ),
+      ), readOnly: !enabled),
     );
   }
 }

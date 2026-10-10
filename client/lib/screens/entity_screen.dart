@@ -533,7 +533,7 @@ class _EntityScreenState extends State<EntityScreen> {
     final isEmpty = isRequired && controller.text.trim().isEmpty;
     return TextFormField(
       controller: controller,
-      enabled: enabled && !_saving,
+      readOnly: !enabled || _saving,
       inputFormatters: inputFormatters,
       keyboardType: keyboardType,
       decoration: InputDecoration(

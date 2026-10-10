@@ -23,6 +23,7 @@ import 'package:provider/provider.dart';
 
 import '../models/contact_entry.dart';
 import '../services/api_client.dart';
+import '../utils/read_only_field.dart';
 
 enum AbnLookupState { idle, loading, found, notFound, error }
 
@@ -295,11 +296,11 @@ class _ContactPickerState extends State<ContactPicker> {
             const SizedBox(height: 16),
             TextFormField(
               controller: controller.nameController,
-              enabled: widget.enabled && isNew,
-              decoration: const InputDecoration(
+              readOnly: !widget.enabled || !isNew,
+              decoration: readOnlyDecoration(const InputDecoration(
                 labelText: 'Name',
                 border: OutlineInputBorder(),
-              ),
+              ), readOnly: !widget.enabled || !isNew),
             ),
             const SizedBox(height: 16),
             Row(
@@ -352,14 +353,14 @@ class _ContactPickerState extends State<ContactPicker> {
             const SizedBox(height: 16),
             TextFormField(
               controller: controller.addressController,
-              enabled: widget.enabled,
+              readOnly: !widget.enabled,
               minLines: 3,
               maxLines: 5,
-              decoration: const InputDecoration(
+              decoration: readOnlyDecoration(const InputDecoration(
                 labelText: 'Address',
                 border: OutlineInputBorder(),
                 alignLabelWithHint: true,
-              ),
+              ), readOnly: !widget.enabled),
             ),
           ],
         ),
@@ -398,7 +399,7 @@ class _ContactPickerState extends State<ContactPicker> {
 
     return TextFormField(
       controller: controller.abnController,
-      enabled: widget.enabled && isNew && isCompany,
+      readOnly: !widget.enabled || !isNew || !isCompany,
       keyboardType: TextInputType.number,
       inputFormatters: [
         FilteringTextInputFormatter.digitsOnly,
@@ -410,12 +411,12 @@ class _ContactPickerState extends State<ContactPicker> {
               if (value.length == 11) _lookupAbn();
             }
           : null,
-      decoration: InputDecoration(
+      decoration: readOnlyDecoration(InputDecoration(
         labelText: 'ABN',
         border: const OutlineInputBorder(),
         hintText: isCompany ? '11 digits' : '—',
         suffixIcon: suffixIcon,
-      ),
+      ), readOnly: !widget.enabled || !isNew || !isCompany),
     );
   }
 }
