@@ -8,6 +8,8 @@
 *.g.dart
 *.mocks.dart
 *.lock
+# Commit the client lockfile so CI builds the exact package versions tested locally
+!client/pubspec.lock
 .DS_Store
 .atom/
 .build/
