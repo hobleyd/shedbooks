@@ -21,6 +21,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
+import '../models/contact_entry.dart';
 import '../models/entity_details.dart';
 import '../models/general_ledger_entry.dart';
 import '../models/transaction_entry.dart';
@@ -42,6 +43,8 @@ class _BasReportScreenState extends State<BasReportScreen> {
 
   List<TransactionEntry> _allTransactions = [];
   Map<String, GeneralLedgerEntry> _glMap = {};
+  List<GeneralLedgerEntry> _glEntries = [];
+  Map<String, ContactEntry> _contactMap = {};
   EntityDetails? _entityDetails;
 
   late int _quarter;
@@ -108,6 +111,7 @@ class _BasReportScreenState extends State<BasReportScreen> {
         cache.refreshTransactions(),
         cache.refreshGl(),
         cache.refreshEntityDetails(),
+        cache.refreshContacts(),
       ]);
       if (!mounted) return;
 
@@ -123,6 +127,8 @@ class _BasReportScreenState extends State<BasReportScreen> {
       setState(() {
         _allTransactions = cache.transactions;
         _glMap = {for (final g in cache.glEntries) g.id: g};
+        _glEntries = cache.glEntries;
+        _contactMap = {for (final c in cache.contacts) c.id: c};
         _entityDetails = cache.entityDetails;
         _loading = false;
       });
@@ -151,21 +157,32 @@ class _BasReportScreenState extends State<BasReportScreen> {
 
   // ── BAS computations ───────────────────────────────────────────────────────
 
+  bool _isGstApplicable(TransactionEntry t) =>
+      _glMap[t.generalLedgerId]?.gstApplicable ?? false;
+
+  /// Transactions that make up G1: all credit (money-in) transactions.
+  List<TransactionEntry> _g1Transactions(List<TransactionEntry> txns) =>
+      txns.where((t) => t.isCredit).toList();
+
+  /// Transactions that make up 1A: GST-applicable credit transactions.
+  List<TransactionEntry> _oneATransactions(List<TransactionEntry> txns) =>
+      txns.where((t) => t.isCredit && _isGstApplicable(t)).toList();
+
+  /// Transactions that make up 1B: GST-applicable debit transactions.
+  List<TransactionEntry> _oneBTransactions(List<TransactionEntry> txns) =>
+      txns.where((t) => !t.isCredit && _isGstApplicable(t)).toList();
+
   /// G1: Total sales — all credit (money-in) transaction totals.
   int _computeG1(List<TransactionEntry> txns) =>
-      txns.where((t) => t.isCredit).fold(0, (s, t) => s + t.totalAmount);
+      _g1Transactions(txns).fold(0, (s, t) => s + t.totalAmount);
 
   /// 1A: GST on sales — GST component of GST-applicable credit transactions.
-  int _compute1A(List<TransactionEntry> txns) => txns
-      .where((t) =>
-          t.isCredit && (_glMap[t.generalLedgerId]?.gstApplicable ?? false))
-      .fold(0, (s, t) => s + t.gstAmount);
+  int _compute1A(List<TransactionEntry> txns) =>
+      _oneATransactions(txns).fold(0, (s, t) => s + t.gstAmount);
 
   /// 1B: GST on purchases — GST component of GST-applicable debit transactions.
-  int _compute1B(List<TransactionEntry> txns) => txns
-      .where((t) =>
-          !t.isCredit && (_glMap[t.generalLedgerId]?.gstApplicable ?? false))
-      .fold(0, (s, t) => s + t.gstAmount);
+  int _compute1B(List<TransactionEntry> txns) =>
+      _oneBTransactions(txns).fold(0, (s, t) => s + t.gstAmount);
 
   // ── Period label ───────────────────────────────────────────────────────────
 
@@ -476,6 +493,9 @@ class _BasReportScreenState extends State<BasReportScreen> {
               label: 'Total sales',
               hint: 'All income for the quarter',
               cents: g1,
+              onTap: () => _showBreakdown(
+                  'G1', 'Total sales', _g1Transactions(txns),
+                  useGst: false),
             ),
             _BasRow(
               code: '1A',
@@ -483,6 +503,9 @@ class _BasReportScreenState extends State<BasReportScreen> {
               hint: 'GST collected on GST-applicable income',
               cents: oneA,
               highlighted: true,
+              onTap: () => _showBreakdown(
+                  '1A', 'GST on sales', _oneATransactions(txns),
+                  useGst: true),
             ),
           ],
         ),
@@ -496,6 +519,9 @@ class _BasReportScreenState extends State<BasReportScreen> {
               hint: 'GST paid on GST-applicable expenses',
               cents: oneB,
               highlighted: true,
+              onTap: () => _showBreakdown(
+                  '1B', 'GST on purchases', _oneBTransactions(txns),
+                  useGst: true),
             ),
           ],
         ),
@@ -609,58 +635,112 @@ class _BasReportScreenState extends State<BasReportScreen> {
   Widget _buildBasRow(_BasRow row, double codeWidth, double amountWidth) {
     return Column(
       children: [
-        Container(
+        Material(
           color: row.highlighted
               ? Theme.of(context).colorScheme.primaryContainer.withAlpha(60)
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: codeWidth,
-                  child: Text(
-                    row.code,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(row.label,
-                          style: Theme.of(context).textTheme.bodyMedium),
-                      if (row.hint != null)
-                        Text(
-                          row.hint!,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: Colors.black45),
-                        ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: amountWidth,
-                  child: Text(
-                    Formatters.formatCents(row.cents),
-                    style: TextStyle(
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      fontWeight: row.highlighted ? FontWeight.bold : null,
+              : Colors.transparent,
+          child: InkWell(
+            onTap: row.onTap,
+            child: Tooltip(
+              message: 'Show the transactions that make up ${row.code}',
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: codeWidth,
+                      child: Text(
+                        row.code,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    textAlign: TextAlign.right,
-                  ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(row.label,
+                              style: Theme.of(context).textTheme.bodyMedium),
+                          if (row.hint != null)
+                            Text(
+                              row.hint!,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: Colors.black45),
+                            ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: amountWidth,
+                      child: Text(
+                        Formatters.formatCents(row.cents),
+                        style: TextStyle(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          fontWeight: row.highlighted ? FontWeight.bold : null,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.chevron_right,
+                        size: 18,
+                        color: row.onTap == null
+                            ? Colors.transparent
+                            : Colors.black38),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
         const Divider(height: 1),
       ],
+    );
+  }
+
+  /// Shows the transactions that make up a BAS field. [useGst] selects the
+  /// GST component (1A/1B) rather than the GST-inclusive total (G1).
+  void _showBreakdown(
+    String code,
+    String label,
+    List<TransactionEntry> records, {
+    required bool useGst,
+  }) {
+    final sorted = [...records]..sort((a, b) {
+        final byDate = a.transactionDate.compareTo(b.transactionDate);
+        return byDate != 0
+            ? byDate
+            : a.receiptNumber.compareTo(b.receiptNumber);
+      });
+    final int total =
+        sorted.fold(0, (s, t) => s + (useGst ? t.gstAmount : t.totalAmount));
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _BasBreakdownDialog(
+        title: '$code — $label',
+        subtitle: 'Q$_quarter $_year · $_periodLabel',
+        amountHeading: useGst ? 'GST' : 'Total (inc GST)',
+        total: total,
+        rows: [
+          for (final t in sorted)
+            _BreakdownLine(
+              date: t.transactionDate,
+              receiptNumber: t.receiptNumber,
+              contact: _contactMap[t.contactId]?.name ?? '',
+              glAccount: _glMap.containsKey(t.generalLedgerId)
+                  ? buildGlPath(_glEntries, t.generalLedgerId)
+                  : '',
+              description: t.description,
+              cents: useGst ? t.gstAmount : t.totalAmount,
+            ),
+        ],
+      ),
     );
   }
 
@@ -739,6 +819,7 @@ class _BasRow {
   final String? hint;
   final int cents;
   final bool highlighted;
+  final VoidCallback? onTap;
 
   const _BasRow({
     required this.code,
@@ -746,5 +827,150 @@ class _BasRow {
     this.hint,
     required this.cents,
     this.highlighted = false,
+    this.onTap,
   });
+}
+
+/// One transaction line in a BAS field breakdown.
+class _BreakdownLine {
+  final String date;
+  final String receiptNumber;
+  final String contact;
+  final String glAccount;
+  final String description;
+  final int cents;
+
+  const _BreakdownLine({
+    required this.date,
+    required this.receiptNumber,
+    required this.contact,
+    required this.glAccount,
+    required this.description,
+    required this.cents,
+  });
+}
+
+/// Dialog listing the transactions that make up a BAS field, with a total
+/// that matches the figure on the report.
+class _BasBreakdownDialog extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String amountHeading;
+  final int total;
+  final List<_BreakdownLine> rows;
+
+  const _BasBreakdownDialog({
+    required this.title,
+    required this.subtitle,
+    required this.amountHeading,
+    required this.total,
+    required this.rows,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final TextStyle? headStyle = textTheme.labelLarge;
+    const TextStyle amountStyle =
+        TextStyle(fontFeatures: [FontFeature.tabularFigures()]);
+    final Size screen = MediaQuery.sizeOf(context);
+
+    Widget line({
+      required Widget date,
+      required Widget receipt,
+      required Widget contact,
+      required Widget gl,
+      required Widget description,
+      required Widget amount,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 96, child: date),
+            SizedBox(width: 100, child: receipt),
+            Expanded(flex: 3, child: contact),
+            const SizedBox(width: 8),
+            Expanded(flex: 3, child: gl),
+            const SizedBox(width: 8),
+            Expanded(flex: 4, child: description),
+            SizedBox(width: 120, child: amount),
+          ],
+        ),
+      );
+    }
+
+    return AlertDialog(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title),
+          Text(subtitle,
+              style: textTheme.bodySmall?.copyWith(color: Colors.black54)),
+        ],
+      ),
+      content: SizedBox(
+        width: screen.width * 0.8 > 1100 ? 1100 : screen.width * 0.8,
+        height: screen.height * 0.6,
+        child: rows.isEmpty
+            ? const Center(child: Text('No transactions this quarter.'))
+            : Column(
+                children: [
+                  line(
+                    date: Text('Date', style: headStyle),
+                    receipt: Text('Receipt', style: headStyle),
+                    contact: Text('Contact', style: headStyle),
+                    gl: Text('GL account', style: headStyle),
+                    description: Text('Description', style: headStyle),
+                    amount: Text(amountHeading,
+                        style: headStyle, textAlign: TextAlign.right),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: SelectionArea(
+                      child: ListView.separated(
+                        itemCount: rows.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final _BreakdownLine r = rows[i];
+                          return line(
+                            date: Text(r.date),
+                            receipt: Text(r.receiptNumber),
+                            contact: Text(r.contact),
+                            gl: Text(r.glAccount),
+                            description: Text(r.description),
+                            amount: Text(Formatters.formatCents(r.cents),
+                                style: amountStyle, textAlign: TextAlign.right),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, thickness: 1.5),
+                  line(
+                    date: Text(
+                        '${rows.length} transaction${rows.length == 1 ? '' : 's'}',
+                        style: headStyle),
+                    receipt: const SizedBox.shrink(),
+                    contact: const SizedBox.shrink(),
+                    gl: const SizedBox.shrink(),
+                    description: Text('Total',
+                        style: headStyle, textAlign: TextAlign.right),
+                    amount: Text(Formatters.formatCents(total),
+                        style:
+                            amountStyle.copyWith(fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.right),
+                  ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }
