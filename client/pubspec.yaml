@@ -22,6 +22,10 @@ dependencies:
   printing: ^5.13.2
   flutter_typeahead: ^6.0.0
   intl: ^0.20.2
+  # Transitive (via pdf). image 4.11.0+ calls ZLibDecoder.decodeLazy, which
+  # doesn't exist in archive 4.0.x — the newest archive excel allows — so
+  # the web build fails to compile. Drop this cap once excel allows archive 4.1+.
+  image: ">=4.8.0 <4.11.0"
 
 dev_dependencies:
   flutter_test:
