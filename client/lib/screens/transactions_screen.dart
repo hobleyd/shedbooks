@@ -40,6 +40,7 @@ import '../models/transaction_entry.dart';
 import '../services/api_client.dart';
 import '../services/permission_service.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/bpay_file.dart';
 import '../utils/split_payments.dart';
 import '../utils/formatters.dart';
 import 'import_cba_screen.dart';
@@ -244,8 +245,25 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     }
   }
 
+  /// The selected payments, split by which bank upload file they go in.
+  ({List<TransactionPayment> directDebit, List<TransactionPayment> bpay})
+      _selectedPaymentsByMethod() {
+    final List<TransactionPayment> payments =
+        groupIntoPayments(_selectedWithSplitSiblings());
+    return (
+      directDebit: payments.where((p) => !p.first.isBpay).toList(),
+      bpay: payments.where((p) => p.first.isBpay).toList(),
+    );
+  }
+
+  /// Generates the ABA file for the selected Direct Debit payments.
   void _handleBankUpload() async {
-    if (_selectedTransactionIds.isEmpty) return;
+    // A split is one payment to the contact, so selecting any of its lines
+    // takes every line of it — the bank file then carries a single detail
+    // record for the split's total.
+    final List<TransactionPayment> payments =
+        _selectedPaymentsByMethod().directDebit;
+    if (payments.isEmpty) return;
 
     if (_entityDetails == null ||
         _entityDetails!.apcaId == null ||
@@ -253,17 +271,6 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       _showSnackbar('Entity APCA ID is missing. Please update Entity Details.');
       return;
     }
-
-    if (_bankAccounts.isEmpty) {
-      _showSnackbar('No bank accounts configured.');
-      return;
-    }
-
-    // Identify selected transactions. A split is one payment to the contact,
-    // so selecting any of its lines takes every line of it — the bank file
-    // then carries a single detail record for the split's total.
-    final selectedTxns = _selectedWithSplitSiblings();
-    final List<TransactionPayment> payments = groupIntoPayments(selectedTxns);
 
     // Check for missing contact bank details
     final missingDetails = <String>[];
@@ -284,79 +291,197 @@ class _TransactionsScreenState extends State<TransactionsScreen>
       return;
     }
 
-    // Select sender bank account if multiple (system accounts excluded — no real banking details).
-    final eligibleAccounts = _bankAccounts.where((a) => !a.isSystem).toList();
-    BankAccountEntry? senderAccount;
-    if (eligibleAccounts.length == 1) {
-      senderAccount = eligibleAccounts.first;
-    } else {
-      senderAccount = await showDialog<BankAccountEntry>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Select Sender Bank Account'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: eligibleAccounts
-                .map((a) => ListTile(
-                      title: Text(a.accountName),
-                      subtitle: Text('${a.bsbFormatted} ${a.accountNumber}'),
-                      onTap: () => Navigator.of(ctx).pop(a),
-                    ))
-                .toList(),
-          ),
-        ),
-      );
-    }
-
+    final BankAccountEntry? senderAccount = await _pickSenderAccount();
     if (senderAccount == null) return;
 
     // Generate ABA
     try {
-      final apiClient = context.read<ApiClient>();
       final references =
           payments.map((p) => _lodgementReference(p.first)).toList();
-      final seqResponse = await apiClient.post(
-        '/aba-sequences/next',
-        jsonEncode({'references': references}),
-      );
-      if (seqResponse.statusCode != 200) {
+      final int? sequence = await _nextUploadSequence(references);
+      if (sequence == null) {
         _showSnackbar('Failed to get ABA sequence number.');
         return;
       }
-      final seqJson = jsonDecode(seqResponse.body) as Map<String, dynamic>;
-      final sequence = seqJson['sequence'] as int;
 
-      final now = DateTime.now();
-      final seq = sequence.toString().padLeft(3, '0');
-      final wmsName =
-          'WMS${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}$seq';
-      final abaContent = _generateAba(payments, senderAccount, sequence);
-      final bytes = utf8.encode(abaContent);
-      final blob = web.Blob(<JSAny>[bytes.toJS].toJS);
-      final url = web.URL.createObjectURL(blob);
-      (web.document.createElement('a') as web.HTMLAnchorElement)
-        ..href = url
-        ..download = '$wmsName.aba'
-        ..click();
-      web.URL.revokeObjectURL(url);
+      final String wmsName = _uploadBatchName('WMS', sequence);
+      _downloadFile(_generateAba(payments, senderAccount, sequence), '$wmsName.aba');
 
       // Record the batch name against each transaction for auto-matching during import.
-      final batchRes = await apiClient.post(
-        '/transactions/aba-batch',
-        jsonEncode({
-          'transactionIds': selectedTxns.map((t) => t.id).toList(),
-          'batchName': wmsName,
-        }),
-      );
-      if (batchRes.statusCode != 204) {
-        _showSnackbar('ABA file generated but batch name could not be recorded.');
-      } else {
-        _showSnackbar('ABA file generated.');
-      }
-      setState(() => _selectedTransactionIds.clear());
+      final bool stamped = await _stampUploadBatch(payments, wmsName);
+      _showSnackbar(stamped
+          ? 'ABA file generated.'
+          : 'ABA file generated but batch name could not be recorded.');
     } catch (e) {
       _showSnackbar('Failed to generate ABA: $e');
     }
+  }
+
+  /// Generates the CommBiz BPAY file for the selected BPAY payments.
+  void _handleBpayUpload() async {
+    final List<TransactionPayment> payments = _selectedPaymentsByMethod().bpay;
+    if (payments.isEmpty) return;
+
+    if (payments.length > maxBpayPaymentsPerFile) {
+      _showSnackbar('CommBiz accepts at most $maxBpayPaymentsPerFile BPAY '
+          'payments per file — ${payments.length} are selected.');
+      return;
+    }
+
+    // Every payment needs a biller code and a CRN in the spec's digits-only
+    // format. The CRN is the Payment Reference when set, otherwise the
+    // contact's saved BPAY reference.
+    final List<BpayPayment> bpayPayments = [];
+    final List<String> problems = [];
+    for (final TransactionPayment payment in payments) {
+      final TransactionEntry t = payment.first;
+      final ContactEntry contact = _contacts.firstWhere((c) => c.id == t.contactId);
+      final String billerCode = contact.bpayBillerCode?.trim() ?? '';
+      final String? crn = resolveBpayCrn(
+        paymentReference: t.paymentReference,
+        contactReference: contact.bpayReference,
+      );
+      if (!isValidBpayBillerCode(billerCode)) {
+        problems.add('${contact.name} (biller code missing or not 3-10 digits)');
+      } else if (crn == null) {
+        problems.add('${contact.name} (no CRN on the contact or ${t.receiptNumber})');
+      } else if (!isValidBpayCrn(crn)) {
+        problems.add('${t.receiptNumber} (CRN "$crn" must be 2-20 digits)');
+      } else {
+        bpayPayments.add(BpayPayment(
+          billerCode: billerCode,
+          crn: crn,
+          amountCents: payment.totalAmount,
+        ));
+      }
+    }
+    if (problems.isNotEmpty) {
+      _showSnackbar('Cannot create BPAY file: ${problems.join(", ")}.');
+      return;
+    }
+
+    final BankAccountEntry? senderAccount = await _pickSenderAccount();
+    if (senderAccount == null) return;
+    final String fundingAccount = bpayFundingAccount(
+      bsb: senderAccount.bsb,
+      accountNumber: senderAccount.accountNumber,
+    );
+    if (fundingAccount.isEmpty || fundingAccount.length > 20) {
+      _showSnackbar('${senderAccount.accountName} needs a BSB and account '
+          'number (20 digits at most) to fund BPAY payments.');
+      return;
+    }
+
+    try {
+      // Receipt numbers, not CRNs — the references go to the audit log, and
+      // a contact's CRN is encrypted at rest.
+      final List<String> references = [
+        for (final TransactionPayment p in payments) p.first.receiptNumber,
+      ];
+      final int? sequence = await _nextUploadSequence(references);
+      if (sequence == null) {
+        _showSnackbar('Failed to get BPAY file number.');
+        return;
+      }
+
+      final String batchName = _uploadBatchName('BPY', sequence);
+      final String content = buildBpayFile(
+        payments: bpayPayments,
+        fundingAccount: fundingAccount,
+        createdAt: DateTime.now(),
+        fileNumber: sequence,
+      );
+      _downloadFile(content, '$batchName.csv');
+
+      // Stamped as a record of the upload. A BPY name never matches the WMS
+      // batch matcher, so reconciliation matches these by date and amount.
+      final bool stamped = await _stampUploadBatch(payments, batchName);
+      _showSnackbar(stamped
+          ? 'BPAY file generated.'
+          : 'BPAY file generated but batch name could not be recorded.');
+    } catch (e) {
+      _showSnackbar('Failed to generate BPAY file: $e');
+    }
+  }
+
+  /// The account a bank upload is paid from: the only real bank account, or
+  /// the user's pick when there are several (system accounts have no real
+  /// banking details and are excluded). Null when cancelled or none exist.
+  Future<BankAccountEntry?> _pickSenderAccount() async {
+    final List<BankAccountEntry> eligibleAccounts =
+        _bankAccounts.where((a) => !a.isSystem).toList();
+    if (eligibleAccounts.isEmpty) {
+      _showSnackbar('No bank accounts configured.');
+      return null;
+    }
+    if (eligibleAccounts.length == 1) return eligibleAccounts.first;
+    return showDialog<BankAccountEntry>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Select Sender Bank Account'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: eligibleAccounts
+              .map((a) => ListTile(
+                    title: Text(a.accountName),
+                    subtitle: Text('${a.bsbFormatted} ${a.accountNumber}'),
+                    onTap: () => Navigator.of(ctx).pop(a),
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  /// Fetches the entity's next daily bank upload sequence number, recording
+  /// [references] (one per payment) in the audit log. Null on failure.
+  Future<int?> _nextUploadSequence(List<String> references) async {
+    if (!mounted) return null;
+    final ApiClient apiClient = context.read<ApiClient>();
+    final seqResponse = await apiClient.post(
+      '/aba-sequences/next',
+      jsonEncode({'references': references}),
+    );
+    if (seqResponse.statusCode != 200) return null;
+    final seqJson = jsonDecode(seqResponse.body) as Map<String, dynamic>;
+    return seqJson['sequence'] as int;
+  }
+
+  /// Bank upload batch name: [prefix] + today's YYMMDD + 3-digit [sequence],
+  /// e.g. `WMS260620001`.
+  static String _uploadBatchName(String prefix, int sequence) {
+    final DateTime now = DateTime.now();
+    return '$prefix${now.year.toString().substring(2)}'
+        '${now.month.toString().padLeft(2, '0')}'
+        '${now.day.toString().padLeft(2, '0')}'
+        '${sequence.toString().padLeft(3, '0')}';
+  }
+
+  /// Downloads [content] as a file named [fileName].
+  static void _downloadFile(String content, String fileName) {
+    final bytes = utf8.encode(content);
+    final blob = web.Blob(<JSAny>[bytes.toJS].toJS);
+    final url = web.URL.createObjectURL(blob);
+    (web.document.createElement('a') as web.HTMLAnchorElement)
+      ..href = url
+      ..download = fileName
+      ..click();
+    web.URL.revokeObjectURL(url);
+  }
+
+  /// Records [batchName] against every line of [payments] and drops them
+  /// from the selection, leaving any payments of the other method selected
+  /// for their own upload. Returns whether the batch name was recorded.
+  Future<bool> _stampUploadBatch(
+      List<TransactionPayment> payments, String batchName) async {
+    final List<String> ids = [for (final p in payments) ...p.ids];
+    if (!mounted) return false;
+    final batchRes = await context.read<ApiClient>().post(
+          '/transactions/aba-batch',
+          jsonEncode({'transactionIds': ids, 'batchName': batchName}),
+        );
+    if (mounted) setState(() => _selectedTransactionIds.removeAll(ids));
+    return batchRes.statusCode == 204;
   }
 
   /// The selected transactions plus every other line of any split one of
@@ -401,7 +526,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
 
     final now = DateTime.now();
     final dateStr = '${now.day.toString().padLeft(2, '0')}${now.month.toString().padLeft(2, '0')}${now.year.toString().substring(2)}';
-    final wmsName = 'WMS${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${sequence.toString().padLeft(3, '0')}';
+    final wmsName = _uploadBatchName('WMS', sequence);
 
     buffer.write('0'); // 01
     buffer.write(' ' * 17); // 02-18
@@ -761,6 +886,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         'transactionDate':
             '${data.date.year}-${data.date.month.toString().padLeft(2, '0')}-${data.date.day.toString().padLeft(2, '0')}',
         'isCash': data.isCash,
+        'paymentMethod': data.paymentMethod.name,
         'bankAccountId': data.bankAccountId,
       });
 
@@ -1253,6 +1379,7 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     final monthKey =
         '${_viewMonth.year}-${_viewMonth.month.toString().padLeft(2, '0')}';
     final isLocked = _lockedMonths.contains(monthKey);
+    final selectedPayments = _selectedPaymentsByMethod();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1283,13 +1410,24 @@ class _TransactionsScreenState extends State<TransactionsScreen>
         ),
         if (_selectedTransactionIds.isNotEmpty &&
             context.read<PermissionService>().canPerform(PermissionAction.transactionsBankUpload)) ...[
-          const SizedBox(width: 16),
-          FilledButton.icon(
-            onPressed: _handleBankUpload,
-            icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
-            label: Text(
-                'Bank Upload (${groupIntoPayments(_selectedWithSplitSiblings()).length})'),
-          ),
+          // One button per upload file, each acting only on its own payments
+          // — a single click producing two downloads is often blocked.
+          if (selectedPayments.directDebit.isNotEmpty) ...[
+            const SizedBox(width: 16),
+            FilledButton.icon(
+              onPressed: _handleBankUpload,
+              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+              label: Text('Bank Upload (${selectedPayments.directDebit.length})'),
+            ),
+          ],
+          if (selectedPayments.bpay.isNotEmpty) ...[
+            const SizedBox(width: 16),
+            FilledButton.icon(
+              onPressed: _handleBpayUpload,
+              icon: const Icon(Icons.receipt_long_outlined, size: 18),
+              label: Text('BPAY Upload (${selectedPayments.bpay.length})'),
+            ),
+          ],
         ],
       ],
     );
@@ -1472,6 +1610,14 @@ class _TransactionsScreenState extends State<TransactionsScreen>
     );
   }
 
+  /// Marks a Money-Out payment that goes in the BPAY upload file rather than
+  /// the ABA one.
+  Widget _bpayBadge() => Tooltip(
+        message: 'Paid by BPAY',
+        child: Icon(Icons.receipt_long_outlined,
+            size: 14, color: Theme.of(context).colorScheme.primary),
+      );
+
   Widget _buildTransactionRow(TransactionEntry t, bool isMoneyOut) {
     if (_editingId == t.id) {
       // A split is edited as a whole: the form opens on its first line with
@@ -1554,10 +1700,20 @@ class _TransactionsScreenState extends State<TransactionsScreen>
               ),
               SizedBox(
                 width: 180,
-                child: Text(
-                  _contactName(t.contactId) ?? '—',
-                  style: const TextStyle(fontSize: 13),
-                  overflow: TextOverflow.ellipsis,
+                child: Row(
+                  children: [
+                    if (isMoneyOut && t.isBpay && !t.isCash) ...[
+                      _bpayBadge(),
+                      const SizedBox(width: 4),
+                    ],
+                    Expanded(
+                      child: Text(
+                        _contactName(t.contactId) ?? '—',
+                        style: const TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               SizedBox(

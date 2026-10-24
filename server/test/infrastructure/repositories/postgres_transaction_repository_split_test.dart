@@ -319,5 +319,81 @@ void main() {
       expect(single.splitLineNo, isNull);
       expect(single.isSplit, isFalse);
     });
+
+    test('payment method defaults to directDebit and round-trips bpay through create and update', () async {
+      // Arrange
+      final Transaction defaulted = await createSingle();
+
+      // Act
+      final Transaction bpay = await sut.create(
+        entityId: tEntityId,
+        contactId: contactId,
+        generalLedgerId: glA,
+        amount: 700,
+        gstAmount: 70,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'IT-${++receiptSeq}',
+        description: 'bpay',
+        transactionDate: tDate,
+        paymentMethod: PaymentMethod.bpay,
+      );
+      final Transaction? reloaded = await sut.findById(bpay.id, entityId: tEntityId);
+      final Transaction switched = await sut.update(
+        id: bpay.id,
+        entityId: tEntityId,
+        contactId: contactId,
+        generalLedgerId: glA,
+        amount: 700,
+        gstAmount: 70,
+        transactionType: TransactionType.debit,
+        receiptNumber: bpay.receiptNumber,
+        description: 'bpay',
+        transactionDate: tDate,
+        paymentMethod: PaymentMethod.directDebit,
+      );
+
+      // Assert
+      expect(defaulted.paymentMethod, PaymentMethod.directDebit);
+      expect(bpay.paymentMethod, PaymentMethod.bpay);
+      expect(reloaded!.paymentMethod, PaymentMethod.bpay);
+      expect(switched.paymentMethod, PaymentMethod.directDebit);
+    });
+
+    test('createSplit and replaceWithLines write the payment method on every line', () async {
+      // Arrange
+      final List<Transaction> split = await sut.createSplit(
+        entityId: tEntityId,
+        contactId: contactId,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'IT-${++receiptSeq}',
+        transactionDate: tDate,
+        paymentMethod: PaymentMethod.bpay,
+        lines: lines([10000, 5000]),
+      );
+
+      // Act
+      final List<Transaction> replaced = await sut.replaceWithLines(
+        replacedIds: [for (final Transaction t in split) t.id],
+        entityId: tEntityId,
+        contactId: contactId,
+        transactionType: TransactionType.debit,
+        receiptNumber: split.first.receiptNumber,
+        transactionDate: tDate,
+        paymentMethod: PaymentMethod.bpay,
+        lines: lines([8000, 4000, 3000]),
+      );
+      final List<Transaction> all = await sut.findAll(entityId: tEntityId);
+
+      // Assert
+      expect(split.every((t) => t.paymentMethod == PaymentMethod.bpay), isTrue);
+      expect(replaced.length, 3);
+      expect(replaced.every((t) => t.paymentMethod == PaymentMethod.bpay), isTrue);
+      expect(
+        all
+            .where((t) => t.splitGroupId == replaced.first.splitGroupId)
+            .every((t) => t.paymentMethod == PaymentMethod.bpay),
+        isTrue,
+      );
+    });
   }, skip: host == null ? 'TEST_DB_HOST not set — needs a real PostgreSQL database' : null);
 }

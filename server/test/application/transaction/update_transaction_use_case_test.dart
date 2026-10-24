@@ -69,6 +69,7 @@ void main() {
     lockedMonths = MockLockedMonthRepository();
     sut = UpdateTransactionUseCase(repository, lockedMonths);
     registerFallbackValue(TransactionType.debit);
+    registerFallbackValue(PaymentMethod.directDebit);
     registerFallbackValue(tDate);
     // Default: transaction exists and month is not locked.
     when(() => repository.findById(tId, entityId: tEntityId))
@@ -77,6 +78,139 @@ void main() {
   });
 
   group('UpdateTransactionUseCase', () {
+    test('keeps the existing payment method when none is supplied', () async {
+      // Arrange
+      final tBpayExisting = Transaction(
+        id: tId,
+        contactId: tExisting.contactId,
+        generalLedgerId: tExisting.generalLedgerId,
+        amount: 11000,
+        gstAmount: 1000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-001',
+        description: '',
+        transactionDate: tDate,
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 1),
+        paymentMethod: PaymentMethod.bpay,
+      );
+      when(() => repository.findById(tId, entityId: tEntityId))
+          .thenAnswer((_) async => tBpayExisting);
+      when(
+        () => repository.update(
+          id: any(named: 'id'),
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: any(named: 'paymentReference'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          paymentMethod: any(named: 'paymentMethod'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: tEntityId,
+        contactId: tUpdated.contactId,
+        generalLedgerId: tUpdated.generalLedgerId,
+        amount: 22000,
+        gstAmount: 2000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-099',
+        description: '',
+        transactionDate: tDate,
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: any(named: 'id'),
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: any(named: 'paymentReference'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          paymentMethod: PaymentMethod.bpay,
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).called(1);
+    });
+
+    test('applies a supplied payment method', () async {
+      // Arrange
+      when(
+        () => repository.update(
+          id: any(named: 'id'),
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: any(named: 'paymentReference'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          paymentMethod: any(named: 'paymentMethod'),
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).thenAnswer((_) async => tUpdated);
+
+      // Act
+      await sut.execute(
+        id: tId,
+        entityId: tEntityId,
+        contactId: tUpdated.contactId,
+        generalLedgerId: tUpdated.generalLedgerId,
+        amount: 22000,
+        gstAmount: 2000,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'REC-099',
+        description: '',
+        transactionDate: tDate,
+        paymentMethod: PaymentMethod.bpay,
+      );
+
+      // Assert
+      verify(
+        () => repository.update(
+          id: any(named: 'id'),
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: any(named: 'paymentReference'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          paymentMethod: PaymentMethod.bpay,
+          bankMatched: any(named: 'bankMatched'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).called(1);
+    });
+
     test('updates and returns the updated entity (debit stays debit)', () async {
       // Arrange
       when(

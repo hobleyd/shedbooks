@@ -21,6 +21,7 @@ import 'package:provider/provider.dart';
 import 'package:shedbooks_client/models/bank_account_summary.dart';
 import 'package:shedbooks_client/models/contact_entry.dart';
 import 'package:shedbooks_client/models/general_ledger_entry.dart';
+import 'package:shedbooks_client/models/payment_method.dart';
 import 'package:shedbooks_client/models/transaction_entry.dart';
 import 'package:shedbooks_client/services/api_client.dart';
 import 'package:shedbooks_client/services/reference_data_cache.dart';
@@ -212,6 +213,43 @@ Widget _splitHarness({
         ),
       ),
     ));
+
+const _bpayContact = ContactEntry(
+  id: 'c3',
+  name: 'Energy Co',
+  contactType: ContactType.company,
+  gstRegistered: true,
+  isBpay: true,
+  bpayBillerCode: '7334',
+  bpayReference: '8923037123',
+);
+
+/// Compact edit harness for [initial] (default [_tx]) with one real bank
+/// account, so the payment is non-cash Money-Out and the payment method
+/// selector shows.
+Widget _paymentMethodHarness({
+  TransactionEntry? initial,
+  void Function(TransactionFormData)? onSave,
+}) =>
+    _withGstRateCache(MaterialApp(
+      home: Scaffold(
+        body: TransactionForm(
+          contacts: const [..._contacts, _bpayContact],
+          glEntries: const [_gl, _glOther, _glNoGst],
+          bankAccounts: const [_bankCash, _bankA],
+          nextMoneyOutReceipt: 'P-26002',
+          initial: initial ?? _tx,
+          compact: true,
+          isSaving: false,
+          onSave: onSave ?? (_) {},
+        ),
+      ),
+    ));
+
+Finder _paymentMethodShowing(String label) => find.descendant(
+      of: find.byKey(const ValueKey('payment-method-dropdown')),
+      matching: find.text(label),
+    );
 
 void main() {
   group('Split across GL codes', () {
@@ -793,6 +831,127 @@ void main() {
           .ancestor(of: find.text('Acme'), matching: find.byType(ListView))
           .first);
       expect(options.top, closeTo(field.bottom, 1.0));
+    });
+  });
+
+  group('Payment method (Direct Debit / BPAY)', () {
+    final TransactionEntry bpayTx = TransactionEntry(
+      id: 't1',
+      contactId: 'c1',
+      generalLedgerId: 'gl1',
+      receiptNumber: 'P-26001',
+      description: '',
+      transactionType: 'debit',
+      amount: 10000,
+      gstAmount: 1000,
+      totalAmount: 11000,
+      transactionDate: '2026-04-01',
+      paymentMethod: PaymentMethod.bpay,
+    );
+
+    testWidgets('an existing Direct Debit payment saves as Direct Debit',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(_paymentMethodHarness(onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(_paymentMethodShowing('Direct Debit'), findsOneWidget);
+      expect(saved!.paymentMethod, PaymentMethod.directDebit);
+    });
+
+    testWidgets(
+        'keeps the saved method on edit rather than re-deriving it from the contact',
+        (tester) async {
+      // Arrange — contact c1 is not a BPAY contact, but the payment was saved as BPAY.
+      TransactionFormData? saved;
+      await tester.pumpWidget(
+          _paymentMethodHarness(initial: bpayTx, onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(_paymentMethodShowing('BPAY'), findsOneWidget);
+      expect(saved!.paymentMethod, PaymentMethod.bpay);
+    });
+
+    testWidgets('picking a BPAY contact defaults the method to BPAY',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(_paymentMethodHarness(onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await _selectContact(tester, 'Energy Co');
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(_paymentMethodShowing('BPAY'), findsOneWidget);
+      expect(saved!.paymentMethod, PaymentMethod.bpay);
+    });
+
+    testWidgets('the method can be changed by hand', (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(_paymentMethodHarness(onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.tap(find.byKey(const ValueKey('payment-method-dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('BPAY').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(saved!.paymentMethod, PaymentMethod.bpay);
+    });
+
+    testWidgets('a BPAY payment reference that is not a digits-only CRN blocks the save',
+        (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(
+          _paymentMethodHarness(initial: bpayTx, onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await tester.enterText(_fieldLabeled('Payment Ref.'), 'INV-42');
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(saved, isNull);
+      expect(find.textContaining('must be 2-20 digits'), findsOneWidget);
+    });
+
+    testWidgets('a cash payment always saves as Direct Debit', (tester) async {
+      // Arrange
+      TransactionFormData? saved;
+      await tester.pumpWidget(
+          _paymentMethodHarness(initial: bpayTx, onSave: (d) => saved = d));
+      await tester.pumpAndSettle();
+
+      // Act
+      await _selectAccount(tester, 'Cash');
+      await tester.enterText(_fieldLabeled('Receipt No.'), 'C-1');
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+
+      // Assert
+      expect(find.byKey(const ValueKey('payment-method-dropdown')), findsNothing);
+      expect(saved!.paymentMethod, PaymentMethod.directDebit);
     });
   });
 }

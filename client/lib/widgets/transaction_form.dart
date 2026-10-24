@@ -22,8 +22,10 @@ import 'package:provider/provider.dart';
 import '../models/bank_account_summary.dart';
 import '../models/contact_entry.dart';
 import '../models/general_ledger_entry.dart';
+import '../models/payment_method.dart';
 import '../models/transaction_entry.dart';
 import '../services/reference_data_cache.dart';
+import '../utils/bpay_file.dart';
 import 'gl_account_dropdown.dart';
 
 enum _AmountAnchor { total, amount }
@@ -88,6 +90,10 @@ class TransactionFormData {
   final bool isCash;
   final String? bankAccountId;
 
+  /// How the payment is sent to the bank. Always [PaymentMethod.directDebit]
+  /// unless this is a non-cash Money-Out payment.
+  final PaymentMethod paymentMethod;
+
   /// Additional general ledger lines when a Money-Out payment is split
   /// across several GL codes. Empty for an ordinary transaction, where
   /// [gl] / [amountCents] / [gstCents] / [description] are the whole of it;
@@ -106,6 +112,7 @@ class TransactionFormData {
     required this.description,
     this.isCash = false,
     this.bankAccountId,
+    this.paymentMethod = PaymentMethod.directDebit,
     this.extraLines = const [],
   });
 
@@ -210,6 +217,10 @@ class TransactionFormState extends State<TransactionForm> {
   final TextEditingController _receiptOutController = TextEditingController();
   final TextEditingController _paymentReferenceController = TextEditingController();
 
+  /// How a non-cash Money-Out payment is sent to the bank. Defaults from the
+  /// contact when one is picked, and can then be changed per transaction.
+  PaymentMethod _paymentMethod = PaymentMethod.directDebit;
+
   String? get _cashAccountId =>
       widget.bankAccounts.where((a) => a.isCash).map((a) => a.id).firstOrNull;
 
@@ -223,6 +234,10 @@ class TransactionFormState extends State<TransactionForm> {
   bool get _isCash =>
       _selectedBankAccountId != null &&
       _selectedBankAccountId == _cashAccountId;
+
+  /// Whether the payment method applies — only a non-cash Money-Out payment
+  /// is sent to the bank in an upload file.
+  bool get _usesPaymentMethod => _isMoneyOut && !_isCash;
 
   @override
   void initState() {
@@ -243,6 +258,9 @@ class TransactionFormState extends State<TransactionForm> {
       _selectedBankAccountId = t.bankAccountId ??
           (t.isCash ? _cashAccountId : _singleNonCashAccountId);
       _paymentReferenceController.text = t.paymentReference ?? '';
+      // The saved choice, not the contact's default — the user may have
+      // overridden it.
+      _paymentMethod = t.paymentMethod;
       if (_selectedGl?.direction == GlDirection.moneyOut) {
         if (t.isCash) {
           _cashReceiptController.text = t.receiptNumber;
@@ -371,6 +389,7 @@ class TransactionFormState extends State<TransactionForm> {
       _cashReceiptController.clear();
       _receiptOutController.clear();
       _paymentReferenceController.clear();
+      _paymentMethod = PaymentMethod.directDebit;
       _anchor = _AmountAnchor.total;
       _clearExtraLines();
     });
@@ -409,6 +428,7 @@ class TransactionFormState extends State<TransactionForm> {
       description: _descriptionController.text.trim(),
       isCash: _isCash,
       bankAccountId: _selectedBankAccountId,
+      paymentMethod: _usesPaymentMethod ? _paymentMethod : PaymentMethod.directDebit,
       extraLines: [
         for (final _LineFields line in _extraLines)
           TransactionFormLine(
@@ -461,6 +481,13 @@ class TransactionFormState extends State<TransactionForm> {
       } else {
         if (_receiptOutController.text.trim().isEmpty)
           return 'Receipt number is required';
+        final String paymentRef = _paymentReferenceController.text.trim();
+        if (_paymentMethod == PaymentMethod.bpay &&
+            paymentRef.isNotEmpty &&
+            !isValidBpayCrn(paymentRef)) {
+          return 'For BPAY the Payment Reference is the CRN — it must be '
+              '2-20 digits (leave it blank to use the contact\'s CRN)';
+        }
       }
     } else if (_isCash) {
       if (_cashReceiptController.text.trim().isEmpty) {
@@ -882,6 +909,8 @@ class TransactionFormState extends State<TransactionForm> {
       onSelected: (contact) => setState(() {
         _selectedContact = contact;
         _contactTypedText = contact.name;
+        _paymentMethod =
+            contact.isBpay ? PaymentMethod.bpay : PaymentMethod.directDebit;
         _recalculateGstFields();
       }),
       fieldViewBuilder: (context, textController, focusNode, _) {
@@ -1139,25 +1168,72 @@ class TransactionFormState extends State<TransactionForm> {
             ),
             const SizedBox(width: 16),
             SizedBox(width: 220, child: _buildPaymentReferenceField()),
+            if (!_isCash) ...[
+              const SizedBox(width: 16),
+              _buildPaymentMethodDropdown(width: 160),
+            ],
           ],
         ),
       ],
     );
   }
 
-  /// Optional Money-Out reference used in place of the Receipt Number as the
-  /// lodgement reference when generating the bank (ABA) upload file.
+  /// Optional Money-Out reference. On a Direct Debit it is used in place of
+  /// the Receipt Number as the ABA lodgement reference; on BPAY it is the CRN,
+  /// overriding the contact's saved one.
   Widget _buildPaymentReferenceField() {
+    final bool bpay = _usesPaymentMethod && _paymentMethod == PaymentMethod.bpay;
     return TextFormField(
       controller: _paymentReferenceController,
       enabled: !widget.isSaving,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: 'Payment Reference (optional)',
-        border: OutlineInputBorder(),
+        border: const OutlineInputBorder(),
         isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
         floatingLabelBehavior: FloatingLabelBehavior.always,
-        helperText: 'Used instead of Receipt No. on bank upload',
+        helperText: bpay
+            ? 'BPAY CRN — blank uses the contact\'s'
+            : 'Used instead of Receipt No. on bank upload',
+      ),
+    );
+  }
+
+  /// Direct Debit / BPAY selector for a non-cash Money-Out payment — decides
+  /// which bank upload file the payment goes in.
+  Widget _buildPaymentMethodDropdown({required double width, bool compact = false}) {
+    final double fontSize = compact ? 12.0 : 13.0;
+    return SizedBox(
+      width: width,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: compact ? 'Method' : 'Payment Method',
+          floatingLabelBehavior: compact ? FloatingLabelBehavior.always : null,
+          border: const OutlineInputBorder(),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        ),
+        child: DropdownButton<PaymentMethod>(
+          key: const ValueKey('payment-method-dropdown'),
+          value: _paymentMethod,
+          isExpanded: true,
+          isDense: true,
+          underline: const SizedBox.shrink(),
+          items: [
+            for (final PaymentMethod method in PaymentMethod.values)
+              DropdownMenuItem(
+                value: method,
+                child: Text(method.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: fontSize)),
+              ),
+          ],
+          onChanged: widget.isSaving
+              ? null
+              : (PaymentMethod? method) {
+                  if (method != null) setState(() => _paymentMethod = method);
+                },
+        ),
       ),
     );
   }
@@ -1420,7 +1496,7 @@ class TransactionFormState extends State<TransactionForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1: Date | Contact | GL Account
+          // Row 1: Date | Contact | [Payment Method] | GL Account
           // IntrinsicHeight + stretch lets whichever field naturally needs
           // the most room (GL Account's DropdownButton and Contact's
           // Autocomplete both resist being compressed below their content
@@ -1443,6 +1519,11 @@ class TransactionFormState extends State<TransactionForm> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                // Beside the contact it defaults from.
+                if (_usesPaymentMethod) ...[
+                  _stretch(_buildPaymentMethodDropdown(width: 120, compact: true)),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: _stretch(GlAccountDropdown(
                     allEntries: widget.glEntries,

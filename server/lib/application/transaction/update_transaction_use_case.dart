@@ -42,6 +42,7 @@ class UpdateTransactionUseCase {
     required String description,
     required DateTime transactionDate,
     bool? isCash,
+    PaymentMethod? paymentMethod,
     String? bankAccountId,
   }) async {
     TransactionValidator.validate(
@@ -88,6 +89,8 @@ class UpdateTransactionUseCase {
       description: description.trim(),
       transactionDate: transactionDate,
       isCash: isCash ?? existing.isCash,
+      // Null means "not supplied" — keep whatever the transaction already has.
+      paymentMethod: paymentMethod ?? existing.paymentMethod,
       // Cash transactions are pre-matched; otherwise preserve existing bank_matched state.
       bankMatched: (isCash ?? existing.isCash) || existing.bankMatched,
       // The account a transaction relates to can now be set directly by the

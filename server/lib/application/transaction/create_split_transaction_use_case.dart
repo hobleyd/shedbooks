@@ -41,6 +41,7 @@ class CreateSplitTransactionUseCase {
     String? paymentReference,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     String? bankAccountId,
     required List<TransactionLine> lines,
   }) async {
@@ -64,6 +65,7 @@ class CreateSplitTransactionUseCase {
           TransactionValidator.normalisePaymentReference(paymentReference),
       transactionDate: transactionDate,
       isCash: isCash,
+      paymentMethod: paymentMethod,
       bankAccountId: bankAccountId,
       lines: TransactionValidator.normaliseLines(lines),
     );

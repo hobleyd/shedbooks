@@ -17,6 +17,7 @@
 
 import '../../domain/entities/transaction.dart';
 import '../../domain/entities/transaction_line.dart';
+import 'payment_method_json.dart';
 
 /// Deserialised request body for POST /transactions and PUT /transactions/:id
 /// when the body carries a `lines` array — one payment coded to several
@@ -30,6 +31,9 @@ class SplitTransactionRequest {
 
   /// Null means "not supplied": false on create, preserve existing on update.
   final bool? isCash;
+
+  /// Null means "not supplied": directDebit on create, preserve existing on update.
+  final PaymentMethod? paymentMethod;
   final String? bankAccountId;
   final List<TransactionLine> lines;
 
@@ -40,6 +44,7 @@ class SplitTransactionRequest {
     this.paymentReference,
     required this.transactionDate,
     this.isCash,
+    this.paymentMethod,
     this.bankAccountId,
     required this.lines,
   });
@@ -116,6 +121,7 @@ class SplitTransactionRequest {
       paymentReference: paymentReferenceRaw as String?,
       transactionDate: transactionDate,
       isCash: isCashRaw as bool?,
+      paymentMethod: parsePaymentMethod(json['paymentMethod']),
       bankAccountId: bankAccountIdRaw as String?,
       lines: lines,
     );

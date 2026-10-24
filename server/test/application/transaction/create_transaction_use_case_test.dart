@@ -55,12 +55,82 @@ void main() {
     lockedMonths = MockLockedMonthRepository();
     sut = CreateTransactionUseCase(repository, lockedMonths);
     registerFallbackValue(TransactionType.debit);
+    registerFallbackValue(PaymentMethod.directDebit);
     registerFallbackValue(tDate);
     // Default: month is not locked.
     when(() => lockedMonths.isLocked(any(), any())).thenAnswer((_) async => false);
   });
 
   group('CreateTransactionUseCase', () {
+    test('passes the payment method through to the repository', () async {
+      // Arrange
+      final tBpay = Transaction(
+        id: '00000000-0000-0000-0000-000000000001',
+        contactId: '00000000-0000-0000-0000-000000000002',
+        generalLedgerId: '00000000-0000-0000-0000-000000000003',
+        amount: 5000,
+        gstAmount: 0,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'P-26001',
+        description: '',
+        transactionDate: tDate,
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 1),
+        paymentMethod: PaymentMethod.bpay,
+      );
+      when(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: any(named: 'paymentReference'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          paymentMethod: any(named: 'paymentMethod'),
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).thenAnswer((_) async => tBpay);
+
+      // Act
+      final result = await sut.execute(
+        entityId: tEntityId,
+        contactId: '00000000-0000-0000-0000-000000000002',
+        generalLedgerId: '00000000-0000-0000-0000-000000000003',
+        amount: 5000,
+        gstAmount: 0,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'P-26001',
+        description: '',
+        transactionDate: tDate,
+        paymentMethod: PaymentMethod.bpay,
+      );
+
+      // Assert
+      expect(result.paymentMethod, equals(PaymentMethod.bpay));
+      verify(
+        () => repository.create(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          generalLedgerId: any(named: 'generalLedgerId'),
+          amount: any(named: 'amount'),
+          gstAmount: any(named: 'gstAmount'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: any(named: 'paymentReference'),
+          description: any(named: 'description'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          paymentMethod: PaymentMethod.bpay,
+          bankAccountId: any(named: 'bankAccountId'),
+        ),
+      ).called(1);
+    });
+
     test('creates a money-out (debit) transaction and returns the persisted entity', () async {
       // Arrange
       when(

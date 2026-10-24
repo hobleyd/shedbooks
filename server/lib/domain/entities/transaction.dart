@@ -18,6 +18,16 @@
 /// Classifies whether money is flowing out of or into the account.
 enum TransactionType { debit, credit }
 
+/// How a Money-Out payment is sent to the bank. The enum names are stored
+/// verbatim in `transactions.payment_method` and sent over the API.
+enum PaymentMethod {
+  /// Paid to the contact's BSB / account number via the ABA upload file.
+  directDebit,
+
+  /// Paid to the contact's BPAY biller via the CommBiz BPAY upload file.
+  bpay,
+}
+
 /// A financial transaction posted against a contact and a general ledger account.
 class Transaction {
   /// Unique identifier (UUID v4).
@@ -66,7 +76,11 @@ class Transaction {
   /// Whether this transaction was recorded as a cash payment (bypasses bank rec).
   final bool isCash;
 
-  /// The WMS ABA batch name this transaction was included in (e.g. WMS260620001), if any.
+  /// How this payment is sent to the bank — selects the upload file it goes in.
+  final PaymentMethod paymentMethod;
+
+  /// The bank upload batch this transaction was included in, if any — a WMS
+  /// ABA batch (e.g. WMS260620001) or a BPY BPAY batch (e.g. BPY260620001).
   final String? abaBatchName;
 
   /// FK — the bank account (or the entity's system Cash account) this
@@ -99,6 +113,7 @@ class Transaction {
     this.deletedAt,
     this.bankMatched = false,
     this.isCash = false,
+    this.paymentMethod = PaymentMethod.directDebit,
     this.abaBatchName,
     this.bankAccountId,
     this.splitGroupId,

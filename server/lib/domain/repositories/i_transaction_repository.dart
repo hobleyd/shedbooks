@@ -34,12 +34,13 @@ abstract interface class ITransactionRepository {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     String? bankAccountId,
   });
 
   /// Creates one transaction row per entry in [lines], all sharing the given
-  /// contact, date, receipt number, payment reference, bank account and cash
-  /// flag, tied together by a new split group id. Every row is written in a
+  /// contact, date, receipt number, payment reference, bank account, cash
+  /// flag and payment method, tied together by a new split group id. Every row is written in a
   /// single database transaction — either all lines persist or none do.
   /// Returns the persisted rows in line order.
   /// Throws [TransactionValidationException] on FK violations.
@@ -51,6 +52,7 @@ abstract interface class ITransactionRepository {
     String? paymentReference,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     String? bankAccountId,
     required List<TransactionLine> lines,
   });
@@ -71,6 +73,7 @@ abstract interface class ITransactionRepository {
     String? paymentReference,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     bool bankMatched = false,
     String? abaBatchName,
     String? bankAccountId,
@@ -107,6 +110,7 @@ abstract interface class ITransactionRepository {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     bool bankMatched = false,
     String? bankAccountId,
   });

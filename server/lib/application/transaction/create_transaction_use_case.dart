@@ -40,6 +40,7 @@ class CreateTransactionUseCase {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     String? bankAccountId,
   }) async {
     TransactionValidator.validate(
@@ -67,6 +68,7 @@ class CreateTransactionUseCase {
       description: description.trim(),
       transactionDate: transactionDate,
       isCash: isCash,
+      paymentMethod: paymentMethod,
       bankAccountId: bankAccountId,
     );
   }

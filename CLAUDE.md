@@ -110,6 +110,12 @@ A Money-Out payment coded to several GL accounts is stored as **one ordinary `tr
 - **Anything about money actually moving works per payment** — ABA export, bank reconciliation / CBA import matching and the manual-match dialog must treat a split as a single amount (the sum of its lines). Use `client/lib/utils/split_payments.dart` (`groupIntoPayments`, `splitLinesOf`, `TransactionPayment`) rather than iterating rows.
 - **API**: `POST /transactions` and `PUT /transactions/:id` accept a `lines[]` array (and then return an array of rows). A PUT with `lines` replaces every line of the split atomically (soft-delete + re-insert, so row ids change); one line collapses it back to an ordinary transaction. A plain PUT on one line of a split is rejected, DELETE removes the whole split, and `bankMatch` / `stampAbaBatch` extend to sibling lines server-side.
 
+## Bank Upload Files (ABA / BPAY)
+Each Money-Out transaction carries `payment_method` (migration 067): `directDebit` (default) or `bpay`, values matching the `PaymentMethod` enum names on both server and client. It is shared by every line of a split, like `isCash`. The form defaults it from the contact's `isBpay` when a contact is picked; editing keeps the saved value.
+
+- **Transactions screen** shows one upload button per method for the selected payments: **Bank Upload** builds the ABA file (`WMSyymmddNNN.aba`) and **BPAY Upload** builds the CommBiz BPAY CSV (`BPYyymmddNNN.csv`, built by `client/lib/utils/bpay_file.dart`). They are separate buttons because a single click that triggers two downloads is often blocked by the browser. Both draw their sequence from `/aba-sequences/next`, which means BPAY files are audited as `ABA_EXPORT`, and both stamp `aba_batch_name`.
+- **BPAY file**: CommBiz BPay Payments spec v7. It writes one header + detail pair per payment ("individual debit"), so each payment is its own statement line and reconciliation matches it by date + amount. A `BPY` batch name never matches the `WMS` batch matcher. The Payment Date is left blank, so the bank pays on the day the file is submitted. The CRN is the transaction's Payment Reference when set, otherwise the contact's `bpayReference`, and it must be 2–20 digits.
+
 ## Member Equipment Training
 Which Wood Shop / Metal Shop equipment (Asset register Sections, matched case-insensitively — `TrainingSection`) each member is trained on lives in `member_equipment_training` (migration 066): one active row per member + asset, with `trained_on` = the day the tick was saved.
 

@@ -35,6 +35,7 @@ class TransactionResponse {
   final String updatedAt;
   final bool bankMatched;
   final bool isCash;
+  final String paymentMethod;
   final String? abaBatchName;
   final String? bankAccountId;
   final String? splitGroupId;
@@ -56,6 +57,7 @@ class TransactionResponse {
     required this.updatedAt,
     required this.bankMatched,
     required this.isCash,
+    required this.paymentMethod,
     this.abaBatchName,
     this.bankAccountId,
     this.splitGroupId,
@@ -79,6 +81,7 @@ class TransactionResponse {
       updatedAt: entity.updatedAt.toUtc().toIso8601String(),
       bankMatched: entity.bankMatched,
       isCash: entity.isCash,
+      paymentMethod: entity.paymentMethod.name,
       abaBatchName: entity.abaBatchName,
       bankAccountId: entity.bankAccountId,
       splitGroupId: entity.splitGroupId,
@@ -102,6 +105,7 @@ class TransactionResponse {
         'updatedAt': updatedAt,
         'bankMatched': bankMatched,
         'isCash': isCash,
+        'paymentMethod': paymentMethod,
         if (abaBatchName != null) 'abaBatchName': abaBatchName,
         if (bankAccountId != null) 'bankAccountId': bankAccountId,
         if (splitGroupId != null) 'splitGroupId': splitGroupId,

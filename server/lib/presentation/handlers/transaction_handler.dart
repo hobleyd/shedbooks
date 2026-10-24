@@ -132,6 +132,7 @@ class TransactionHandler {
         description: dto.description,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash,
+        paymentMethod: dto.paymentMethod,
         bankAccountId: dto.bankAccountId,
       );
       final contactLabel = await _contactLabel(transaction.contactId, entityId);
@@ -170,6 +171,7 @@ class TransactionHandler {
         paymentReference: dto.paymentReference,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash ?? false,
+        paymentMethod: dto.paymentMethod ?? PaymentMethod.directDebit,
         bankAccountId: dto.bankAccountId,
         lines: dto.lines,
       );
@@ -244,6 +246,7 @@ class TransactionHandler {
         description: dto.description,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash,
+        paymentMethod: dto.paymentMethod,
         bankAccountId: dto.bankAccountId,
       );
       if (before != null) {
@@ -293,6 +296,7 @@ class TransactionHandler {
         paymentReference: dto.paymentReference,
         transactionDate: dto.transactionDate,
         isCash: dto.isCash,
+        paymentMethod: dto.paymentMethod,
         bankAccountId: dto.bankAccountId,
         lines: dto.lines,
       );
@@ -460,6 +464,7 @@ class TransactionHandler {
         'transactionType': t.transactionType.name,
         'receiptNumber': t.receiptNumber,
         'paymentReference': t.paymentReference,
+        'paymentMethod': t.paymentMethod.name,
         'description': t.description,
         'transactionDate': t.transactionDate.toIso8601String(),
       };
@@ -487,6 +492,7 @@ class TransactionHandler {
       'transactionType': first.transactionType.name,
       'receiptNumber': first.receiptNumber,
       'paymentReference': first.paymentReference,
+      'paymentMethod': first.paymentMethod.name,
       'transactionDate': first.transactionDate.toIso8601String(),
       'totalAmount':
           transactions.fold<int>(0, (int sum, Transaction t) => sum + t.totalAmount),

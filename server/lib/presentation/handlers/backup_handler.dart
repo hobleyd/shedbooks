@@ -82,7 +82,7 @@ class BackupHandler {
                amount, gst_amount,
                transaction_type::text AS transaction_type,
                receipt_number, payment_reference, description, transaction_date, is_cash,
-               created_at, updated_at, deleted_at, bank_matched,
+               payment_method, created_at, updated_at, deleted_at, bank_matched,
                bank_account_id::text, split_group_id::text, split_line_no
         FROM transactions WHERE entity_id = @entityId
       ''', {'entityId': entityId});
@@ -615,12 +615,12 @@ class BackupHandler {
               INSERT INTO transactions
                 (id, entity_id, contact_id, general_ledger_id, amount,
                  gst_amount, transaction_type, receipt_number, payment_reference, description,
-                 transaction_date, is_cash, created_at, updated_at, deleted_at,
+                 transaction_date, is_cash, payment_method, created_at, updated_at, deleted_at,
                  bank_matched, bank_account_id, split_group_id, split_line_no)
               VALUES (
                 @id::uuid, @e, @cid::uuid, @glid::uuid,
                 @amt, @gst, @tt::transaction_type,
-                @rcpt, @pref, @desc, @td::date, @ic,
+                @rcpt, @pref, @desc, @td::date, @ic, @pm,
                 @ca::timestamptz, @ua::timestamptz, @da::timestamptz, @bm,
                 @bai::uuid, @sgid::uuid, @sln
               )
@@ -638,6 +638,8 @@ class BackupHandler {
               'desc': r['description'] as String,
               'td': _dateString(r['transaction_date']),
               'ic': (r['is_cash'] as bool?) ?? false,
+              // Backups taken before migration 067 have no payment_method.
+              'pm': (r['payment_method'] as String?) ?? 'directDebit',
               'ca': r['created_at'] as String,
               'ua': r['updated_at'] as String,
               'da': r['deleted_at'],

@@ -16,6 +16,7 @@
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 import '../../domain/entities/transaction.dart';
+import 'payment_method_json.dart';
 
 /// Deserialised request body for PUT /transactions/:id.
 class UpdateTransactionRequest {
@@ -32,6 +33,9 @@ class UpdateTransactionRequest {
   /// When non-null, explicitly sets is_cash. Null means preserve the existing value.
   final bool? isCash;
 
+  /// When non-null, explicitly sets payment_method. Null means preserve the existing value.
+  final PaymentMethod? paymentMethod;
+
   /// When non-null, explicitly sets bank_account_id. Null means preserve the existing value.
   final String? bankAccountId;
 
@@ -46,6 +50,7 @@ class UpdateTransactionRequest {
     required this.description,
     required this.transactionDate,
     this.isCash,
+    this.paymentMethod,
     this.bankAccountId,
   });
 
@@ -104,6 +109,7 @@ class UpdateTransactionRequest {
       description: description,
       transactionDate: transactionDate,
       isCash: isCashRaw as bool?,
+      paymentMethod: parsePaymentMethod(json['paymentMethod']),
       bankAccountId: json['bankAccountId'] as String?,
     );
   }

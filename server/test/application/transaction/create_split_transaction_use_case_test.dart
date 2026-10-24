@@ -72,6 +72,7 @@ void main() {
         paymentReference: any(named: 'paymentReference'),
         transactionDate: any(named: 'transactionDate'),
         isCash: any(named: 'isCash'),
+        paymentMethod: any(named: 'paymentMethod'),
         bankAccountId: any(named: 'bankAccountId'),
         lines: any(named: 'lines'),
       ),
@@ -114,6 +115,7 @@ void main() {
     lockedMonths = MockLockedMonthRepository();
     sut = CreateSplitTransactionUseCase(repository, lockedMonths);
     registerFallbackValue(TransactionType.debit);
+    registerFallbackValue(PaymentMethod.directDebit);
     registerFallbackValue(tDate);
     registerFallbackValue(<TransactionLine>[]);
     // Default: month is not locked.
@@ -121,6 +123,38 @@ void main() {
   });
 
   group('CreateSplitTransactionUseCase', () {
+    test('passes the payment method through to the repository', () async {
+      // Arrange
+      stubCreateSplit([row('id-1', tGlA, 10000, 1000, 1)]);
+
+      // Act
+      await sut.execute(
+        entityId: tEntityId,
+        contactId: tContactId,
+        transactionType: TransactionType.debit,
+        receiptNumber: 'P-26001',
+        transactionDate: tDate,
+        paymentMethod: PaymentMethod.bpay,
+        lines: tLines,
+      );
+
+      // Assert
+      verify(
+        () => repository.createSplit(
+          entityId: any(named: 'entityId'),
+          contactId: any(named: 'contactId'),
+          transactionType: any(named: 'transactionType'),
+          receiptNumber: any(named: 'receiptNumber'),
+          paymentReference: any(named: 'paymentReference'),
+          transactionDate: any(named: 'transactionDate'),
+          isCash: any(named: 'isCash'),
+          paymentMethod: PaymentMethod.bpay,
+          bankAccountId: any(named: 'bankAccountId'),
+          lines: any(named: 'lines'),
+        ),
+      ).called(1);
+    });
+
     test('persists every line in one repository call and returns the created rows', () async {
       // Arrange
       final tRows = [

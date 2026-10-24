@@ -180,6 +180,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        paymentMethod:
+          type: string
+          enum: [directDebit, bpay]
+          description: How the payment is sent to the bank — directDebit goes in the ABA upload file, bpay in the CommBiz BPAY upload file.
         splitGroupId:
           type: string
           format: uuid
@@ -232,6 +236,10 @@ components:
           format: date
         isCash:
           type: boolean
+        paymentMethod:
+          type: string
+          enum: [directDebit, bpay]
+          description: Defaults to directDebit on create; omitted on update keeps the existing value.
         bankAccountId:
           type: string
           format: uuid
@@ -269,6 +277,10 @@ components:
         transactionDate:
           type: string
           format: date
+        paymentMethod:
+          type: string
+          enum: [directDebit, bpay]
+          description: Defaults to directDebit when omitted.
 
     UpdateTransactionRequest:
       type: object
@@ -296,6 +308,10 @@ components:
         transactionDate:
           type: string
           format: date
+        paymentMethod:
+          type: string
+          enum: [directDebit, bpay]
+          description: Omitted keeps the existing value.
 
     CreateGstRateRequest:
       type: object

@@ -34,8 +34,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
   static const String _columns = '''
     id, contact_id, general_ledger_id, amount, gst_amount,
     transaction_type::text, receipt_number, payment_reference, description, transaction_date,
-    created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
-    bank_account_id, split_group_id, split_line_no''';
+    created_at, updated_at, deleted_at, bank_matched, is_cash, payment_method,
+    aba_batch_name, bank_account_id, split_group_id, split_line_no''';
 
   @override
   Future<Transaction> create({
@@ -50,6 +50,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     String? bankAccountId,
   }) async {
     try {
@@ -66,6 +67,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         description: description,
         transactionDate: transactionDate,
         isCash: isCash,
+        paymentMethod: paymentMethod,
         bankMatched: isCash,
         bankAccountId: bankAccountId,
       );
@@ -84,6 +86,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     String? paymentReference,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     String? bankAccountId,
     required List<TransactionLine> lines,
   }) async {
@@ -97,6 +100,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
             paymentReference: paymentReference,
             transactionDate: transactionDate,
             isCash: isCash,
+            paymentMethod: paymentMethod,
             bankMatched: isCash,
             bankAccountId: bankAccountId,
             lines: lines,
@@ -117,6 +121,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     String? paymentReference,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     bool bankMatched = false,
     String? abaBatchName,
     String? bankAccountId,
@@ -146,6 +151,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           paymentReference: paymentReference,
           transactionDate: transactionDate,
           isCash: isCash,
+          paymentMethod: paymentMethod,
           bankMatched: bankMatched,
           abaBatchName: abaBatchName,
           bankAccountId: bankAccountId,
@@ -204,6 +210,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     String? paymentReference,
     required DateTime transactionDate,
     required bool isCash,
+    required PaymentMethod paymentMethod,
     required bool bankMatched,
     String? abaBatchName,
     String? bankAccountId,
@@ -226,6 +233,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         description: line.description,
         transactionDate: transactionDate,
         isCash: isCash,
+        paymentMethod: paymentMethod,
         bankMatched: bankMatched,
         abaBatchName: abaBatchName,
         bankAccountId: bankAccountId,
@@ -251,6 +259,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required String description,
     required DateTime transactionDate,
     required bool isCash,
+    required PaymentMethod paymentMethod,
     required bool bankMatched,
     String? abaBatchName,
     String? bankAccountId,
@@ -262,14 +271,14 @@ class PostgresTransactionRepository implements ITransactionRepository {
         INSERT INTO transactions (
           id, entity_id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type, receipt_number, payment_reference, description, transaction_date,
-          is_cash, bank_matched, aba_batch_name, bank_account_id,
+          is_cash, payment_method, bank_matched, aba_batch_name, bank_account_id,
           split_group_id, split_line_no
         )
         VALUES (
           @id::uuid, @entityId::text, @contactId::uuid, @generalLedgerId::uuid,
           @amount, @gstAmount, @transactionType::transaction_type,
           @receiptNumber, @paymentReference, @description, @transactionDate::date,
-          @isCash, @bankMatched, @abaBatchName,
+          @isCash, @paymentMethod, @bankMatched, @abaBatchName,
           (SELECT id FROM bank_accounts
            WHERE id = @bankAccountId::uuid AND entity_id = @entityId::text AND deleted_at IS NULL),
           @splitGroupId::uuid, @splitLineNo
@@ -289,6 +298,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
         'description': description,
         'transactionDate': transactionDate.toIso8601String().substring(0, 10),
         'isCash': isCash,
+        'paymentMethod': paymentMethod.name,
         'bankMatched': bankMatched,
         'abaBatchName': abaBatchName,
         'bankAccountId': bankAccountId,
@@ -306,8 +316,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, payment_reference, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
-          bank_account_id, split_group_id, split_line_no
+          created_at, updated_at, deleted_at, bank_matched, is_cash, payment_method,
+          aba_batch_name, bank_account_id, split_group_id, split_line_no
         FROM transactions
         WHERE id = @id::uuid
           AND entity_id = @entityId
@@ -327,8 +337,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
         SELECT
           id, contact_id, general_ledger_id, amount, gst_amount,
           transaction_type::text, receipt_number, payment_reference, description, transaction_date,
-          created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
-          bank_account_id, split_group_id, split_line_no
+          created_at, updated_at, deleted_at, bank_matched, is_cash, payment_method,
+          aba_batch_name, bank_account_id, split_group_id, split_line_no
         FROM transactions
         WHERE entity_id = @entityId
           AND deleted_at IS NULL
@@ -354,6 +364,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
     required String description,
     required DateTime transactionDate,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     bool bankMatched = false,
     String? bankAccountId,
   }) async {
@@ -371,6 +382,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
               description       = @description,
               transaction_date  = @transactionDate::date,
               is_cash           = @isCash,
+              payment_method    = @paymentMethod,
               bank_matched      = @bankMatched,
               bank_account_id   = (SELECT id FROM bank_accounts
                                     WHERE id = @bankAccountId::uuid AND entity_id = @entityId::text AND deleted_at IS NULL),
@@ -381,8 +393,8 @@ class PostgresTransactionRepository implements ITransactionRepository {
           RETURNING
             id, contact_id, general_ledger_id, amount, gst_amount,
             transaction_type::text, receipt_number, payment_reference, description, transaction_date,
-            created_at, updated_at, deleted_at, bank_matched, is_cash, aba_batch_name,
-            bank_account_id, split_group_id, split_line_no
+            created_at, updated_at, deleted_at, bank_matched, is_cash, payment_method,
+            aba_batch_name, bank_account_id, split_group_id, split_line_no
         '''),
         parameters: {
           'id': id,
@@ -397,6 +409,7 @@ class PostgresTransactionRepository implements ITransactionRepository {
           'description': description,
           'transactionDate': transactionDate.toIso8601String().substring(0, 10),
           'isCash': isCash,
+          'paymentMethod': paymentMethod.name,
           'bankMatched': bankMatched,
           'bankAccountId': bankAccountId,
         },
@@ -548,6 +561,9 @@ class PostgresTransactionRepository implements ITransactionRepository {
       deletedAt: row['deleted_at'] as DateTime?,
       bankMatched: row['bank_matched'] as bool? ?? false,
       isCash: row['is_cash'] as bool? ?? false,
+      paymentMethod: PaymentMethod.values.byName(
+        row['payment_method'] as String? ?? PaymentMethod.directDebit.name,
+      ),
       abaBatchName: row['aba_batch_name'] as String?,
       bankAccountId: row['bank_account_id']?.toString(),
       splitGroupId: row['split_group_id']?.toString(),

@@ -16,6 +16,7 @@
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
 import '../../domain/entities/transaction.dart';
+import 'payment_method_json.dart';
 
 /// Deserialised request body for POST /transactions.
 class CreateTransactionRequest {
@@ -29,6 +30,7 @@ class CreateTransactionRequest {
   final String description;
   final DateTime transactionDate;
   final bool isCash;
+  final PaymentMethod paymentMethod;
   final String? bankAccountId;
 
   const CreateTransactionRequest({
@@ -42,6 +44,7 @@ class CreateTransactionRequest {
     required this.description,
     required this.transactionDate,
     this.isCash = false,
+    this.paymentMethod = PaymentMethod.directDebit,
     this.bankAccountId,
   });
 
@@ -85,6 +88,8 @@ class CreateTransactionRequest {
     }
 
     final isCash = json['isCash'] as bool? ?? false;
+    final PaymentMethod paymentMethod =
+        parsePaymentMethod(json['paymentMethod']) ?? PaymentMethod.directDebit;
 
     return CreateTransactionRequest(
       contactId: contactId,
@@ -97,6 +102,7 @@ class CreateTransactionRequest {
       description: description,
       transactionDate: transactionDate,
       isCash: isCash,
+      paymentMethod: paymentMethod,
       bankAccountId: json['bankAccountId'] as String?,
     );
   }

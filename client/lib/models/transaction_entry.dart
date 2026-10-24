@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Shedbooks. If not, see <https://www.gnu.org/licenses/>.
 
+import 'payment_method.dart';
+
 /// A transaction record returned from the API.
 class TransactionEntry {
   final String id;
@@ -30,6 +32,9 @@ class TransactionEntry {
   final String transactionDate; // 'YYYY-MM-DD'
   final bool bankMatched;
   final bool isCash;
+
+  /// How this payment is sent to the bank — selects the upload file it goes in.
+  final PaymentMethod paymentMethod;
   final String? abaBatchName;
   final String? bankAccountId;
 
@@ -54,6 +59,7 @@ class TransactionEntry {
     required this.transactionDate,
     this.bankMatched = false,
     this.isCash = false,
+    this.paymentMethod = PaymentMethod.directDebit,
     this.abaBatchName,
     this.bankAccountId,
     this.splitGroupId,
@@ -74,6 +80,7 @@ class TransactionEntry {
         transactionDate: json['transactionDate'] as String,
         bankMatched: (json['bankMatched'] as bool?) ?? false,
         isCash: (json['isCash'] as bool?) ?? false,
+        paymentMethod: PaymentMethod.fromJson(json['paymentMethod']),
         abaBatchName: json['abaBatchName'] as String?,
         bankAccountId: json['bankAccountId'] as String?,
         splitGroupId: json['splitGroupId'] as String?,
@@ -81,6 +88,9 @@ class TransactionEntry {
       );
 
   bool get isCredit => transactionType == 'credit';
+
+  /// Whether this payment goes in the BPAY upload file rather than the ABA one.
+  bool get isBpay => paymentMethod == PaymentMethod.bpay;
 
   /// Whether this row is one line of a split transaction.
   bool get isSplit => splitGroupId != null;
@@ -104,6 +114,7 @@ class TransactionEntry {
         transactionDate: transactionDate ?? this.transactionDate,
         bankMatched: bankMatched ?? this.bankMatched,
         isCash: isCash,
+        paymentMethod: paymentMethod,
         abaBatchName: abaBatchName,
         bankAccountId: bankAccountId ?? this.bankAccountId,
         splitGroupId: splitGroupId,

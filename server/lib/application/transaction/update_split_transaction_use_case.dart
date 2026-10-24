@@ -41,7 +41,8 @@ class UpdateSplitTransactionUseCase {
   /// Replaces the transaction [id] (with its split siblings, if any) by
   /// [lines]. Both the existing month and the new target month must be
   /// unlocked. Bank-matched state, ABA batch name and — unless overridden —
-  /// the cash flag and bank account carry over from the replaced rows.
+  /// the cash flag, payment method and bank account carry over from the
+  /// replaced rows.
   /// Throws [TransactionNotFoundException] if [id] does not exist within [entityId].
   Future<SplitUpdateResult> execute({
     required String id,
@@ -52,6 +53,7 @@ class UpdateSplitTransactionUseCase {
     String? paymentReference,
     required DateTime transactionDate,
     bool? isCash,
+    PaymentMethod? paymentMethod,
     String? bankAccountId,
     required List<TransactionLine> lines,
   }) async {
@@ -92,6 +94,7 @@ class UpdateSplitTransactionUseCase {
           TransactionValidator.normalisePaymentReference(paymentReference),
       transactionDate: transactionDate,
       isCash: cash,
+      paymentMethod: paymentMethod ?? existing.paymentMethod,
       // Cash transactions are pre-matched; otherwise preserve existing bank_matched state.
       bankMatched: cash || before.any((Transaction t) => t.bankMatched),
       abaBatchName: existing.abaBatchName,

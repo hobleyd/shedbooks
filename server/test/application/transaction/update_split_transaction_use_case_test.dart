@@ -51,6 +51,7 @@ void main() {
     int? splitLineNo,
     bool bankMatched = false,
     bool isCash = false,
+    PaymentMethod paymentMethod = PaymentMethod.directDebit,
     String? abaBatchName,
     String? bankAccountId,
   }) =>
@@ -70,6 +71,7 @@ void main() {
         splitLineNo: splitLineNo,
         bankMatched: bankMatched,
         isCash: isCash,
+        paymentMethod: paymentMethod,
         abaBatchName: abaBatchName,
         bankAccountId: bankAccountId,
       );
@@ -85,6 +87,7 @@ void main() {
         paymentReference: any(named: 'paymentReference'),
         transactionDate: any(named: 'transactionDate'),
         isCash: any(named: 'isCash'),
+        paymentMethod: any(named: 'paymentMethod'),
         bankMatched: any(named: 'bankMatched'),
         abaBatchName: any(named: 'abaBatchName'),
         bankAccountId: any(named: 'bankAccountId'),
@@ -99,6 +102,7 @@ void main() {
     List<String>? replacedIds,
     int? lineCount,
     bool? isCash,
+    PaymentMethod? paymentMethod,
     bool? bankMatched,
     String? abaBatchName,
     String? bankAccountId,
@@ -113,6 +117,7 @@ void main() {
         paymentReference: any(named: 'paymentReference'),
         transactionDate: any(named: 'transactionDate'),
         isCash: any(named: 'isCash', that: isCash == null ? anything : equals(isCash)),
+        paymentMethod: any(named: 'paymentMethod', that: paymentMethod == null ? anything : equals(paymentMethod)),
         bankMatched: any(named: 'bankMatched', that: bankMatched == null ? anything : equals(bankMatched)),
         abaBatchName: any(named: 'abaBatchName', that: abaBatchName == null ? anything : equals(abaBatchName)),
         bankAccountId: any(named: 'bankAccountId', that: bankAccountId == null ? anything : equals(bankAccountId)),
@@ -132,6 +137,7 @@ void main() {
         paymentReference: any(named: 'paymentReference'),
         transactionDate: any(named: 'transactionDate'),
         isCash: any(named: 'isCash'),
+        paymentMethod: any(named: 'paymentMethod'),
         bankMatched: any(named: 'bankMatched'),
         abaBatchName: any(named: 'abaBatchName'),
         bankAccountId: any(named: 'bankAccountId'),
@@ -145,6 +151,7 @@ void main() {
     List<TransactionLine> lines = tLines,
     DateTime? transactionDate,
     bool? isCash,
+    PaymentMethod? paymentMethod,
     String? bankAccountId,
   }) =>
       sut.execute(
@@ -155,6 +162,7 @@ void main() {
         receiptNumber: 'P-26001',
         transactionDate: transactionDate ?? tDate,
         isCash: isCash,
+        paymentMethod: paymentMethod,
         bankAccountId: bankAccountId,
         lines: lines,
       );
@@ -164,6 +172,7 @@ void main() {
     lockedMonths = MockLockedMonthRepository();
     sut = UpdateSplitTransactionUseCase(repository, lockedMonths);
     registerFallbackValue(TransactionType.debit);
+    registerFallbackValue(PaymentMethod.directDebit);
     registerFallbackValue(tDate);
     registerFallbackValue(<TransactionLine>[]);
     registerFallbackValue(<String>[]);
@@ -172,6 +181,34 @@ void main() {
   });
 
   group('UpdateSplitTransactionUseCase', () {
+    test('keeps the existing payment method when none is supplied', () async {
+      // Arrange
+      final existing = row('id-1', paymentMethod: PaymentMethod.bpay);
+      when(() => repository.findById('id-1', entityId: tEntityId))
+          .thenAnswer((_) async => existing);
+      stubReplace([existing]);
+
+      // Act
+      await act('id-1');
+
+      // Assert
+      verifyReplaced(paymentMethod: PaymentMethod.bpay);
+    });
+
+    test('applies a supplied payment method over the existing one', () async {
+      // Arrange
+      final existing = row('id-1', paymentMethod: PaymentMethod.bpay);
+      when(() => repository.findById('id-1', entityId: tEntityId))
+          .thenAnswer((_) async => existing);
+      stubReplace([existing]);
+
+      // Act
+      await act('id-1', paymentMethod: PaymentMethod.directDebit);
+
+      // Assert
+      verifyReplaced(paymentMethod: PaymentMethod.directDebit);
+    });
+
     test('converts an ordinary transaction into a split, replacing only that row', () async {
       // Arrange
       final existing = row('id-1');
