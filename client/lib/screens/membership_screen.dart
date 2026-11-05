@@ -21,6 +21,9 @@ import 'package:excel/excel.dart' hide Border, TextSpan;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 import '../auth/app_role.dart';
@@ -32,6 +35,10 @@ import '../models/permission_page.dart';
 import '../services/api_client.dart';
 import '../services/navigation_guard.dart';
 import '../services/permission_service.dart';
+import '../services/reference_data_cache.dart';
+import '../utils/formatters.dart';
+import '../widgets/member_contacts_pdf_report.dart';
+import '../widgets/pdf_report_components.dart';
 
 // ── Date format helpers ────────────────────────────────────────────────────
 
@@ -1128,6 +1135,54 @@ class _MembershipScreenState extends State<MembershipScreen> {
     });
   }
 
+  // ── PDF generation ─────────────────────────────────────────────────────────
+
+  /// Opens the browser print dialog with a contact list of every saved
+  /// member (names, phone and emergency contact). Uses saved values, not
+  /// unsaved edits in progress.
+  Future<void> _generateContactsPdf() async {
+    final ReferenceDataCache cache = context.read<ReferenceDataCache>();
+    await cache.refreshEntityDetails();
+    final entity = cache.entityDetails;
+    final String generated = Formatters.formatDateShort(DateTime.now());
+    final List<MemberContact> contacts = _rows
+        .map((r) => MemberContact(
+              firstName: r._origFirstName,
+              lastName: r._origLastName,
+              phone: r._origPhone,
+              emergencyContactName: r._origEmergencyName,
+              emergencyContactPhone: r._origEmergencyPhone,
+            ))
+        .toList();
+
+    final pw.Document doc = pw.Document(title: 'Member Contacts');
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 50, vertical: 50),
+      header: (ctx) {
+        if (ctx.pageNumber == 1) return pw.SizedBox(height: 0);
+        return pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              '${entity?.name ?? ''} - Member Contacts (continued)',
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
+            ),
+            pw.Divider(color: PdfColors.grey400),
+            pw.SizedBox(height: 4),
+          ],
+        );
+      },
+      footer: (ctx) => PdfReportComponents.pageFooter(ctx, generated),
+      build: (ctx) => [
+        PdfReportComponents.entityHeader(entity),
+        ...MemberContactsPdfReport.build(contacts: contacts, asOf: generated),
+      ],
+    ));
+
+    await Printing.layoutPdf(onLayout: (_) async => doc.save());
+  }
+
   void _updateDirty() {
     final hasDirty = _pendingNewRow != null || _rows.any((r) => r.isDirty);
     context.read<NavigationGuard>().setDirty(hasDirty);
@@ -1146,6 +1201,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
           _Toolbar(
             onImport: canEdit ? _importFromXlsx : null,
             onRefresh: _loading ? null : _load,
+            onPdf: _loading || _error != null ? null : _generateContactsPdf,
             showSyncO365: permissions.canPerform(PermissionAction.membersSyncO365),
             onSyncO365: _syncingO365 ? null : _syncToO365,
             syncingO365: _syncingO365,
@@ -1207,6 +1263,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
 class _Toolbar extends StatelessWidget {
   final VoidCallback? onImport;
   final VoidCallback? onRefresh;
+  final VoidCallback? onPdf;
   final bool showSyncO365;
   final VoidCallback? onSyncO365;
   final bool syncingO365;
@@ -1214,6 +1271,7 @@ class _Toolbar extends StatelessWidget {
   const _Toolbar({
     this.onImport,
     this.onRefresh,
+    this.onPdf,
     this.showSyncO365 = false,
     this.onSyncO365,
     this.syncingO365 = false,
@@ -1234,6 +1292,12 @@ class _Toolbar extends StatelessWidget {
               tooltip: 'Refresh',
               onPressed: onRefresh,
             ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('PDF'),
+            onPressed: onPdf,
+          ),
           if (onImport != null) ...[
             const SizedBox(width: 8),
             OutlinedButton.icon(
