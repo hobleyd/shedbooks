@@ -35,8 +35,14 @@ server {
     # hostname is provided (or when Manual mode strips the path).
     # Use a regex to catch both with and without trailing slash.
     # 308 preserves the HTTP method (PROPFIND) through the redirect.
+    # absolute_redirect off keeps the Location header relative: TLS is
+    # terminated at the Container Apps ingress, so nginx itself only sees
+    # http and would otherwise redirect https clients to an http:// URL,
+    # which macOS refuses to follow (surfacing as "Unable to verify account
+    # name or password").
     location ~ ^/.well-known/carddav/?$ {
-        return 308 /api/carddav/principal;
+        absolute_redirect off;
+        return 308 /api/carddav/principal/;
     }
 
     location /api/ {
